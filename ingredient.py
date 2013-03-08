@@ -110,3 +110,11 @@ BAKING_POWDER = Ingredient(["baking powder"], 0.934112)
 BUTTER_MILK = Ingredient(["buttermilk", "butter milk"], 1.035554)
 CARDAMOM = Ingredient(["ground cardamom", "cardamom"], 0.39)
 CINNAMON = Ingredient(["ground cinnamon", "cinnamon"], 0.53)
+
+# Milliliter conversion for potatoes assumes shredded (i.e grated) potatoes
+POTATO = Ingredient(["potato", "potatoes", "shredded potato", "grated potato"],
+      1.3796292, {"medium":184, "large":283, "large baking":340,
+                  "medium baking":283, "small baking":226}, "medium")
+
+ONION = Ingredient(["onion", "onions"], 1.04, {"large":340, "medium":227,
+      "small":113}, "medium")
