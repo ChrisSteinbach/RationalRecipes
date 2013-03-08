@@ -1,6 +1,7 @@
 """Unit tests for create_ratio module"""
 import unittest
-from ratio import calculate_ratio, Ratio, percentage_difference
+from ratio import calculate_ratio, Ratio, percentage_change
+from ratio import percentage_difference, percentage_difference_from_mean
 from ingredient import FLOUR, EGG, BUTTER
 from numpy import array
 
@@ -107,6 +108,25 @@ class TestRatioValue(unittest.TestCase):
         self.assertEquals(diff_1, diff_2)
         self.assertAlmostEquals(0.00000, diff_1, 2)
 
+    def test_percentage_diff_from_mean(self):
+        """Percentage difference from the mean between two values that are 
+           almost equal"""
+        value_1 = 3999.9999
+        value_2 = 4000
+        diff_1 = percentage_difference_from_mean(value_2, value_1)
+        diff_2 = percentage_difference_from_mean(value_1, value_2)
+        self.assertEquals(diff_1, diff_2)
+        self.assertAlmostEquals(0.00000, diff_1, 2)
+
+    def test_percentage_change(self):
+        """Percentage change between two values that are almost equal"""
+        value_1 = 3999.9999999
+        value_2 = 4000
+        diff_1 = percentage_change(value_2, value_1)
+        diff_2 = percentage_change(value_1, value_2)
+        self.assertAlmostEquals(diff_1, diff_2)
+        self.assertAlmostEquals(0.00000, diff_1, 2)
+        
     def test_percentage_difference_50pc(self):
         """Percentage difference between values where one is 50% of the other"""
         value_1 = 2000
@@ -115,6 +135,25 @@ class TestRatioValue(unittest.TestCase):
         diff_2 = percentage_difference(value_1, value_2)
         self.assertEquals(diff_1, diff_2)
         self.assertAlmostEquals(0.666, diff_1, 2)
+
+    def test_pc_diff_from_mean_50pc(self):
+        """Percentage difference from the mean between values where one is 50%
+           of the other"""
+        value_1 = 2000
+        value_2 = 4000
+        diff_1 = percentage_difference_from_mean(value_2, value_1)
+        diff_2 = percentage_difference_from_mean(value_1, value_2)
+        self.assertEquals(diff_1, diff_2)
+        self.assertAlmostEquals(0.333, diff_1, 2)
+
+    def test_percentage_change_50pc(self):
+        """Percentage change between values where one is 50% of the other"""
+        value_1 = 2000
+        value_2 = 4000
+        diff_1 = percentage_change(value_2, value_1)
+        diff_2 = percentage_change(value_1, value_2)
+        self.assertEquals(abs(diff_1), diff_2)
+        self.assertAlmostEquals(1, diff_2, 2)
 
     def test_percentage_difference_99pc(self):
         """Percentage difference between a very small value and a relatively
@@ -125,6 +164,27 @@ class TestRatioValue(unittest.TestCase):
         diff_2 = percentage_difference(value_1, value_2)
         self.assertEquals(diff_1, diff_2)
         self.assertAlmostEquals(1.999999, diff_1, 2)
+
+    def test_pc_diff_from_mean_99pc(self):
+        """Percentage difference from the mean between a very small value and a
+           relatively large value"""
+        value_1 = 0.0000000001
+        value_2 = 2**32
+        diff_1 = percentage_difference_from_mean(value_2, value_1)
+        diff_2 = percentage_difference_from_mean(value_1, value_2)
+        self.assertEquals(diff_1, diff_2)
+        self.assertAlmostEquals(0.999999, diff_1, 2)
+
+    def test_percentage_change_99pc(self):
+        """Percentage change between a very small value and a relatively large 
+           value"""
+        value_1 = 1
+        value_2 = (2**32) + 1
+        diff_1 = percentage_change(value_2, value_1)
+        diff_2 = percentage_change(value_1, value_2)
+        self.assertAlmostEquals(-0.999999, diff_1, 2)
+        self.assertAlmostEquals(2**32, diff_2, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
