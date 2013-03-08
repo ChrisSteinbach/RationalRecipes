@@ -207,8 +207,8 @@ def calculate_ratio(ingredients, proportions, desired_interval=0.5):
     means, intervals, min_sample_sizes = \
         calculate_statistics(relative_proportions, desired_interval)
     # Normalize relative to 100% of first ingredient
-    ratio = [means[i] / means[0] for i in xrange(1, len(ingredients))]
-    return Ratio(ingredients, [1.0] + ratio, intervals, min_sample_sizes)
+    ratio = [means[i] / means[0] for i in xrange(0, len(ingredients))]
+    return Ratio(ingredients, ratio, intervals, min_sample_sizes)
 
 def percentage_change(src, dest):
     """Calculate percentage change from one value (src) to another (dest)"""
@@ -225,7 +225,7 @@ def percentage_difference(value1, value2):
 def percentage_difference_from_mean(value1, value2):
     """Calculate percentage difference between two values. Used to help make
        confidence interval sizes more intuitive by keeping the percentage
-    difference under 100%"""
+       difference under 100%"""
     mean = (value1 + value2) / 2.0
     mean_diff = abs(mean - value1)
     return mean_diff / mean

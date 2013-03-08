@@ -83,7 +83,7 @@ class Ingredient(object):
     
 MILK = Ingredient(["milk"], 1)
 WATER = Ingredient(["water"], 1)
-EGG = Ingredient(["medium egg", "egg"], 1.181592, {"XL":67, "LARGE":60,
+EGG = Ingredient(["egg", "eggs"], 1.181592, {"XL":67, "LARGE":60,
                 "MEDIUM":53, "SMALL":46, "EU LARGE":59, "EU MEDIUM":52,
                 "EU SMALL":45, "EU XL":66}, "MEDIUM")
 FLOUR = Ingredient(["all purpose flour", "plain flour", "flour"], 0.527426)

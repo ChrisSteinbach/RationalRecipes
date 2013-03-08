@@ -4,27 +4,27 @@ import utils
 import tests.test_utils as test_utils
 
 EXPECTED_OUTPUT = """
-Recipe ratio in units of weight is 1.00:1.97:0.75:0.17 (all purpose flour:milk:medium egg:butter)
+Recipe ratio in units of weight is 1.00:1.97:0.75:0.17 (all purpose flour:milk:egg:butter)
 
 Recipe ratio with confidence intervals (confidence level is 95%)
 ----------------------------------------------------------------
 The all purpose flour proportion is between 24.47% and 26.96% (the interval is 5% of the mean proportion: 25.72%)
 The milk proportion is between 48.46% and 52.77% (the interval is 4% of the mean proportion: 50.61%)
-The medium egg proportion is between 17.65% and 20.69% (the interval is 8% of the mean proportion: 19.17%)
+The egg proportion is between 17.65% and 20.69% (the interval is 8% of the mean proportion: 19.17%)
 The butter proportion is between 3.86% and 5.14% (the interval is 14% of the mean proportion: 4.50%)
 
 Minimum sample sizes needed for confidence interval with 5% difference and confidence level of 95%
 --------------------------------------------------------------------------------------------------
 Minimum sample size for all purpose flour proportion: 112
 Minimum sample size for milk proportion: 87
-Minimum sample size for medium egg proportion: 299
+Minimum sample size for egg proportion: 299
 Minimum sample size for butter proportion: 963
 
 450g Recipe
 -----------
 116g or 219ml all purpose flour
 228g or 228ml milk
-86g, 73ml or 2 medium egg(s) where each medium egg is 53g
+86g, 73ml or 2 egg(s) where each egg is 53g
 20g or 20ml butter
 
 Note: these calculations are based on 119 distinct recipe proportions. Duplicates have been removed.
