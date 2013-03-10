@@ -19,6 +19,11 @@ that ingredient at the start of cooking.
 This module allows column merging for these situations.
 """
 import types
+from errors import InvalidArgumentException
+
+class MergeConfigError(InvalidArgumentException):
+    """Exception triggered by invalid merge configuration or input argument"""
+    pass
 
 class Merge(object):
     """Responsible for applying a column merge specification to return a new
@@ -35,12 +40,16 @@ class Merge(object):
 
     def _column_id_to_indexes(self, column_identifier):
         """Normalize column identifier to a column index"""
-        if type(column_identifier) == types.StringType:
-            for column_index in \
-              self.name_to_column_index[column_identifier.lower()]:
-                yield column_index
-        else:
-            yield column_identifier
+        try:
+            if type(column_identifier) == types.StringType:
+                for column_index in \
+                  self.name_to_column_index[column_identifier.lower()]:
+                    yield column_index
+            else:
+                yield column_identifier
+        except KeyError:
+            raise MergeConfigError(
+                "Attempted to merge missing column '%s'" % column_identifier)
             
     def _convert_spec_to_indexes(self, merge_specification, ingredients):
         """Normalize merge specification so that it only uses column indexes
@@ -74,15 +83,15 @@ class Merge(object):
         for columns in merge_specification:
             accumulating_column = columns[0][0]
             if accumulating_column > last_column or accumulating_column < 0:
-                raise Exception("Attempted to merge missing column %d" % \
-                                accumulating_column)
+                raise MergeConfigError(
+                  "Attempted to merge missing column %d" % accumulating_column)
             # specifies which columns should be merged into this one
             accumulating[accumulating_column] = columns
-            for column_index, _percentage in columns[1:]:
+            for column_index, _ in columns[1:]:
                 column_index = column_index
                 if column_index > last_column or column_index < 0:
-                    raise Exception("Attempted to merge missing column %d" \
-                                    % column_index) 
+                    raise MergeConfigError(
+                        "Attempted to merge missing column %d" % column_index) 
                 # drop this column; it will be merged into another
                 remove.add(column_index)
         

@@ -5,6 +5,7 @@ from ingredient import FLOUR, SUGAR
 from units import CUP, GRAM, METRIC_CUP
 from read import parse_file_contents, value_and_unit, read_files
 from StringIO import StringIO
+from errors import InvalidInputException
 
 class TestReadFiles(unittest.TestCase):
     """Unit tests for reading and parsing input files"""
@@ -34,7 +35,7 @@ class TestReadFiles(unittest.TestCase):
         try:
             _ingredients, _columns = read_files([input_file_1, input_file_2])
             self.fail("Expected error")
-        except Exception, error:
+        except InvalidInputException, error:
             self.assertEquals(str(error),
                               "All input files must have the same header.")
         
@@ -67,7 +68,7 @@ class TestReadProportions(unittest.TestCase):
         try:
             self.assert_proportions(recipes)
             self.fail("Expected exception")
-        except Exception, error:
+        except InvalidInputException, error:
             self.assertEquals(str(error),
                               "No such ingredient as 'blah', line 1")
 
@@ -88,7 +89,7 @@ class TestReadProportions(unittest.TestCase):
         try:
             self.assert_proportions(recipes)
             self.fail("Expected exception concerning missing column")
-        except Exception, error:
+        except InvalidInputException, error:
             self.assertEquals(str(error),
                     "The row on line 3 has 2 columns where 3 were expected")
 
@@ -144,7 +145,7 @@ class TestReadMeasure(unittest.TestCase):
             _value, _unit = parse_measure("cup")
             self.fail("Expected: Incorrect format of measurement on line 1, "
                       "column 1")
-        except Exception, error:
+        except InvalidInputException, error:
             self.assertEqual(str(error),
                     "Incorrect format of measurement at line 1, column 1")
 
@@ -155,7 +156,7 @@ class TestReadMeasure(unittest.TestCase):
             _value, _unit = parse_measure("1 ")
             self.fail("Expected: Incorrect format of measurement on line 1,"
                       " column 1")
-        except Exception, error:
+        except InvalidInputException, error:
             self.assertEqual(str(error),
                         "Incorrect format of measurement at line 1, column 1")
 
@@ -163,10 +164,7 @@ class TestReadMeasure(unittest.TestCase):
         """Test error condition: unknown unit name"""
         try:
             _value, _unit = parse_measure("1 blah")
-            self.fail("Expected expection")
-        except Exception, error:
+            self.fail("Expected exception")
+        except InvalidInputException, error:
             self.assertEqual(str(error),
                              "No unit named 'blah' at line 1, column 1")
-
-if __name__ == "__main__":
-    unittest.main()

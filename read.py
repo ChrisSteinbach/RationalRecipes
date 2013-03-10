@@ -3,6 +3,7 @@
 from ingredient import Factory as IngredientFactory
 from units import Factory as UnitFactory, GRAM
 import re
+from errors import InvalidInputException
 
 def read_ingredients_from_header(header):
     """The header line of each input file is a comma separated string of
@@ -12,7 +13,8 @@ def read_ingredients_from_header(header):
         return tuple(IngredientFactory.get_by_name(ingredient.strip()) for \
                      ingredient in header.split(','))
     except KeyError, error:
-        raise Exception("No such ingredient as %s, line 1" % str(error))
+        raise InvalidInputException(
+                            "No such ingredient as %s, line 1" % str(error))
 
 def split_header_and_rows(file_contents):
     """Split file_contents file into header and rows"""
@@ -46,12 +48,14 @@ def value_and_unit(line_nr, column_index, measure):
         value = float(match.group("value"))
         unit = UnitFactory.get_by_name(match.group("unit").strip())
         if unit is None:
-            raise Exception("No unit named '%s' at line %d, column %d" % \
+            raise InvalidInputException(
+                            "No unit named '%s' at line %d, column %d" % \
                             (match.group("unit"), line_nr, column_index))
         return value, unit
     else:
-        raise Exception("Incorrect format of measurement at line %d, column %d"\
-                         % (line_nr, column_index))
+        raise InvalidInputException(
+                    "Incorrect format of measurement at line %d, column %d"\
+                    % (line_nr, column_index))
   
 def read_files(input_files):
     """Read one or more input files. For multiple files, columns 
@@ -68,8 +72,8 @@ def read_files(input_files):
             ingredients = tmp_ingredients
         else:
             if ingredients != tmp_ingredients:
-                raise Exception("All input files must have the same "
-                                "header.")
+                raise InvalidInputException(
+                            "All input files must have the same header.")
         all_columns += columns
     return ingredients, all_columns
   

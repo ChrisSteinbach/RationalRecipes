@@ -2,7 +2,7 @@
 import unittest
 from ingredient import FLOUR, EGG
 
-class TestIngredientConversion(unittest.TestCase):
+class TestIngredient(unittest.TestCase):
     """Unit tests for ingredient classes"""
     
     def test_volume2weight(self):

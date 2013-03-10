@@ -1,6 +1,7 @@
 """Volume, weight and whole units of measure. Each unit is capable of conversion
    to grams.
 """
+from errors import InvalidInputException
 
 class Factory(object):
     """Registry and factory for all units of measure."""
@@ -95,6 +96,9 @@ METRIC_TSP = VolumeUnit(["metric tsp", "metric teaspoon", "metric teaspoons",
 PINCH = VolumeUnit(["pinch", "pinches"], 0.3125)
 DASH = VolumeUnit(["dash", "dashes"], 0.625)
 
+class BadUnitException(InvalidInputException):
+    """Thrown when a unit is specified that cannot be used"""
+    pass
 
 class WholeUnit(Unit):
     """Whole units of measure"""
@@ -107,9 +111,9 @@ class WholeUnit(Unit):
         """Normalizes sizeable food stuffs to grams"""
         conversion = ingredient.wholeunits2grams(self._size)
         if conversion is None:
-            raise Exception("Inapplicable unit '%s' used for ingredient '%s' at"
-                            " line %d" % (self._size, ingredient.name(),
-                                          line_nr))
+            raise BadUnitException(
+                "Inapplicable unit '%s' used for ingredient '%s' at line %d" % \
+                (self._size, ingredient.name(), line_nr))
         return value * conversion
 
 XL = WholeUnit(["XL"])

@@ -184,7 +184,3 @@ class TestRatioValue(unittest.TestCase):
         diff_2 = percentage_change(value_1, value_2)
         self.assertAlmostEquals(-0.999999, diff_1, 2)
         self.assertAlmostEquals(2**32, diff_2, 2)
-
-
-if __name__ == "__main__":
-    unittest.main()
