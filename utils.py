@@ -22,8 +22,8 @@ def get_ratio(filenames, distinct, merge, desired_interval=0.05):
 def add_merge_option(parser):
     """Add option used to specify column merge"""
     parser.add_option("-m", "--merge", type="string", dest="merge", 
-        help="merge columns using mappings, syntax of MAPPING is <column_index>"
-        "[.<percent>]+<mapped_column>[+mapped_column]...[:<column_index...", 
+        help="merge columns where MAPPING is <col>[.percent][+<col>[.percent]]"
+        "[:<col>[.percent][+<col>[.percent]]...",
         default=None, metavar="MAPPING")
     
 def add_include_option(parser):
