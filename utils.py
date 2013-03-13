@@ -4,6 +4,7 @@ from read import read_files
 from normalize import to_grams
 from merge import merge_columns
 from ratio import calculate_ratio
+from errors import InvalidInputException
 
 def get_ratio(filenames, distinct, merge, desired_interval=0.05):
     """Parse input files to produce mean recipe ratio and related statistics
@@ -53,3 +54,19 @@ def parse_column_merge(merge_option):
                     mapping.append((column_id, percentage))
             merge.append(mapping)
     return merge
+
+def parse_restrictions(options):
+    """Parse specification of column merge"""
+    column_options = []
+    if options is not None and len(options) > 0:
+        for mappings in options.split(","):
+            column_spec = mappings.split("=")
+            column_id = column_spec[0]
+            if len(column_spec) != 2:
+                raise InvalidInputException("Expected column option")
+            weight = float(column_spec[1])
+            if column_id.isdigit():
+                column_options.append((int(column_id), weight))
+            else:
+                column_options.append((column_id, weight))
+    return column_options

@@ -26,8 +26,9 @@ def ingredient_measures_from_row(line_nr, row, nr_columns):
     """Parse measures from one row"""
     measures = row.split(",")
     if len(measures) != nr_columns:
-        raise Exception("The row on line %d has %d columns where %d were "
-                        "expected" % (line_nr, len(measures), nr_columns))
+        raise InvalidInputException(
+            "The row on line %d has %d columns where %d were expected" \
+            % (line_nr, len(measures), nr_columns))
     for column_index in range(0, nr_columns):
         yield column_index, measures[column_index].strip()
 

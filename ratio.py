@@ -5,6 +5,8 @@
 from normalize import normalize_to_100g
 import math
 import numpy
+from columns import ColumnTranslator
+from errors import InvalidInputException
 
 Z_VALUE = 1.96 # represents a confidence level of 95%
 
@@ -77,6 +79,14 @@ class RatioValue(object):
         else:
             return self.describe_wholeunits()
 
+def column_id_to_indexes(column_translator, column_identifier):
+    """Normalize column identifier to a column index"""
+    indexes = list(column_translator.id_to_indexes(column_identifier))
+    if len(indexes) == 0:
+        raise InvalidInputException(
+                "Attempted to restrict missing column '%s'" % column_identifier)
+    return indexes
+
 class Ratio(object):
     """Provides formatting for ingredient ratios and related statistics"""
     
@@ -87,7 +97,18 @@ class Ratio(object):
         self.ingredients = ingredients
         self._precision = 2
         self._scale = 1
-    
+        self._restrictions = []
+
+    def set_restrictions(self, restrictions):
+        """Individual ingredient weight restrictions"""
+        _restrictions = []
+        column_translator = ColumnTranslator(self.ingredients)
+        for column_id, weight in restrictions:
+            for column_index in column_id_to_indexes(column_translator,
+                                                     column_id):
+                _restrictions.append((column_index, weight))
+        self._restrictions = _restrictions
+
     def __delitem__(self):
         """Definition provided purely to appease pylint"""
         raise AssertionError("attempt to delete from read only container")
@@ -123,7 +144,7 @@ class Ratio(object):
     
     def print_confidence_intervals(self, output):
         """Print confidence intervals for mean of each ingredient proportion"""
-        percentages = [v.value for v in self.scaled_ratio(100)]
+        percentages = [v.value for v in self.restrict_total_weight(100)[0]]
         for percentage, interval, ingredient in zip(percentages, self.intervals,
                                                     self.ingredients):
             upper_value = percentage + interval
@@ -157,30 +178,54 @@ class Ratio(object):
         return RatioValue(self.ratio[index] * self._scale,
                           self.ingredients[index], self._float_format())
     
-    def scaled_ratio(self, weight=100):
-        """Yield ratio proportions with specified scaling"""
+    def scaled_ratio(self, scale):
+        """Yield ratio proportions with a specific scale applied"""
         saved_scaling = self._scale
-        total_grams = sum(self.ratio)
-        self.set_scale(weight / float(total_grams))
+        self.set_scale(scale)
         try:
             for proportion in self:
                 yield proportion
         finally:
             self.set_scale(saved_scaling)
-    
+
+    def restrict_total_weight(self, weight):
+        """Yield ratio proportions with specific total weight. Returns scale
+           applied."""
+        total_grams = sum(self.ratio)
+        scale = weight / float(total_grams)
+        return list(self.scaled_ratio(scale)), scale
+
+    def restrict_by_ingredient(self, ingredients_list, scale):
+        """Restrict a recipe based on individual ingredient/weight-limit
+           specifications"""
+        for column_index, weight_limit in self._restrictions:
+            if ingredients_list[column_index] > weight_limit:
+                new_scale = weight_limit / self.ratio[column_index]
+                if new_scale < scale:
+                    scale = new_scale
+        return list(self.scaled_ratio(scale))
+
     def recipe(self, weight=100):
         """Format the ingredient proportions as if for a recipe ingredient
-           list."""
-        ingredients_list = self.scaled_ratio(weight)
-        return "\n".join(ingredient.describe() \
+           list."""        
+        _, text = self.recipe_with_weight(weight)
+        return text
+
+    def recipe_with_weight(self, weight):
+        """Format the ingredient proportions as if for a recipe ingredient
+           list. Also return total weight."""
+        ingredients_list, scale = self.restrict_total_weight(weight)
+        ingredients_list = self.restrict_by_ingredient(ingredients_list, scale)
+        total_weight = sum(ingredient.value for ingredient in ingredients_list)
+        return total_weight, "\n".join(ingredient.describe() \
                          for ingredient in ingredients_list)
     
     def percentage_difference(self, other):
         """Return the mean percentage difference and the percentage difference
            for individual ingredient proportions between two ratios."""
         differences = []
-        lhs_pc = [v.value for v in self.scaled_ratio(100)]
-        rhs_pc = [v.value for v in other.scaled_ratio(100)]
+        lhs_pc = [v.value for v in self.restrict_total_weight(100)[0]]
+        rhs_pc = [v.value for v in other.restrict_total_weight(100)[0]]
         for i in range(0, len(self)):
             difference = percentage_difference(lhs_pc[i], rhs_pc[i])
             differences.append((difference, self.ingredients[i]))
@@ -192,8 +237,8 @@ class Ratio(object):
         """Return the percentage change for individual ingredient proportions
            between two ratios."""
         differences = []
-        lhs_pc = [v.value for v in self.scaled_ratio(100)]
-        rhs_pc = [v.value for v in other.scaled_ratio(100)]
+        lhs_pc = [v.value for v in self.restrict_total_weight(100)[0]]
+        rhs_pc = [v.value for v in other.restrict_total_weight(100)[0]]
         for i in range(0, len(self)):
             change = percentage_change(lhs_pc[i], rhs_pc[i])
             differences.append((change, self.ingredients[i]))

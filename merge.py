@@ -18,8 +18,8 @@ that ingredient at the start of cooking.
 
 This module allows column merging for these situations.
 """
-import types
 from errors import InvalidArgumentException
+from columns import ColumnTranslator
 
 class MergeConfigError(InvalidArgumentException):
     """Exception triggered by invalid merge configuration or input argument"""
@@ -30,31 +30,17 @@ class Merge(object):
        set of merged columns.
     """
     
-    def _map_ingredient_names(self, ingredients):
-        """Map ingredient names to column indexes"""
-        for i in range(0, len(ingredients)):
-            for name in ingredients[i].synonyms():
-                column_indexes = self.name_to_column_index.get(name, [])
-                column_indexes.append(i)
-                self.name_to_column_index[name.lower()] = column_indexes
-
     def _column_id_to_indexes(self, column_identifier):
         """Normalize column identifier to a column index"""
-        try:
-            if type(column_identifier) == types.StringType:
-                for column_index in \
-                  self.name_to_column_index[column_identifier.lower()]:
-                    yield column_index
-            else:
-                yield column_identifier
-        except KeyError:
+        indexes = list(self.column_translator.id_to_indexes(column_identifier))
+        if len(indexes) == 0:
             raise MergeConfigError(
                 "Attempted to merge missing column '%s'" % column_identifier)
+        return indexes
             
-    def _convert_spec_to_indexes(self, merge_specification, ingredients):
+    def _convert_spec_to_indexes(self, merge_specification):
         """Normalize merge specification so that it only uses column indexes
            and not mixed indexes and ingredient names."""
-        self._map_ingredient_names(ingredients)
         new_merge_specification = []
         for combine_spec in merge_specification:
             new_combine_spec = []
@@ -104,10 +90,9 @@ class Merge(object):
             self.column_index_to_columns[column_index] = columns
 
     def __init__(self, merge_specification, ingredients):
-        self.name_to_column_index = {}
+        self.column_translator = ColumnTranslator(ingredients)
         self.column_index_to_columns = {}
-        merge_specification = self._convert_spec_to_indexes(merge_specification,
-                                                            ingredients)
+        merge_specification = self._convert_spec_to_indexes(merge_specification)
         self.map_column_indexes(merge_specification, ingredients)
 
     def merge_one_row(self, row, combine):

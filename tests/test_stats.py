@@ -31,20 +31,23 @@ Note: these calculations are based on 119 distinct recipe proportions. Duplicate
 """
 
 
-def script_instance(merge_spec):
+def script_instance(merge_spec, restrictions=""):
     """Create instance of StatsMain in order to test stats script"""
     distinct = True
     confidence = 0.05
     merge = utils.parse_column_merge(merge_spec)
-    return stats.StatsMain(["tests/test.csv"], distinct, merge, confidence)
+    restrictions = utils.parse_restrictions(restrictions)
+    inst = stats.StatsMain(["tests/test.csv"], distinct, merge, confidence)
+    inst.set_restrictions(restrictions)
+    return inst
     
 class TestStats(test_utils.ScriptTestCase):
     """Unit tests for stats script"""
 
-    def verify_script_output(self, script):
+    def verify_script_output(self, script, total_weight=450):
         """Check that script output conforms to expected output"""
         output = script.main(ratio_precision=2, recipe_precision=0,
-                             total_recipe_weight=450, verbose=True)
+                             total_recipe_weight=total_weight, verbose=True)
         self.verify_output(output, EXPECTED_OUTPUT)
 
     def test_run_merge_using_names(self):
@@ -59,3 +62,9 @@ class TestStats(test_utils.ScriptTestCase):
         script = script_instance("1+2:0+5")
         self.verify_script_output(script)
                  
+    def test_restrictions(self):
+        """Test run of script using column indexes to specify
+           column merge"""
+        script = script_instance("1+2:0+5",
+                                 "flour=116,milk=228,egg=86.27,butter=20.4")
+        self.verify_script_output(script, 500)

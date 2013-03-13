@@ -28,11 +28,16 @@ def parse_command_line():
         help="desired confidence interval expressed as a percentage "
         "difference from zero to the mean, default is %default")
     utils.add_merge_option(parser)
+    parser.add_option("-t", "--restrict", type="string",
+        dest="restrictions", default=None,
+        help="restrict ingredients by weight, per ingredient where restrictions"
+           " is col=weight[,col=weight]", metavar="RESTRICTIONS")
     options, filenames = parser.parse_args()
     merge = utils.parse_column_merge(options.merge)
+    restrictions = utils.parse_restrictions(options.restrictions)
     if len(filenames) < 1:
         parser.error("no input file provided")
-    return filenames, options, merge
+    return filenames, options, merge, restrictions
  
 
 class StatsMain(object):
@@ -41,9 +46,14 @@ class StatsMain(object):
     def __init__(self, filenames, distinct, merge, confidence):
         self.distinct = distinct
         self.confidence = confidence
+        self.restrictions = []
         ratio_info = utils.get_ratio(filenames, distinct, merge, 
             desired_interval=confidence)
         self.ratio, self.sample_size = ratio_info[1:]
+
+    def set_restrictions(self, restrictions):
+        """Set per ingredient weight restrictions""" 
+        self.ratio.set_restrictions(restrictions)
 
     def main(self, ratio_precision, recipe_precision, total_recipe_weight,
              verbose):
@@ -68,8 +78,9 @@ class StatsMain(object):
     def print_recipe(self, output, recipe_precision, total_recipe_weight):
         """Print recipe with a specified total weight"""
         self.ratio.set_precision(recipe_precision)
-        output.title("%dg Recipe" % total_recipe_weight)
-        output.line(self.ratio.recipe(total_recipe_weight))
+        weight, text = self.ratio.recipe_with_weight(total_recipe_weight)
+        output.title("%dg Recipe" % weight)
+        output.line(text)
         output.line()
     
     def print_ratio(self, output):
@@ -92,7 +103,7 @@ class StatsMain(object):
 
 def run():
     """Run the script from the command line"""
-    filenames, options, merge = parse_command_line()
+    filenames, options, merge, restrictions = parse_command_line()
     distinct = options.distinct
     confidence = options.confidence
     script = StatsMain(filenames, distinct, merge, confidence)
@@ -101,6 +112,10 @@ def run():
     ratio_precision = options.ratio_precision
     recipe_precision = options.recipe_precision
     verbose = options.verbose
+
+    if restrictions:
+        script.set_restrictions(restrictions)
+
     print script.main(ratio_precision, recipe_precision, total_recipe_weight,
                       verbose)
 
