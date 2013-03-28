@@ -7,17 +7,10 @@ from optparse import OptionParser
 from output import Output
 from difference import percentage_change, percentage_difference
 
-def get_ratio(filenames, distinct, merge):
-    """Extract mean ratio from input file(s)"""
-    ratio_info = utils.get_ratio(filenames, distinct, merge)
-    ingredients, ratio = ratio_info[:2]
-    return ingredients, ratio
-
-    
 def get_ratios_to_compare(first_filename, remaining_filenames, distinct, merge):
     """Get ratios to compare from input files"""
-    ingredients1, ratio1 = get_ratio(first_filename, distinct, merge)
-    ingredients2, ratio2 = get_ratio(remaining_filenames, distinct, merge)
+    ingredients1, ratio1 = utils.get_ratio(first_filename, distinct, merge)
+    ingredients2, ratio2 = utils.get_ratio(remaining_filenames, distinct, merge)
     if ingredients1 != ingredients2:
         print "Ingredients for input files do not match: unable to compare"
         sys.exit(1)

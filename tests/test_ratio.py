@@ -1,8 +1,14 @@
 """Unit tests for create_ratio module"""
 import unittest
-from ratio import calculate_ratio, Ratio
+from ratio import calculate_ratio_and_stats, Ratio
 from ingredient import FLOUR, EGG, BUTTER
 from numpy import array
+
+def calculate_ratio(ingredients, proportions, desired_interval=0.5):
+    """Calculate ratio proportions from input data."""
+    _, ratio = calculate_ratio_and_stats(ingredients, proportions,
+                                         desired_interval)
+    return ratio
 
 def test_data():
     """Shared test data"""
@@ -14,7 +20,7 @@ def test_data():
 
 def create_ratio(ingredients, proportions, restrictions=None):
     """Wrapper for Ratio class creation"""
-    ratio = Ratio(ingredients, proportions, [], [])
+    ratio = Ratio(ingredients, proportions)
     if restrictions is not None:
         ratio.set_restrictions(restrictions)
     return ratio

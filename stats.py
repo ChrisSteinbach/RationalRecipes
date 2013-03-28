@@ -47,9 +47,9 @@ class StatsMain(object):
         self.distinct = distinct
         self.confidence = confidence
         self.restrictions = []
-        ratio_info = utils.get_ratio(filenames, distinct, merge, 
-            desired_interval=confidence)
-        self.ratio, self.sample_size = ratio_info[1:]
+        _, self.ratio, self.stats, self.sample_size = utils.get_ratio_and_stats(
+                                                    filenames, distinct, merge, 
+                                                    desired_interval=confidence)
 
     def set_restrictions(self, restrictions):
         """Set per ingredient weight restrictions""" 
@@ -59,6 +59,7 @@ class StatsMain(object):
              verbose):
         """Entry method for script"""
         self.ratio.set_precision(ratio_precision)
+        self.stats.set_precision(ratio_precision)
         output = Output()
         self.print_ratio(output)
         if verbose:
@@ -93,12 +94,12 @@ class StatsMain(object):
         """Print confidence intervals for each ingredient proportion"""
         output.title("Recipe ratio with confidence intervals "
                      "(confidence level is 95%)")
-        self.ratio.print_confidence_intervals(output)
+        self.stats.print_confidence_intervals(self.ratio, output)
         output.line()
         output.title("Minimum sample sizes needed for confidence "
                     "interval with %d%% difference and confidence level "
                     "of 95%%" % int(confidence * 100))
-        self.ratio.print_min_sample_sizes(output)
+        self.stats.print_min_sample_sizes(self.ratio, output)
         output.line()
 
 def run():

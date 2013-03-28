@@ -3,10 +3,10 @@
 from read import read_files
 from normalize import to_grams
 from merge import merge_columns
-from ratio import calculate_ratio
+from ratio import calculate_ratio_and_stats
 from errors import InvalidInputException
 
-def get_ratio(filenames, distinct, merge, desired_interval=0.05):
+def get_ratio_and_stats(filenames, distinct, merge, desired_interval=0.05):
     """Parse input files to produce mean recipe ratio and related statistics
     """
     files = [open(filename) for filename in filenames]
@@ -16,9 +16,17 @@ def get_ratio(filenames, distinct, merge, desired_interval=0.05):
         all_proportions = set(all_proportions)
     ingredients, all_proportions = merge_columns(ingredients, all_proportions,
                                                  merge)
-    ratio = calculate_ratio(ingredients, all_proportions,
+    stats, ratio = calculate_ratio_and_stats(ingredients, all_proportions,
                             desired_interval=desired_interval)
-    return ingredients, ratio, len(all_proportions)
+    return ingredients, ratio, stats, len(all_proportions)
+
+def get_ratio(filenames, distinct, merge, desired_interval=0.05):
+    """Parse input files to produce mean recipe ratio
+    """
+    ingredients, ratio, _, count = get_ratio_and_stats(filenames, distinct,
+                                                           merge,
+                                                           desired_interval)
+    return ingredients, ratio
 
 def add_merge_option(parser):
     """Add option used to specify column merge"""

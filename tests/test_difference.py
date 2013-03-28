@@ -4,25 +4,9 @@ from difference import calc_percentage_change
 from difference import calc_percentage_difference
 from difference import percentage_difference_from_mean
 from difference import percentage_difference
-from ratio import Ratio
-from ingredient import FLOUR, EGG, BUTTER
-from numpy import array
+from ingredient import FLOUR, EGG
+from tests.test_ratio import create_ratio, test_data
 
-
-def test_data():
-    """Shared test data"""
-    ingredients = (FLOUR, EGG, BUTTER)
-    flour = array([1, 1, 1])
-    egg = array([2, 2, 2])
-    butter = array([3, 3, 3])
-    return ingredients, zip(flour, egg, butter)
-
-def create_ratio(ingredients, proportions, restrictions=None):
-    """Wrapper for Ratio class creation"""
-    ratio = Ratio(ingredients, proportions, [], [])
-    if restrictions is not None:
-        ratio.set_restrictions(restrictions)
-    return ratio
 
 class TestDifference(unittest.TestCase):
     """Tests for RatioValue class"""
