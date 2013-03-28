@@ -5,6 +5,7 @@ import sys
 import utils
 from optparse import OptionParser
 from output import Output
+from difference import percentage_change, percentage_difference
 
 def get_ratio(filenames, distinct, merge):
     """Extract mean ratio from input file(s)"""
@@ -35,7 +36,7 @@ class DiffMain(object):
         self.number_template = "%%0.%df" % precision
         output = Output()
         self.print_ratios(output)
-        diff_info = self.ratio1.percentage_difference(self.ratio2)
+        diff_info = percentage_difference(self.ratio1, self.ratio2)
         mean_difference, differences = diff_info
         if show_percentage_change is False:
             self.print_percentage_difference(output, differences)
@@ -55,7 +56,7 @@ class DiffMain(object):
     
     def print_percentage_change(self, output):
         """Print percentage change between ratios for each ingredient"""
-        changes = self.ratio1.percentage_change(self.ratio2)
+        changes = percentage_change(self.ratio1, self.ratio2)
         for change, ingredient in sorted(changes, cmp=lambda x, y:cmp(abs(x[0]),
                                          abs(y[0])), reverse=True):
             direction = "increased"

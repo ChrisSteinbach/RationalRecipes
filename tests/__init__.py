@@ -3,7 +3,8 @@ from tests.test_ingredient import TestIngredient
 from tests.test_normalize import TestNormalizeWeight, TestNormalizeVolume
 from tests.test_normalize import TestNormalizeVolumeToWeight
 from tests.test_normalize import TestNormalizeColumns
-from tests.test_ratio import TestRatio, TestRatioValue
+from tests.test_ratio import TestRatio
+from tests.test_difference import TestDifference
 from tests.test_read import TestReadFiles, TestReadProportions
 from tests.test_read import TestReadMeasure
 from tests.test_stats import TestStats

@@ -3,6 +3,7 @@
    a given total weight, confidence intervals and more.
 """
 from normalize import normalize_to_100g
+from difference import percentage_difference_from_mean
 import math
 import numpy
 from columns import ColumnTranslator
@@ -144,7 +145,7 @@ class Ratio(object):
     
     def print_confidence_intervals(self, output):
         """Print confidence intervals for mean of each ingredient proportion"""
-        percentages = [v.value for v in self.restrict_total_weight(100)[0]]
+        percentages = self.values()
         for percentage, interval, ingredient in zip(percentages, self.intervals,
                                                     self.ingredients):
             upper_value = percentage + interval
@@ -220,30 +221,10 @@ class Ratio(object):
         return total_weight, "\n".join(ingredient.describe() \
                          for ingredient in ingredients_list)
     
-    def percentage_difference(self, other):
-        """Return the mean percentage difference and the percentage difference
-           for individual ingredient proportions between two ratios."""
-        differences = []
-        lhs_pc = [v.value for v in self.restrict_total_weight(100)[0]]
-        rhs_pc = [v.value for v in other.restrict_total_weight(100)[0]]
-        for i in range(0, len(self)):
-            difference = percentage_difference(lhs_pc[i], rhs_pc[i])
-            differences.append((difference, self.ingredients[i]))
-        total = sum(difference for difference, unused in differences)
-        mean_difference = total / len(self)
-        return mean_difference, differences
-    
-    def percentage_change(self, other):
-        """Return the percentage change for individual ingredient proportions
-           between two ratios."""
-        differences = []
-        lhs_pc = [v.value for v in self.restrict_total_weight(100)[0]]
-        rhs_pc = [v.value for v in other.restrict_total_weight(100)[0]]
-        for i in range(0, len(self)):
-            change = percentage_change(lhs_pc[i], rhs_pc[i])
-            differences.append((change, self.ingredients[i]))
-        return differences
-    
+    def values(self):
+        """Return ratio numeric values"""
+        return [v.value for v in self.restrict_total_weight(100)[0]]
+     
 def calculate_ratio(ingredients, proportions, desired_interval=0.5):
     """Calculate ratio proportions and related statistics (confidence intervals
        and minimum sample sizes) from input data."""
@@ -255,22 +236,4 @@ def calculate_ratio(ingredients, proportions, desired_interval=0.5):
     ratio = [means[i] / means[0] for i in xrange(0, len(ingredients))]
     return Ratio(ingredients, ratio, intervals, min_sample_sizes)
 
-def percentage_change(src, dest):
-    """Calculate percentage change from one value (src) to another (dest)"""
-    return (dest - src) / src
 
-def percentage_difference(value1, value2):
-    """Calculate percentage difference between two values. Used for comparing
-       two different ratios. Percentage difference calculated this way can
-       exceed 100%."""
-    mean = (value1 + value2) / 2.0
-    mean_diff = abs(value2 - value1)
-    return mean_diff / mean
-
-def percentage_difference_from_mean(value1, value2):
-    """Calculate percentage difference between two values. Used to help make
-       confidence interval sizes more intuitive by keeping the percentage
-       difference under 100%"""
-    mean = (value1 + value2) / 2.0
-    mean_diff = abs(mean - value1)
-    return mean_diff / mean
