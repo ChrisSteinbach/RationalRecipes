@@ -3,7 +3,6 @@
    a given total weight, confidence intervals and more.
 """
 from normalize import normalize_to_100g
-import numpy
 from columns import ColumnTranslator
 from errors import InvalidInputException
 from statistics import calculate_statistics
@@ -158,7 +157,6 @@ def calculate_ratio_and_stats(ingredients, proportions, desired_interval=0.5):
     """Calculate ratio proportions and related statistics (confidence intervals
        and minimum sample sizes) from input data."""
     relative_proportions = list(normalize_to_100g(proportions))
-    relative_proportions = numpy.array(relative_proportions)
     means, statistics = \
         calculate_statistics(relative_proportions, desired_interval)
     # Normalize relative to 100% of first ingredient

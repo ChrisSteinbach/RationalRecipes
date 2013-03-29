@@ -2,6 +2,8 @@
 
 from difference import percentage_difference_from_mean
 import math
+import numpy
+
 
 Z_VALUE = 1.96 # represents a confidence level of 95%
 
@@ -24,6 +26,7 @@ def calculate_statistics(data, desired_interval=0.05):
        difference of the mean value (controlled by the 'desired_interval'
        argument) with a confidence level of 95%.
     """
+    data = numpy.array(data)
     std_deviations = data.std(axis=0)
     intervals = calculate_confidence_intervals(data, std_deviations)
     means = data.mean(axis=0)
