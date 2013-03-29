@@ -11,7 +11,10 @@ def calculate_minimum_sample_sizes(std_deviations, means, desired_interval):
     """Calculate minimum sample size needed for a confidence interval 
        of 5% difference from the mean with 95% confidence level"""
     for std, mean in zip(std_deviations, means):
-        yield math.ceil(((Z_VALUE * std) / (mean * desired_interval)) ** 2)
+        if mean == 0:
+            yield 0
+        else:
+            yield math.ceil(((Z_VALUE * std) / (mean * desired_interval)) ** 2)
 
 def calculate_confidence_intervals(data, std_deviations):
     """Calculate confidence intervals for each ingredient"""

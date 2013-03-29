@@ -92,6 +92,11 @@ class StatsMain(object):
        
     def print_confidence_intervals(self, output, confidence):
         """Print confidence intervals for each ingredient proportion"""
+        if self.sample_size < 2:
+            output.line()
+            output.line("Too little data available to provide statistics.")
+            output.line()
+            return
         output.title("Recipe ratio with confidence intervals "
                      "(confidence level is 95%)")
         self.stats.print_confidence_intervals(self.ratio, output)
