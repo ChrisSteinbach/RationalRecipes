@@ -79,7 +79,7 @@ class StatsMain(object):
     def print_recipe(self, output, recipe_precision, total_recipe_weight):
         """Print recipe with a specified total weight"""
         self.ratio.set_precision(recipe_precision)
-        weight, text = self.ratio.recipe_with_weight(total_recipe_weight)
+        weight, text = self.ratio.recipe(total_recipe_weight)
         output.title("%dg Recipe" % weight)
         output.line(text)
         output.line()

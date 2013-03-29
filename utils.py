@@ -23,7 +23,7 @@ def get_ratio_and_stats(filenames, distinct, merge, desired_interval=0.05):
 def get_ratio(filenames, distinct, merge, desired_interval=0.05):
     """Parse input files to produce mean recipe ratio
     """
-    ingredients, ratio, _, count = get_ratio_and_stats(filenames, distinct,
+    ingredients, ratio, _, _ = get_ratio_and_stats(filenames, distinct,
                                                            merge,
                                                            desired_interval)
     return ingredients, ratio

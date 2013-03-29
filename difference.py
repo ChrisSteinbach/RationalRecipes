@@ -17,7 +17,7 @@ def percentage_difference(lhs, rhs):
         for individual ingredient proportions between two ratios."""
     differences = diff(lhs, rhs, calc_percentage_difference)
     total = sum(difference for difference, _ in differences)
-    mean_difference = total / len(lhs)
+    mean_difference = total / lhs.len()
     return mean_difference, differences
 
 def percentage_change(lhs, rhs):

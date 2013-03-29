@@ -52,7 +52,7 @@ class Statistics:
     def print_min_sample_sizes(self, ratio, output):
         """Print (pre-calculated) minimum samples size for each ingredient
            proportion mean"""
-        for i in range(0, len(ratio)):
+        for i in range(0, ratio.len()):
             ingredient = str(ratio.ingredients[i])
             output.line("Minimum sample size for %s proportion: %d" % \
               (ingredient, self.min_sample_sizes[i]))
