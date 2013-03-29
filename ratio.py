@@ -4,7 +4,6 @@
 """
 from normalize import normalize_to_100g
 from columns import ColumnTranslator
-from errors import InvalidInputException
 from statistics import calculate_statistics
 
 class RatioElement(object):
@@ -75,16 +74,12 @@ class Ratio(object):
 
     def _column_id_to_indexes(self, column_identifier):
         """Normalize column identifier to a column index"""
-        indexes = list(self._column_translator.id_to_indexes(column_identifier))
-        if len(indexes) == 0:
-            raise InvalidInputException(
-                "Attempted to restrict missing column '%s'" % column_identifier)
-        return indexes
+        return self._column_translator.id_to_indexes(column_identifier)
 
     def _values(self, scale=1):
         """Return raw ratio values"""
         for element in self._elements:
-            yield element.value * scale
+            yield element.scaled(scale)
             
     def _restrict_total_weight(self, weight):
         """Yield ratio proportions with specific total weight. Returns scale

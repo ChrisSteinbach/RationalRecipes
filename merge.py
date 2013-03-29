@@ -30,14 +30,6 @@ class Merge(object):
        set of merged columns.
     """
     
-    def _column_id_to_indexes(self, column_identifier):
-        """Normalize column identifier to a column index"""
-        indexes = list(self.column_translator.id_to_indexes(column_identifier))
-        if len(indexes) == 0:
-            raise MergeConfigError(
-                "Attempted to merge missing column '%s'" % column_identifier)
-        return indexes
-            
     def _convert_spec_to_indexes(self, merge_specification):
         """Normalize merge specification so that it only uses column indexes
            and not mixed indexes and ingredient names."""
@@ -46,7 +38,7 @@ class Merge(object):
             new_combine_spec = []
             for column_identifier, percentage in combine_spec:
                 for column_index in \
-                        self._column_id_to_indexes(column_identifier):
+                    self.column_translator.id_to_indexes(column_identifier):
                     new_combine_spec.append((column_index, percentage))
             new_merge_specification.append(new_combine_spec)
         return new_merge_specification

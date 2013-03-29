@@ -1,6 +1,7 @@
 """Column id translation. Provides translation of ingredient names to 
 column indexes."""
 import types
+from errors import InvalidInputException
 
 class ColumnTranslator(object):
     """Convert column identities to indexes"""
@@ -18,7 +19,7 @@ class ColumnTranslator(object):
                 column_indexes.append(i)
                 self.name_to_column_index[name.lower()] = column_indexes
 
-    def id_to_indexes(self, column_identifier):
+    def _id_to_indexes(self, column_identifier):
         """Normalize column identifier to one or more column indexes"""
         try:
             if type(column_identifier) == types.StringType:
@@ -28,4 +29,9 @@ class ColumnTranslator(object):
             else:
                 yield column_identifier
         except KeyError:
-            return
+            raise InvalidInputException(
+                "Missing column specified: '%s'" % column_identifier)
+
+    def id_to_indexes(self, column_identifier):
+        """Normalize column identifier to one or more column indexes"""
+        return list(self._id_to_indexes(column_identifier))

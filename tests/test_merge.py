@@ -3,7 +3,7 @@ import unittest
 from ingredient import SALT, FLOUR, BUTTER, SUGAR, WATER
 from merge import merge_columns, MergeConfigError
 from numpy import array
-
+from errors import InvalidInputException
 
 class TestMerge(unittest.TestCase):
     """Test class for column merge"""
@@ -122,9 +122,9 @@ class TestMerge(unittest.TestCase):
             merge = [((1, 1.0), (2, 1.0)), ((0, 1.0), (3, 1.0),
                                             ("water", 1.0))])
             self.fail("Expected error")
-        except MergeConfigError, exception:
+        except InvalidInputException, exception:
             self.assertEquals(str(exception),
-                              "Attempted to merge missing column 'water'",
+                              "Missing column specified: 'water'",
                               exception)
 
     def test_missing_first_column(self):
@@ -158,6 +158,6 @@ class TestMerge(unittest.TestCase):
                         merge=[((1, 1.0), (2, 1.0)),
                                (("error", 1.0), (4, 1.0))])
             self.fail("Expected error")
-        except MergeConfigError, exception:
+        except InvalidInputException, exception:
             self.assertEquals(str(exception),
-                              "Attempted to merge missing column 'error'")
+                              "Missing column specified: 'error'")
