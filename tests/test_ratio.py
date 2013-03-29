@@ -51,14 +51,6 @@ class TestRatio(unittest.TestCase):
         self.assertEquals(ratio.describe_ingredient("flour"),
                           "1.00g or 1.90ml all purpose flour")
 
-    def test_describe_scaled_value(self):
-        """Test output of scaled recipe"""
-        ingredients, _ = test_data()
-        ratio = create_ratio(ingredients, [1, 2, 3])
-        ratio.set_scale(10)
-        self.assertEquals(ratio.describe_ingredient("flour"),
-                          "10.00g or 18.96ml all purpose flour")
-
     def test_describe_wholeunit_ualue(self):
         """Test descriptive output of whole-unit values (eggs in  this case)"""
         ingredients, _ = test_data()

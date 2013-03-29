@@ -45,10 +45,10 @@ class Statistics:
         
     def set_precision(self, precision):
         """Set precision (i.e. number of digits shown after decimal point)
-           for floating point values."""
+           for floating point as_percentages."""
         self._precision = precision
         
-    def _float_format(self):
+    def float_format(self):
         """String format for floats with correct precision"""
         return "%1." + "%df" % self._precision
     
@@ -62,14 +62,14 @@ class Statistics:
 
     def print_confidence_intervals(self, ratio, output):
         """Print confidence intervals for mean of each ingredient proportion"""
-        percentages = ratio.values()
+        percentages = ratio.as_percentages()
         for percentage, interval, ingredient in zip(percentages, self.intervals,
                                                     ratio.ingredients):
             upper_value = percentage + interval
-            upper = self._float_format() % upper_value
+            upper = self.float_format() % upper_value
             lower_value = percentage - interval
-            lower = self._float_format() % lower_value
-            mean = self._float_format() % percentage
+            lower = self.float_format() % lower_value
+            mean = self.float_format() % percentage
             text = "The " + str(ingredient) + " proportion "
             if interval == 0.0:
                 difference = 0.0

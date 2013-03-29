@@ -10,27 +10,31 @@ from statistics import calculate_statistics
 class RatioElement(object):
     """Formats an ingredient proportion for output"""
     
-    def __init__(self, value, ingredient, value_template):
+    def __init__(self, value, ingredient, ratio):
         self.value = value
         self.ingredient = ingredient
-        self.value_template = value_template
+        self.ratio = ratio
+        
+    def _float_format(self):
+        """Return float output format set for ratio"""
+        return self.ratio.float_format()
     
-    def _describe_grams_and_milliliters(self):
+    def _describe_grams_and_milliliters(self, scale):
         """Describe an ingredient proportion in grams and milliliters"""
-        value = self.value
+        value = self.value * scale
         ingredient = self.ingredient
-        grams = self.value_template % value
-        milliliters = self.value_template % ingredient.grams2milliliters(value)
+        grams = self._float_format() % value
+        milliliters = self._float_format() % ingredient.grams2milliliters(value)
         return grams + "g or " + milliliters + "ml %s" % ingredient.name()
 
     def _format_number(self, number):
         """Format float according to precision setting"""
-        return self.value_template % number
-        
-    def _describe_wholeunits(self):
+        return self._float_format() % number
+
+    def _describe_wholeunits(self, scale):
         """Describe an ingredient proportion in grams, milliliters and whole
            units"""
-        value = self.value
+        value = self.value * scale
         ingredient = self.ingredient
         template = "%sg, %sml or %s %s(s) where each %s is %sg"
         wholeunits = self._format_number(ingredient.grams2wholeunits(value))
@@ -42,24 +46,32 @@ class RatioElement(object):
         return template % (grams, milliliters, wholeunits, name, name,
                            grams_per_wholeunit)
 
-    def describe(self):
+    def __str__(self):
+        """Return the value as a formatted string"""
+        return self._format_number(self.value)
+
+    def scaled(self, scale):
+        """Scaled value"""
+        return self.value * scale
+      
+    def describe(self, scale):
         """Describe an ingredient proportion"""
         if self.ingredient.default_wholeunit_weight() == None:
-            return self._describe_grams_and_milliliters()
+            return self._describe_grams_and_milliliters(scale)
         else:
-            return self._describe_wholeunits()
+            return self._describe_wholeunits(scale)
 
 
 class Ratio(object):
     """Provides formatting for ingredient ratios and related statistics"""
     
     def __init__(self, ingredients, values):
-        self._values = values
         self.ingredients = ingredients
         self._precision = 2
-        self._scale = 1
         self._restrictions = []
         self._column_translator = ColumnTranslator(self.ingredients)
+        self._elements = [RatioElement(values[i], ingredients[i],
+                                       self) for i in range(len(values))]
 
     def _column_id_to_indexes(self, column_identifier):
         """Normalize column identifier to a column index"""
@@ -69,41 +81,30 @@ class Ratio(object):
                 "Attempted to restrict missing column '%s'" % column_identifier)
         return indexes
 
-    def _float_format(self):
-        """String format for floats with correct precision"""
-        return "%1." + "%df" % self._precision
-
+    def _values(self, scale=1):
+        """Return raw ratio values"""
+        for element in self._elements:
+            yield element.value * scale
+            
     def _restrict_total_weight(self, weight):
         """Yield ratio proportions with specific total weight. Returns scale
            applied."""
-        total_grams = sum(self._values)
-        scale = weight / float(total_grams)
-        return list(self._scaled_ratio(scale)), scale
+        total_grams = sum(self._values())
+        return weight / float(total_grams)
 
-    def _restrict_by_ingredient(self, ingredients_list, scale):
+    def _restrict_by_ingredient(self, scale):
         """Restrict a recipe based on individual ingredient/weight-limit
            specifications"""
         for column_index, weight_limit in self._restrictions:
-            if ingredients_list[column_index] > weight_limit:
-                new_scale = weight_limit / self._values[column_index]
+            if self._elements[column_index].scaled(scale) > weight_limit:
+                new_scale = weight_limit / self._elements[column_index].value
                 if new_scale < scale:
                     scale = new_scale
-        return list(self._scaled_ratio(scale))
+        return scale
 
-    def _element(self, index):
-        """Return a single _element of the ratio"""
-        return RatioElement(self._values[index] * self._scale,
-                          self.ingredients[index], self._float_format())
-    
-    def _scaled_ratio(self, scale):
-        """Yield ratio proportions with a specific scale applied"""
-        saved_scaling = self._scale
-        self.set_scale(scale)
-        try:
-            for i in range(0, len(self._values)):
-                yield self._element(i)
-        finally:
-            self.set_scale(saved_scaling)
+    def float_format(self):
+        """String format for floats with correct precision"""
+        return "%1." + "%df" % self._precision
 
     def set_restrictions(self, restrictions):
         """Individual ingredient weight restrictions"""
@@ -115,43 +116,40 @@ class Ratio(object):
 
     def len(self):
         """Return number of ratio elements"""
-        return len(self._values)
+        return len(self._elements)
             
     def set_precision(self, precision):
         """Set precision (i.e. number of digits shown after decimal point)
-           for floating point values."""
+           for floating point as_percentages."""
         self._precision = precision
     
-    def set_scale(self, scale):
-        """Set a scale for the ratio values."""
-        self._scale = scale
-        
     def list_ingredients(self):
         """List the ingredients in the same order as they will appear in the
            ratio."""
         return " (" + ":".join(str(c) for c in self.ingredients) + ")"
     
     def __str__(self):
-        return (":".join(self._float_format() % value \
-                    for value in self._values)) + self.list_ingredients()
+        return (":".join(str(element) \
+                    for element in self._elements)) + self.list_ingredients()
                     
     def describe_ingredient(self, column_id):
         """Describe individual ingredients"""
-        return "\n".join(self._element(index).describe() \
+        return "\n".join(self._elements[index].describe(scale=1) \
                          for index in self._column_id_to_indexes(column_id))
-                   
+    
     def recipe(self, weight):
         """Format the ingredient proportions as if for a recipe ingredient
            list. Also return total weight."""
-        ingredients_list, scale = self._restrict_total_weight(weight)
-        ingredients_list = self._restrict_by_ingredient(ingredients_list, scale)
-        total_weight = sum(ingredient.value for ingredient in ingredients_list)
-        return total_weight, "\n".join(ingredient.describe() \
-                         for ingredient in ingredients_list)
+        scale = self._restrict_total_weight(weight)
+        scale = self._restrict_by_ingredient(scale)
+        total_weight = sum(self._values(scale))
+        return total_weight, "\n".join(element.describe(scale) \
+                         for element in self._elements)
     
-    def values(self):
-        """Return ratio numeric values"""
-        return [v.value for v in self._restrict_total_weight(100)[0]]
+    def as_percentages(self):
+        """Return ratio values as percentages"""
+        scale =  self._restrict_total_weight(100)
+        return list(self._values(scale))
      
 def calculate_ratio_and_stats(ingredients, proportions, desired_interval=0.5):
     """Calculate ratio proportions and related statistics (confidence intervals
