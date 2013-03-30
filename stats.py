@@ -19,7 +19,7 @@ def parse_command_line():
         metavar="DIGITS")
     parser.add_option("-w", "--weight", type="int", dest="total_recipe_weight",
         help="total weight to use for example recipe in GRAMS "
-        "(default is %default)", default=100, metavar="GRAMS")
+        "(default is 100)", default=None, metavar="GRAMS")
     parser.add_option("-v", "--verbose", action="store_true", dest="verbose",
         default=False, help="output extra information")
     utils.add_include_option(parser)
@@ -109,6 +109,7 @@ class StatsMain(object):
 
 def run():
     """Run the script from the command line"""
+    import sys
     filenames, options, merge, restrictions = parse_command_line()
     distinct = options.distinct
     confidence = options.confidence
@@ -121,6 +122,11 @@ def run():
 
     if restrictions:
         script.set_restrictions(restrictions)
+        if total_recipe_weight is None:
+            total_recipe_weight = sys.maxint
+    else:
+        if total_recipe_weight is None:
+            total_recipe_weight = 100
 
     print script.main(ratio_precision, recipe_precision, total_recipe_weight,
                       verbose)
