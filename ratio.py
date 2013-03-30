@@ -10,7 +10,7 @@ class RatioElement(object):
     """Formats an ingredient proportion for output"""
     
     def __init__(self, value, ingredient, ratio):
-        self.value = value
+        self.value = float(value)
         self.ingredient = ingredient
         self.ratio = ratio
         
@@ -90,9 +90,13 @@ class Ratio(object):
     def _restrict_by_ingredient(self, scale):
         """Restrict a recipe based on individual ingredient/weight-limit
            specifications"""
-        for column_index, weight_limit in self._restrictions:
-            if self._elements[column_index].scaled(scale) > weight_limit:
-                new_scale = weight_limit / self._elements[column_index].value
+        for column_indexes, weight_limit in self._restrictions:
+            scaled_weight = sum(self._elements[index].scaled(scale) for \
+                                index in column_indexes)
+            unscaled_weight = sum(self._elements[index].value for \
+                                index in column_indexes)
+            if scaled_weight > weight_limit:
+                new_scale = weight_limit / unscaled_weight
                 if new_scale < scale:
                     scale = new_scale
         return scale
@@ -105,8 +109,8 @@ class Ratio(object):
         """Individual ingredient weight restrictions"""
         _restrictions = []
         for column_id, weight in restrictions:
-            for column_index in self._column_id_to_indexes(column_id):
-                _restrictions.append((column_index, weight))
+            indexes = self._column_id_to_indexes(column_id)
+            _restrictions.append((indexes, weight))
         self._restrictions = _restrictions
 
     def len(self):

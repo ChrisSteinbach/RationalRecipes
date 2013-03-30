@@ -18,6 +18,15 @@ def test_data():
     butter = array([3, 3, 3])
     return ingredients, zip(flour, egg, butter)
 
+def test_data_repeat_ingredient():
+    """Shared test data"""
+    ingredients = (FLOUR, EGG, BUTTER, BUTTER)
+    flour = array([1, 1, 1])
+    egg = array([2, 2, 2])
+    butter = array([3, 3, 3])
+    butter2 = array([3, 3, 3])
+    return ingredients, zip(flour, egg, butter, butter2)
+
 def create_ratio(ingredients, proportions, restrictions=None):
     """Wrapper for Ratio class creation"""
     ratio = Ratio(ingredients, proportions)
@@ -56,7 +65,7 @@ class TestRatio(unittest.TestCase):
         ingredients, _ = test_data()
         ratio = create_ratio(ingredients, [1, 2, 3])
         self.assertEquals(ratio.describe_ingredient("egg"),
-                        "2.00g, 1.69ml or 0.00 egg(s) where each egg is 53.00g")
+                        "2.00g, 1.69ml or 0.04 egg(s) where each egg is 53.00g")
 
     def test_recipe_by_total_weight(self):
         """Test output of a recipe ratio scaled to a total weight"""
@@ -81,7 +90,7 @@ class TestRatio(unittest.TestCase):
         self.assertEquals(ratio.recipe(weight=200)[1],
                           expected_recipe)
 
-    def test_retrict_weight_ny_name(self):
+    def test_retrict_weight_by_name(self):
         """Test output of a recipe ratio scaled to a total weight and then
            restricted on one ingredient"""
         ingredients, _ = test_data()
@@ -90,6 +99,19 @@ class TestRatio(unittest.TestCase):
         expected_recipe = """16g or 30ml all purpose flour
 32g, 27ml or 1 egg(s) where each egg is 53g
 47g or 47ml butter"""
+        self.assertEquals(ratio.recipe(weight=200)[1],
+                          expected_recipe)
+
+    def test_retrict_repeat_ingredient(self):
+        """Test output of a recipe ratio scaled to a total weight and then
+           restricted on one ingredient"""
+        ingredients, _ = test_data_repeat_ingredient()
+        ratio = create_ratio(ingredients, [1, 2, 3, 3], [("butter", 94)])
+        ratio.set_precision(0)
+        expected_recipe = """16g or 30ml all purpose flour
+31g, 27ml or 1 egg(s) where each egg is 53g
+47g or 46ml butter
+47g or 46ml butter"""
         self.assertEquals(ratio.recipe(weight=200)[1],
                           expected_recipe)
 
