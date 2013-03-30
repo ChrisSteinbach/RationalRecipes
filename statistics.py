@@ -3,6 +3,7 @@
 from difference import percentage_difference_from_mean
 import math
 import numpy
+from columns import ColumnTranslator
 
 
 Z_VALUE = 1.96 # represents a confidence level of 95%
@@ -18,21 +19,58 @@ def calculate_minimum_sample_sizes(std_deviations, means, desired_interval):
 
 def calculate_confidence_intervals(data, std_deviations):
     """Calculate confidence intervals for each ingredient"""
-    sample_size = len(data)
-    std_errors = tuple(std / math.sqrt(sample_size) for std in std_deviations)
-    return tuple(stderr * Z_VALUE for stderr in std_errors)
+    intervals = []
+    for column, std in zip(data, std_deviations):
+        sample_size = len(column)
+        std_error = std / math.sqrt(sample_size)
+        intervals.append(std_error * Z_VALUE)
+    return intervals
 
-def calculate_statistics(data, desired_interval=0.05):
+def create_zero_filter(ingredients, zero_columns):
+    """Convert column id list into specification for which columns should be
+       filtered for zeros"""
+    filter_map = {}
+    for i in range(len(ingredients)):
+        filter_map[i] = False
+    if zero_columns is None:
+        return filter_map
+    column_translator = ColumnTranslator(ingredients)
+    for column_id in zero_columns:
+        for index in column_translator.id_to_indexes(column_id):
+            filter_map[index] = True
+    return filter_map
+
+
+def filter_zeros(data, ingredients, zero_columns):
+    """Filter zero values according to specification"""
+    filter_map = create_zero_filter(ingredients, zero_columns)
+    new_data = []
+    for i in range(len(data)):
+        column = data[i]
+        if filter_map[i]:
+            column = list(value for value in column if float(value) != 0.0)
+            new_data.append(numpy.array(column))
+        else:
+            new_data.append(column)
+
+    return new_data
+
+def calculate_statistics(data, ingredients, desired_interval,
+                        zero_columns):
     """Calculate mean, confidence interval and minimum sample size for each
        ingredient. The "minimum sample size" is the sample size required to
        achieve a confidence interval that is within a certain percentage
        difference of the mean value (controlled by the 'desired_interval'
        argument) with a confidence level of 95%.
     """
-    data = numpy.array(data)
-    std_deviations = data.std(axis=0)
+    data = numpy.array(data).transpose()
+    data = filter_zeros(data, ingredients, zero_columns)
+    std_deviations = []
+    means = []
+    for column in data:
+        std_deviations.append(column.std())
+        means.append(column.mean())
     intervals = calculate_confidence_intervals(data, std_deviations)
-    means = data.mean(axis=0)
     minimum_sample_sizes = tuple(calculate_minimum_sample_sizes(std_deviations,
                                  means, desired_interval))
     return means, Statistics(intervals, minimum_sample_sizes)

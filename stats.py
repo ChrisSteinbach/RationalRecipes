@@ -30,8 +30,12 @@ def parse_command_line():
     utils.add_merge_option(parser)
     parser.add_option("-t", "--restrict", type="string",
         dest="restrictions", default=None,
-        help="restrict ingredients by weight, per ingredient where restrictions"
+        help="restrict ingredients by weight, per ingredient where RESTRICTIONS"
            " is col=weight[,col=weight]", metavar="RESTRICTIONS")
+    parser.add_option("-z", "--ignore-zeros", type="string",
+                      dest="ignorezeros", default=None,
+                      help="Ignore zero values where IGNOREZEROS is col,[col]",
+                      metavar="IGNOREZEROS")
     options, filenames = parser.parse_args()
     merge = utils.parse_column_merge(options.merge)
     restrictions = utils.parse_restrictions(options.restrictions)
@@ -43,13 +47,14 @@ def parse_command_line():
 class StatsMain(object):
     """Defines entry point and supporting methods for stats script"""
 
-    def __init__(self, filenames, distinct, merge, confidence):
+    def __init__(self, filenames, distinct, merge, confidence, zero_columns):
         self.distinct = distinct
         self.confidence = confidence
         self.restrictions = []
         _, self.ratio, self.stats, self.sample_size = utils.get_ratio_and_stats(
                                                     filenames, distinct, merge, 
-                                                    desired_interval=confidence)
+                                                    desired_interval=confidence,
+                                                    zero_columns=zero_columns)
 
     def set_restrictions(self, restrictions):
         """Set per ingredient weight restrictions""" 
@@ -113,7 +118,12 @@ def run():
     filenames, options, merge, restrictions = parse_command_line()
     distinct = options.distinct
     confidence = options.confidence
-    script = StatsMain(filenames, distinct, merge, confidence)
+
+    ignorezeros = []
+    if options.ignorezeros is not None:
+        ignorezeros = options.ignorezeros.split(",")
+
+    script = StatsMain(filenames, distinct, merge, confidence, ignorezeros)
     
     total_recipe_weight = options.total_recipe_weight
     ratio_precision = options.ratio_precision

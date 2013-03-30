@@ -4,10 +4,11 @@ from ratio import calculate_ratio_and_stats, Ratio
 from ingredient import FLOUR, EGG, BUTTER
 from numpy import array
 
-def calculate_ratio(ingredients, proportions, desired_interval=0.5):
+def calculate_ratio(ingredients, proportions, desired_interval=0.5,
+                    filter_zeros=None):
     """Calculate ratio proportions from input data."""
     _, ratio = calculate_ratio_and_stats(ingredients, proportions,
-                                         desired_interval)
+                                         desired_interval, filter_zeros)
     return ratio
 
 def test_data():
@@ -18,14 +19,14 @@ def test_data():
     butter = array([3, 3, 3])
     return ingredients, zip(flour, egg, butter)
 
-def test_data_repeat_ingredient():
+def test_data_with_zeros():
     """Shared test data"""
-    ingredients = (FLOUR, EGG, BUTTER, BUTTER)
+    ingredients = (FLOUR, EGG, BUTTER)
     flour = array([1, 1, 1])
     egg = array([2, 2, 2])
-    butter = array([3, 3, 3])
-    butter2 = array([3, 3, 3])
-    return ingredients, zip(flour, egg, butter, butter2)
+    butter = array([6, 0, 0])
+    return ingredients, zip(flour, egg, butter)
+
 
 def create_ratio(ingredients, proportions, restrictions=None):
     """Wrapper for Ratio class creation"""
@@ -44,6 +45,16 @@ class TestRatio(unittest.TestCase):
         ratio = calculate_ratio(ingredients, proportions)
         ratio.set_precision(0)
         self.assertEquals(str(ratio).split()[0], "1:2:3")
+
+    def test_filter_zeros(self):
+        """Calculate simple ratio from three ingredients and three identical
+        recipes"""
+        ingredients, proportions = test_data_with_zeros()
+        ratio = calculate_ratio(ingredients, proportions,
+                                filter_zeros=["butter"])
+        ratio.set_precision(0)
+        self.assertEquals(str(ratio).split()[0], "1:2:3")
+
 
     def test_precision(self):
         """Test output precision to two decimal places"""
@@ -105,7 +116,7 @@ class TestRatio(unittest.TestCase):
     def test_retrict_repeat_ingredient(self):
         """Test output of a recipe ratio scaled to a total weight and then
            restricted on one ingredient"""
-        ingredients, _ = test_data_repeat_ingredient()
+        ingredients = (FLOUR, EGG, BUTTER, BUTTER)
         ratio = create_ratio(ingredients, [1, 2, 3, 3], [("butter", 94)])
         ratio.set_precision(0)
         expected_recipe = """16g or 30ml all purpose flour
