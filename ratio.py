@@ -2,21 +2,19 @@
    and related information and statistics: ingredient proportions for recipe of
    a given total weight, confidence intervals and more.
 """
-from normalize import normalize_to_100g
 from columns import ColumnTranslator
-from statistics import calculate_statistics
 
 class RatioElement(object):
     """Formats an ingredient proportion for output"""
     
-    def __init__(self, value, ingredient, ratio):
+    def __init__(self, value, ingredient, settings):
         self.value = float(value)
         self.ingredient = ingredient
-        self.ratio = ratio
+        self.settings = settings
         
     def _float_format(self):
         """Return float output format set for ratio"""
-        return self.ratio.float_format()
+        return self.settings["float_format"]
     
     def _describe_grams_and_milliliters(self, scale):
         """Describe an ingredient proportion in grams and milliliters"""
@@ -66,11 +64,12 @@ class Ratio(object):
     
     def __init__(self, ingredients, values):
         self.ingredients = ingredients
-        self._precision = 2
+        self._settings = {}
+        self.set_precision(2)
         self._restrictions = []
         self._column_translator = ColumnTranslator(self.ingredients)
         self._elements = [RatioElement(values[i], ingredients[i],
-                                       self) for i in range(len(values))]
+                                    self._settings) for i in range(len(values))]
 
     def _column_id_to_indexes(self, column_identifier):
         """Normalize column identifier to a column index"""
@@ -101,10 +100,6 @@ class Ratio(object):
                     scale = new_scale
         return scale
 
-    def float_format(self):
-        """String format for floats with correct precision"""
-        return "%1." + "%df" % self._precision
-
     def set_restrictions(self, restrictions):
         """Individual ingredient weight restrictions"""
         _restrictions = []
@@ -119,8 +114,8 @@ class Ratio(object):
             
     def set_precision(self, precision):
         """Set precision (i.e. number of digits shown after decimal point)
-           for floating point as_percentages."""
-        self._precision = precision
+           for floating point percentages."""
+        self._settings["float_format"] = "%1." + "%df" % precision
     
     def list_ingredients(self):
         """List the ingredients in the same order as they will appear in the
@@ -149,14 +144,3 @@ class Ratio(object):
         """Return ratio values as percentages"""
         scale =  self._restrict_total_weight(100)
         return list(self._values(scale))
-     
-def calculate_ratio_and_stats(ingredients, proportions, zero_columns=None):
-    """Calculate ratio proportions and related statistics (confidence intervals
-       and minimum sample sizes) from input data."""
-    relative_proportions = list(normalize_to_100g(proportions))
-    means, statistics = \
-        calculate_statistics(relative_proportions, ingredients, zero_columns)
-    # Normalize relative to 100% of first ingredient
-    ratio = [means[i] / means[0] for i in xrange(0, len(ingredients))]
-    return statistics, Ratio(ingredients, ratio)
-

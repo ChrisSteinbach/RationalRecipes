@@ -3,7 +3,8 @@
 from read import read_files
 from normalize import to_grams
 from merge import merge_columns
-from ratio import calculate_ratio_and_stats
+from ratio import Ratio
+from statistics import calculate_statistics
 from errors import InvalidInputException
 
 def get_ratio_and_stats(filenames, distinct, merge, zero_columns=None):
@@ -11,14 +12,14 @@ def get_ratio_and_stats(filenames, distinct, merge, zero_columns=None):
     """
     files = [open(filename) for filename in filenames]
     ingredients, proportions = read_files(files)
-    all_proportions = to_grams(ingredients, proportions)
+    proportions = to_grams(ingredients, proportions)
     if distinct:
-        all_proportions = set(all_proportions)
-    ingredients, all_proportions = merge_columns(ingredients, all_proportions,
+        proportions = set(proportions)
+    ingredients, proportions = merge_columns(ingredients, proportions,
                                                  merge)
-    stats, ratio = calculate_ratio_and_stats(ingredients, all_proportions,
-                            zero_columns=zero_columns)
-    return ingredients, ratio, stats, len(all_proportions)
+    statistics = calculate_statistics(proportions, ingredients, zero_columns)
+    ratio = Ratio(ingredients, statistics.bakers_percentage())
+    return ingredients, ratio, statistics, len(proportions)
 
 def get_ratio(filenames, distinct, merge):
     """Parse input files to produce mean recipe ratio

@@ -1,13 +1,14 @@
 """Unit tests for create_ratio module"""
 import unittest
-from ratio import calculate_ratio_and_stats, Ratio
+from ratio import Ratio
+from statistics import calculate_statistics
 from ingredient import FLOUR, EGG, BUTTER
 from numpy import array
 
 def calculate_ratio(ingredients, proportions, filter_zeros=None):
     """Calculate ratio proportions from input data."""
-    _, ratio = calculate_ratio_and_stats(ingredients, proportions, filter_zeros)
-    return ratio
+    statistics = calculate_statistics(proportions, ingredients, filter_zeros)
+    return Ratio(ingredients, statistics.bakers_percentage())
 
 def test_data():
     """Shared test data"""

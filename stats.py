@@ -108,12 +108,12 @@ class StatsMain(object):
             return
         output.title("Recipe ratio with confidence intervals "
                      "(confidence level is 95%)")
-        self.stats.print_confidence_intervals(self.ratio, output)
+        self.stats.print_confidence_intervals(output)
         output.line()
         output.title("Minimum sample sizes needed for confidence "
                     "interval with %d%% difference and confidence level "
                     "of 95%%" % int(confidence * 100))
-        self.stats.print_min_sample_sizes(self.ratio, output)
+        self.stats.print_min_sample_sizes(output)
         output.line()
 
 def run():
