@@ -4,11 +4,9 @@ from ratio import calculate_ratio_and_stats, Ratio
 from ingredient import FLOUR, EGG, BUTTER
 from numpy import array
 
-def calculate_ratio(ingredients, proportions, desired_interval=0.5,
-                    filter_zeros=None):
+def calculate_ratio(ingredients, proportions, filter_zeros=None):
     """Calculate ratio proportions from input data."""
-    _, ratio = calculate_ratio_and_stats(ingredients, proportions,
-                                         desired_interval, filter_zeros)
+    _, ratio = calculate_ratio_and_stats(ingredients, proportions, filter_zeros)
     return ratio
 
 def test_data():

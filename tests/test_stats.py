@@ -37,7 +37,8 @@ def script_instance(merge_spec, restrictions=""):
     confidence = 0.05
     merge = utils.parse_column_merge(merge_spec)
     restrictions = utils.parse_restrictions(restrictions)
-    inst = stats.StatsMain(["tests/test.csv"], distinct, merge, confidence, [])
+    inst = stats.StatsMain(["tests/test.csv"], distinct, merge, [])
+    inst.set_desired_interval(confidence)
     inst.set_restrictions(restrictions)
     return inst
     

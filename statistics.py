@@ -55,13 +55,9 @@ def filter_zeros(data, ingredients, zero_columns):
 
     return new_data
 
-def calculate_statistics(data, ingredients, desired_interval,
-                        zero_columns):
+def calculate_statistics(data, ingredients, zero_columns):
     """Calculate mean, confidence interval and minimum sample size for each
-       ingredient. The "minimum sample size" is the sample size required to
-       achieve a confidence interval that is within a certain percentage
-       difference of the mean value (controlled by the 'desired_interval'
-       argument) with a confidence level of 95%.
+       ingredient.
     """
     data = numpy.array(data).transpose()
     data = filter_zeros(data, ingredients, zero_columns)
@@ -71,17 +67,17 @@ def calculate_statistics(data, ingredients, desired_interval,
         std_deviations.append(column.std())
         means.append(column.mean())
     intervals = calculate_confidence_intervals(data, std_deviations)
-    minimum_sample_sizes = tuple(calculate_minimum_sample_sizes(std_deviations,
-                                 means, desired_interval))
-    return means, Statistics(intervals, minimum_sample_sizes)
+    return means, Statistics(intervals, std_deviations, means)
 
 
 class Statistics:
     """Calculate statistics"""
     
-    def __init__(self, intervals, min_sample_sizes):
+    def __init__(self, intervals, std_deviations, means):
         self.intervals = intervals
-        self.min_sample_sizes = min_sample_sizes
+        self.std_deviations = std_deviations
+        self.desired_interval = 0.05
+        self.means = means
         self._precision = 2
         
     def set_precision(self, precision):
@@ -89,6 +85,10 @@ class Statistics:
            for floating point as_percentages."""
         self._precision = precision
         
+    def set_desired_interval(self, desired_interval):
+        """Set desired confidence interval"""
+        self.desired_interval = desired_interval
+
     def float_format(self):
         """String format for floats with correct precision"""
         return "%1." + "%df" % self._precision
@@ -96,10 +96,13 @@ class Statistics:
     def print_min_sample_sizes(self, ratio, output):
         """Print (pre-calculated) minimum samples size for each ingredient
            proportion mean"""
+        min_sample_sizes = tuple(calculate_minimum_sample_sizes(
+                                        self.std_deviations,
+                                        self.means, self.desired_interval))
         for i in range(0, ratio.len()):
             ingredient = str(ratio.ingredients[i])
             output.line("Minimum sample size for %s proportion: %d" % \
-              (ingredient, self.min_sample_sizes[i]))
+              (ingredient, min_sample_sizes[i]))
 
     def print_confidence_intervals(self, ratio, output):
         """Print confidence intervals for mean of each ingredient proportion"""

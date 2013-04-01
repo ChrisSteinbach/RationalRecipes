@@ -150,14 +150,12 @@ class Ratio(object):
         scale =  self._restrict_total_weight(100)
         return list(self._values(scale))
      
-def calculate_ratio_and_stats(ingredients, proportions, desired_interval=0.5,
-                              zero_columns=None):
+def calculate_ratio_and_stats(ingredients, proportions, zero_columns=None):
     """Calculate ratio proportions and related statistics (confidence intervals
        and minimum sample sizes) from input data."""
     relative_proportions = list(normalize_to_100g(proportions))
     means, statistics = \
-        calculate_statistics(relative_proportions, ingredients,
-                             desired_interval, zero_columns)
+        calculate_statistics(relative_proportions, ingredients, zero_columns)
     # Normalize relative to 100% of first ingredient
     ratio = [means[i] / means[0] for i in xrange(0, len(ingredients))]
     return statistics, Ratio(ingredients, ratio)
