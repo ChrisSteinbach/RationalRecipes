@@ -8,18 +8,18 @@ class RatioElement(object):
     """Formats an ingredient proportion for output"""
     
     def __init__(self, value, ingredient, settings):
-        self.value = float(value)
-        self.ingredient = ingredient
-        self.settings = settings
+        self._value = float(value)
+        self._ingredient = ingredient
+        self._settings = settings
         
     def _float_format(self):
         """Return float output format set for ratio"""
-        return self.settings["float_format"]
+        return self._settings["float_format"]
     
     def _describe_grams_and_milliliters(self, scale):
         """Describe an ingredient proportion in grams and milliliters"""
-        value = self.value * scale
-        ingredient = self.ingredient
+        value = self.value(scale)
+        ingredient = self._ingredient
         grams = self._float_format() % value
         milliliters = self._float_format() % ingredient.grams2milliliters(value)
         return grams + "g or " + milliliters + "ml %s" % ingredient.name()
@@ -31,8 +31,8 @@ class RatioElement(object):
     def _describe_wholeunits(self, scale):
         """Describe an ingredient proportion in grams, milliliters and whole
            units"""
-        value = self.value * scale
-        ingredient = self.ingredient
+        value = self.value(scale)
+        ingredient = self._ingredient
         template = "%sg, %sml or %s %s(s) where each %s is %sg"
         wholeunits = self._format_number(ingredient.grams2wholeunits(value))
         grams_per_wholeunit = \
@@ -45,15 +45,15 @@ class RatioElement(object):
 
     def __str__(self):
         """Return the value as a formatted string"""
-        return self._format_number(self.value)
+        return self._format_number(self._value)
 
-    def scaled(self, scale):
+    def value(self, scale=1):
         """Scaled value"""
-        return self.value * scale
+        return self._value * scale
       
     def describe(self, scale):
         """Describe an ingredient proportion"""
-        if self.ingredient.default_wholeunit_weight() == None:
+        if self._ingredient.default_wholeunit_weight() == None:
             return self._describe_grams_and_milliliters(scale)
         else:
             return self._describe_wholeunits(scale)
@@ -78,7 +78,7 @@ class Ratio(object):
     def _values(self, scale=1):
         """Return raw ratio values"""
         for element in self._elements:
-            yield element.scaled(scale)
+            yield element.value(scale)
             
     def _restrict_total_weight(self, weight):
         """Yield ratio proportions with specific total weight. Returns scale
@@ -90,9 +90,9 @@ class Ratio(object):
         """Restrict a recipe based on individual ingredient/weight-limit
            specifications"""
         for column_indexes, weight_limit in self._restrictions:
-            scaled_weight = sum(self._elements[index].scaled(scale) for \
+            scaled_weight = sum(self._elements[index].value(scale) for \
                                 index in column_indexes)
-            unscaled_weight = sum(self._elements[index].value for \
+            unscaled_weight = sum(self._elements[index].value() for \
                                 index in column_indexes)
             if scaled_weight > weight_limit:
                 new_scale = weight_limit / unscaled_weight
