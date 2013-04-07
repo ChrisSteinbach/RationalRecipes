@@ -98,6 +98,7 @@ CORNSTARCH = Ingredient(["cornstarch"], 0.640000)
 POTATO_STARCH = Ingredient(["potato starch"], 0.72)
 HONEY = Ingredient(["honey"], 1.3)
 SUGAR = Ingredient(["granulated sugar", "sugar"], 0.843880)
+BROWN_SUGAR = Ingredient(["brown sugar"], 0.93)
 ICING_SUGAR = Ingredient(["icing sugar", " powder sugar",
    "confectioner's sugar"], 0.506329)
 CORN_SYRUP = Ingredient(["corn syrup"], 1.3688)
