@@ -33,8 +33,6 @@ def create_zero_filter(ingredients, zero_columns):
     filter_map = {}
     for i in range(len(ingredients)):
         filter_map[i] = False
-    if zero_columns is None:
-        return filter_map
     column_translator = ColumnTranslator(ingredients)
     for column_id in zero_columns:
         for index in column_translator.id_to_indexes(column_id):
@@ -42,9 +40,8 @@ def create_zero_filter(ingredients, zero_columns):
     return filter_map
 
 
-def filter_zeros(data, ingredients, zero_columns):
+def filter_zeros(data, filter_map):
     """Filter zero values according to specification"""
-    filter_map = create_zero_filter(ingredients, zero_columns)
     new_data = []
     for i in range(len(data)):
         column = data[i]
@@ -56,20 +53,47 @@ def filter_zeros(data, ingredients, zero_columns):
 
     return new_data
 
-def calculate_statistics(data, ingredients, zero_columns):
-    """Calculate mean, confidence interval and minimum sample size for each
-       ingredient.
-    """
-    data = list(normalize_to_100g(data))
-    data = numpy.array(data).transpose()
-    data = filter_zeros(data, ingredients, zero_columns)
+def apply_defaults(data, defaults, filter_map):
+    """Apply default values to zero columns according to settings"""
+    new_data = []
+    total = sum(defaults)
+    percentages = [default/total for default in defaults]
+    col_range = range(len(data[0]))
+    for row in data:
+        for i in col_range:
+            if filter_map[i] and row[i] == 0:
+                row = [column - (column * percentages[i]) for column in row]
+        for i in col_range:
+            if filter_map[i] and row[i] == 0:
+                row[i] = percentages[i] * 100
+        new_data.append(row)
+    return new_data
+
+def calculate_variables(data):
+    """Calculate standard deviation, mean and confidence interval vectors"""
     std_deviations = []
     means = []
     for column in data:
         std_deviations.append(column.std())
         means.append(column.mean())
     intervals = calculate_confidence_intervals(data, std_deviations)
-    return Statistics(ingredients, intervals, std_deviations, means)
+    return intervals, std_deviations, means
+
+def calculate_statistics(raw_data, ingredients, zero_columns):
+    """Calculate mean, confidence interval and minimum sample size for each
+       ingredient.
+    """
+    raw_data = list(normalize_to_100g(raw_data))
+    data = numpy.array(raw_data).transpose()
+    if zero_columns is not None and len(zero_columns) > 0:
+        filter_map = create_zero_filter(ingredients, zero_columns)
+        data = filter_zeros(data, filter_map)
+        _, _, defaults = calculate_variables(data)
+        data = apply_defaults(raw_data, defaults, filter_map)
+        return calculate_statistics(data, ingredients, None)
+    else:
+        intervals, std_deviations, means = calculate_variables(data)
+        return Statistics(ingredients, intervals, std_deviations, means)
 
 
 class Statistics:
