@@ -4,18 +4,18 @@ Recipe ratio statistical analysis and comparison tool
 
 ----------------------
 
-### stats
+## stats
 
 A command for calculating mean recipe ratios from recipe data provided in heterageneous units of measure; both volume
 and weight based.
 
 Also prints the ratio in the form of a recipe ingredient list.
 
-## Usage                                                                   
+### Usage                                                                   
                                                                                 
 ``` $ stats [options] recipe.csv [recipe2.csv]```                                   
                                                                                 
-## Options                                                                      
+### Options                                                                      
                                                                                 
 ```  -h, --help```            Show help message.
 
@@ -47,7 +47,7 @@ duplicates are removed.
 Desired confidence interval expressed as a percentage difference from zero to the mean, default is 0.05 (5%). This option
 only has effect when the --verbose setting is used to show required sample sizes.
 
-### Merging columns
+#### Merging columns
 
 ```  -m MAPPING, --merge=MAPPING```                                                  
 
