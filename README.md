@@ -11,10 +11,42 @@ and weight based.
 
 Also prints the ratio in the form of a recipe ingredient list.
 
+### Example output
+
+```
+ $ stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water
+
+Recipe ratio in units of weight is 1.00:3.56:1.02:0.17:0.02 (all purpose flour:milk:egg:butter:salt)
+
+1000g Recipe
+------------
+173g or 329ml all purpose flour
+618g or 618ml milk
+177g, 150ml or 3 egg(s) where each egg is 53g
+29g or 29ml butter
+3g or 2ml salt
+
+Note: these calculations are based on 200 distinct recipe proportions. Duplicates have been removed.
+```
+
 ### Usage                                                                   
                                                                                 
-``` $ stats [options] recipe.csv [recipe2.csv]```                                   
-                                                                                
+``` $ stats [options] recipe.csv [recipe2.csv]``` 
+
+The CSV files must be of the form,
+
+```
+Flour, Egg, Milk, Butter, Salt
+1c, 1 large, 3 cups, 2 tbsp, 0.5 tsp
+200g, 55gram, 0.7l, 0, 1 pinch
+16oz, 2.5 medium, 2.5c, 1 stick, 0
+```
+
+As you can see, a good deal of freedom is given, so for example "1c" is as good as "1 cup". Weight and volumne based measures
+can be mixed freely. If an ingredient is missing, simply specifiy 0 without any unit of measure.
+
+If more than one CSV file is given, the column headings must be identical.
+
 ### Options                                                                      
                                                                                 
 ```  -h, --help```            Show help message.
