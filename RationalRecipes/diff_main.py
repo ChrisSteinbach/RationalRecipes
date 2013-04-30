@@ -1,11 +1,10 @@
 #!/usr/bin/python
 """Compare recipe ratios showing percentage change or percentage difference"""
 
+import RationalRecipes.utils as utils
+from RationalRecipes.output import Output
+from RationalRecipes.difference import percentage_change, percentage_difference
 import sys
-import utils
-from optparse import OptionParser
-from output import Output
-from difference import percentage_change, percentage_difference
 
 def get_ratios_to_compare(first_filename, remaining_filenames, distinct, merge):
     """Get ratios to compare from input files"""
@@ -74,35 +73,3 @@ class DiffMain(object):
         output.line("Ratio for data set 2 in units of weight is %s" % \
                     self.ratio2)
         output.line()
-    
-   
-def parse_command_line():
-    """Parse command line arguments"""
-    usage = "usage: %prog [options] csv-file1 csv-file2 [csv-file3]"
-    parser = OptionParser(usage=usage)
-    parser.add_option("-p", "--precision", type="int",
-        dest="precision", help="number of DIGITS to show after decimal "
-        "point for percentage values (default is %default)", default=0,
-        metavar="DIGITS")
-    utils.add_include_option(parser)
-    parser.add_option("-c", "--change", action="store_true",
-        dest="show_percentage_change", default=False,
-        help="show percentage change instead of percentage difference")
-    utils.add_merge_option(parser)
-    options, args = parser.parse_args()
-    merge = utils.parse_column_merge(options.merge)
-    if len(args) < 2:
-        parser.error("no input file provided")
-    first_filename = args[0:1]
-    remaining_filenames = args[1:]
-    return first_filename, remaining_filenames, options, merge
-   
-def run():
-    """Run the script from the command line"""
-    first_filename, remaining_filenames, options, merge = parse_command_line()
-    script = DiffMain(first_filename, remaining_filenames, options.distinct,
-                      merge)
-    print script.main(options.show_percentage_change, options.precision)
-    
-if __name__ == "__main__":
-    run()

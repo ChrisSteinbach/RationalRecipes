@@ -1,6 +1,6 @@
 """Unit tests for output utility class"""
 import unittest
-from output import Output
+from RationalRecipes.output import Output
 
 class TestOutput(unittest.TestCase):
     """Output unit tests"""

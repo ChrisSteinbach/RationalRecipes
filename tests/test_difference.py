@@ -1,10 +1,10 @@
 """Unit tests for percentage difference and change"""
 import unittest
-from difference import calc_percentage_change
-from difference import calc_percentage_difference
-from difference import percentage_difference_from_mean
-from difference import percentage_difference
-from ingredient import FLOUR, EGG
+from RationalRecipes.difference import calc_percentage_change
+from RationalRecipes.difference import calc_percentage_difference
+from RationalRecipes.difference import percentage_difference_from_mean
+from RationalRecipes.difference import percentage_difference
+from RationalRecipes.ingredient import FLOUR, EGG
 from tests.test_ratio import create_ratio, test_data
 
 

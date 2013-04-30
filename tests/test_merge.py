@@ -1,9 +1,9 @@
 """Test column merge"""
+from RationalRecipes.ingredient import SALT, FLOUR, BUTTER, SUGAR, WATER
+from RationalRecipes.merge import merge_columns, MergeConfigError
+from RationalRecipes.errors import InvalidInputException
 import unittest
-from ingredient import SALT, FLOUR, BUTTER, SUGAR, WATER
-from merge import merge_columns, MergeConfigError
 from numpy import array
-from errors import InvalidInputException
 
 class TestMerge(unittest.TestCase):
     """Test class for column merge"""

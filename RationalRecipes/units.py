@@ -1,7 +1,7 @@
 """Volume, weight and whole units of measure. Each unit is capable of conversion
    to grams.
 """
-from errors import InvalidInputException
+from RationalRecipes.errors import InvalidInputException
 
 class Factory(object):
     """Registry and factory for all units of measure."""

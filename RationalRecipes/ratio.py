@@ -2,7 +2,7 @@
    and related information and statistics: ingredient proportions for recipe of
    a given total weight, confidence intervals and more.
 """
-from columns import ColumnTranslator
+from RationalRecipes.columns import ColumnTranslator
 
 class RatioElement(object):
     """Formats an ingredient proportion for output"""

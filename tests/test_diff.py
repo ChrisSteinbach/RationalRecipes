@@ -1,6 +1,6 @@
 """Unit tests for diff script"""
-import utils
-from diff import DiffMain
+import RationalRecipes.utils as utils
+from RationalRecipes import DiffMain
 import tests.test_utils as test_utils
 
 PERCENT_CHANGE_EXPECTED_OUTPUT = """

@@ -1,11 +1,11 @@
 """Tests for reading and parsing of input files"""
+from RationalRecipes.ingredient import FLOUR, SUGAR
+from RationalRecipes.units import CUP, GRAM, METRIC_CUP
+from RationalRecipes.read import parse_file_contents, value_and_unit, read_files
+from RationalRecipes.errors import InvalidInputException
+from StringIO import StringIO
 import unittest
 from tests.test_utils import normalize
-from ingredient import FLOUR, SUGAR
-from units import CUP, GRAM, METRIC_CUP
-from read import parse_file_contents, value_and_unit, read_files
-from StringIO import StringIO
-from errors import InvalidInputException
 
 class TestReadFiles(unittest.TestCase):
     """Unit tests for reading and parsing input files"""

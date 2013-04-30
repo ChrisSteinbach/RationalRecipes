@@ -1,6 +1,6 @@
 """Unit tests for ingredient classes"""
 import unittest
-from ingredient import FLOUR, EGG
+from RationalRecipes.ingredient import FLOUR, EGG
 
 class TestIngredient(unittest.TestCase):
     """Unit tests for ingredient classes"""

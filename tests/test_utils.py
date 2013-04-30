@@ -1,6 +1,6 @@
 """Utility functions and classes for test cases"""
-from normalize import to_grams, normalize_to_100g
-from ingredient import WATER
+from RationalRecipes.normalize import to_grams, normalize_to_100g
+from RationalRecipes.ingredient import WATER
 from unittest import TestCase
 
 def normalize(ingredients, columns):

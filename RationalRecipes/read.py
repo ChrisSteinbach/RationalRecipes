@@ -1,9 +1,9 @@
 """Read and parse input files"""
 
-from ingredient import Factory as IngredientFactory
-from units import Factory as UnitFactory, GRAM
+from RationalRecipes.ingredient import Factory as IngredientFactory
+from RationalRecipes.units import Factory as UnitFactory, GRAM
+from RationalRecipes.errors import InvalidInputException
 import re
-from errors import InvalidInputException
 
 def read_ingredients_from_header(header):
     """The header line of each input file is a comma separated string of

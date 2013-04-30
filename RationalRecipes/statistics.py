@@ -1,10 +1,10 @@
 """Calculation and formatting of statistics"""
 
-from difference import percentage_difference_from_mean
+from RationalRecipes.difference import percentage_difference_from_mean
+from RationalRecipes.normalize import normalize_to_100g
+from RationalRecipes.columns import ColumnTranslator
 import math
 import numpy
-from normalize import normalize_to_100g
-from columns import ColumnTranslator
 
 
 Z_VALUE = 1.96 # represents a confidence level of 95%

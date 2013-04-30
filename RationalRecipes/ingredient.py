@@ -91,6 +91,8 @@ SALT = Ingredient(["salt"], 1.2658)
 BUTTER = Ingredient(["butter"], 1.012658, {"STICK":113.398, "CUBE":56.699,
                 "KNOB":30.37974})
 GRATED_CHEESE = Ingredient(["grated cheese"], 0.379747)
+GRATED_PARMESAN = Ingredient(["grated parmesan"], 0.42)
+RICOTTA = Ingredient(["ricotta", "ricotta cheese"], 0.93)
 COCOA = Ingredient(["cocoa"], 1.388888)
 CREAM = Ingredient(["cream"], 0.777777)
 SOUR_CREAM = Ingredient(["sour cream"], 0.811537)
