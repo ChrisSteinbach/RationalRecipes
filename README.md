@@ -49,35 +49,83 @@ If more than one CSV file is given, the column headings must be identical.
 
 ### Options                                                                      
                                                                                 
-```  -h, --help```            Show help message.
+```  -h, --help```            Prints a summary of the options described below..
+
+-----
 
 ```  -p DIGITS, --precision=DIGITS```                                                 
 
 Number of digits to show after decimal point for ratio values (default is 2).
 
+-------
+
 ```  -r DIGITS, --recipe-precision=DIGITS```
 
 Number of digits to show after decimal point for recipe values (default is 0).                           
+
+-----
 
 ```  -w GRAMS, --weight=GRAMS```                                                    
 
 Restrict the total weight to use for the printed recipe. Weight is given in grams (default is 100g).
 
+-----
+
 ```  -v, --verbose```
 
 Show confidence intervals and the sample size that is required to reach a confidence interval that is a certain percentage
 difference from the mean. The default value for the desired difference-from-mean is 5%, but may be adjusted using the
---confidence-interval option.
+--confidence-interval option. Here is an example of how the verbose output looks,
+
+-------
+
+```
+ $ stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water -v
+
+Recipe ratio in units of weight is 1.00:3.56:1.02:0.17:0.02 (all purpose flour:milk:egg:butter:salt)
+
+Recipe ratio with confidence intervals (confidence level is 95%)
+----------------------------------------------------------------
+The all purpose flour proportion is between 16.68% and 18.00% (the interval is 4% of the mean proportion: 17.34%)
+The milk proportion is between 60.67% and 62.84% (the interval is 2% of the mean proportion: 61.75%)
+The egg proportion is between 16.98% and 18.49% (the interval is 4% of the mean proportion: 17.74%)
+The butter proportion is between 2.40% and 3.38% (the interval is 17% of the mean proportion: 2.89%)
+The salt proportion is between 0.24% and 0.32% (the interval is 13% of the mean proportion: 0.28%)
+
+Minimum sample sizes needed for confidence interval with 5% difference and confidence level of 95%
+--------------------------------------------------------------------------------------------------
+Minimum sample size for all purpose flour proportion: 115
+Minimum sample size for milk proportion: 25
+Minimum sample size for egg proportion: 146
+Minimum sample size for butter proportion: 2300
+Minimum sample size for salt proportion: 1399
+
+1000g Recipe
+------------
+173g or 329ml all purpose flour
+618g or 618ml milk
+177g, 150ml or 3 egg(s) where each egg is 53g
+29g or 29ml butter
+3g or 2ml salt
+
+Note: these calculations are based on 200 distinct recipe proportions. Duplicates have been removed.
+```
+
+-----
 
 ```  -i, --include```
 
 Include duplicate ingredient proportions from the input data when calculating the recipe statistics. By default
 duplicates are removed.
 
+-----
+
 ```  -c CONFIDENCE, --confidence-interval=CONFIDENCE```
 
 Desired confidence interval expressed as a percentage difference from zero to the mean, default is 0.05 (5%). This option
 only has effect when the --verbose setting is used to show required sample sizes.
+
+-----
 
 #### Merging columns
 
@@ -121,6 +169,8 @@ restrictions.
 
 As with the column merge option (see above) it is possible to specify ingredient names containing spaces using either the
 column index (starting at zero) or quotation marks.
+
+-----
 
 ```-z IGNOREZEROS, --ignore-zeros=IGNOREZEROS```
 
