@@ -185,6 +185,24 @@ This is useful for ingredients that are frequently missed out from recipes, salt
 
 ## diff command
 
+### Example output
+
+```
+ $ diff sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv 
+
+Ratio for data set 1 in units of weight is 1.00:1.86:0.12:0.75:0.18:0.01 (all purpose flour:milk:water:egg:butter:salt)
+Ratio for data set 2 in units of weight is 1.00:2.17:0.22:1.17:0.23:0.01 (all purpose flour:milk:water:egg:butter:salt)
+
+Percentage difference between salt proportions 58%
+Percentage difference between water proportions 40%
+Percentage difference between egg proportions 24%
+Percentage difference between all purpose flour proportions 20%
+Percentage difference between milk proportions 5%
+Percentage difference between butter proportions 5%
+
+Overall percentage difference = 25%
+```
+
 ### Usage
 
 ``` $ diff [options] recipe1.csv recipe2.csv [recipe3.csv]```
@@ -212,7 +230,23 @@ duplicates are removed.
 
 ```-c, --change```
 
-Show percentage change (percentage difference is default)
+Show percentage change (percentage difference is default). Here is how the output looks with this option enabled,
+
+```
+ $ diff -c sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv 
+
+Ratio for data set 1 in units of weight is 1.00:1.86:0.12:0.75:0.18:0.01 (all purpose flour:milk:water:egg:butter:salt)
+Ratio for data set 2 in units of weight is 1.00:2.17:0.22:1.17:0.23:0.01 (all purpose flour:milk:water:egg:butter:salt)
+
+The salt proportion has increased by 82% from data set 1 to 2
+The water proportion has increased by 50% from data set 1 to 2
+The egg proportion has increased by 27% from data set 1 to 2
+The all purpose flour proportion has decreased by 19% from data set 1 to 2
+The butter proportion has increased by 5% from data set 1 to 2
+The milk proportion has decreased by 5% from data set 1 to 2
+
+Overall percentage difference = 25%
+```
 
 ------
 
