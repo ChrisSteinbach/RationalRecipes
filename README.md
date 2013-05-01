@@ -4,7 +4,7 @@ Recipe ratio statistical analysis and comparison tool
 
 ----------------------
 
-## stats
+## stats command
 
 A command for calculating mean recipe ratios from recipe data provided in heterageneous units of measure; both volume
 and weight based.
@@ -180,3 +180,42 @@ column names or indexes. For example, the following specifies that missing value
 ```-z salt,sugar```
 
 This is useful for ingredients that are frequently missed out from recipes, salt being the prime example.
+
+-------
+
+## diff command
+
+### Usage
+
+``` $ diff [options] recipe1.csv recipe2.csv [recipe3.csv]```
+
+### Options
+
+```  -h, --help```            Prints a summary of the options described below..
+
+-----
+
+```-p DIGITS, --precision=DIGITS```
+
+Number of digits to show after decimal point for percentage values (default is 0)
+
+------
+
+
+```  -i, --include```
+
+Include duplicate ingredient proportions from the input data when calculating the recipe statistics. By default
+duplicates are removed.
+
+-----
+
+
+```-c, --change```
+
+Show percentage change (percentage difference is default)
+
+------
+
+```  -m MAPPING, --merge=MAPPING```
+
+Same as for ```stats``` command (see above).
