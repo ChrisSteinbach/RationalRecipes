@@ -83,9 +83,22 @@ class Ingredient(object):
     
 MILK = Ingredient(["milk"], 1)
 WATER = Ingredient(["water"], 1)
+RUM = Ingredient(["rum"], 1)
+JUICE = Ingredient(["juice"], 1)
 EGG = Ingredient(["egg", "eggs"], 1.181592, {"XL":67, "LARGE":60,
                 "MEDIUM":53, "SMALL":46, "EU LARGE":59, "EU MEDIUM":52,
                 "EU SMALL":45, "EU XL":66}, "MEDIUM")
+PC_YOLK = 0.31
+EGG_YOLK = Ingredient(["egg yolk", "yolk"], 1.03, {"XL":67*0.31, "LARGE":60*0.31,
+                "MEDIUM":53*0.31, "SMALL":46*0.31, "EU LARGE":59*0.31, "EU MEDIUM":52*0.31,
+                "EU SMALL":45*0.31, "EU XL":66*0.31}, "MEDIUM")
+PC_WHITE = 0.58
+EGG_YOLK = Ingredient(["egg white"], 1.03, {"XL":67*0.58, "LARGE":60*0.58,
+                "MEDIUM":53*0.58, "SMALL":46*0.58, "EU LARGE":59*0.58, "EU MEDIUM":52*0.58,
+                "EU SMALL":45*0.58, "EU XL":66*0.58}, "MEDIUM")
+APPLE = Ingredient(["apple", "apples"], 1.181592)
+RAISIN = Ingredient(["raisin", "raisins"], 1.181592)
+PEEL = Ingredient(["peel"], 1.181592)
 FLOUR = Ingredient(["all purpose flour", "plain flour", "flour"], 0.527426)
 SALT = Ingredient(["salt"], 1.2658)
 BUTTER = Ingredient(["butter"], 1.012658, {"STICK":113.398, "CUBE":56.699,
@@ -100,19 +113,30 @@ CORNSTARCH = Ingredient(["cornstarch"], 0.640000)
 POTATO_STARCH = Ingredient(["potato starch"], 0.72)
 HONEY = Ingredient(["honey"], 1.3)
 SUGAR = Ingredient(["granulated sugar", "sugar"], 0.843880)
+MOLASSES = Ingredient(["molasses", "black treacle"], 1.42)
 BROWN_SUGAR = Ingredient(["brown sugar"], 0.93)
 ICING_SUGAR = Ingredient(["icing sugar", " powder sugar",
    "confectioner's sugar"], 0.506329)
 CORN_SYRUP = Ingredient(["corn syrup"], 1.3688)
-CHOCOLATE_70_PERCENT = Ingredient(["chocolate 70 percent"], 0.731228)
+MALT_EXTRACT = Ingredient(["malt extract", "malt syrup"], 1.403281939)
+CHOCOLATE_70_PERCENT = Ingredient(["chocolate 70 percent", "dark chocolate"],
+                                  0.731228)
 VANILLA_EXTRACT = Ingredient(["vanilla extract"], 0.879165)
 BLUEBERRIES = Ingredient(["blueberries"], 0.625559)
 BAKING_SODA = Ingredient(["baking soda", "bicarbonate", "bicarbonate of soda"],
                          0.934112)
+VEG_SHORTENING = Ingredient(["vegetable shortening", "crisco"], 0.87)
 BAKING_POWDER = Ingredient(["baking powder"], 0.934112)
 BUTTER_MILK = Ingredient(["buttermilk", "butter milk"], 1.035554)
 CARDAMOM = Ingredient(["ground cardamom", "cardamom"], 0.39)
+CARDAMOM_SEED = Ingredient(["cardamom seed", "cardamom seeds"], 0.6509)
 CINNAMON = Ingredient(["ground cinnamon", "cinnamon"], 0.53)
+CLOVES = Ingredient(["ground cloves", "cloves"], 0.53)
+GINGER = Ingredient(["ground ginger"], 0.53)
+ALL_SPICE = Ingredient(["all spice"], 0.53)
+NUTMEG = Ingredient(["ground nutmeg", "nutmeg"], 0.47)
+RICE = Ingredient(["rice"], 0.801688)
+YEAST = Ingredient(["fresh yeast"], 1.0354)
 
 # Milliliter conversion for potatoes assumes shredded (i.e grated) potatoes
 POTATO = Ingredient(["potato", "potatoes", "shredded potato", "grated potato"],

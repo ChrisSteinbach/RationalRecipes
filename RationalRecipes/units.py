@@ -70,7 +70,7 @@ US_PINT = VolumeUnit(["US pint", "pint", "pints", "pt", "us_pint"], 473.176)
 IMP_PINT = VolumeUnit(["imperial pint", "uk pint", "imp_pint"], 568.261)
 US_FLOZ = VolumeUnit(["US fluid ounce", "us_floz", "fluid ounce", "fl oz",
                       "fl. oz"], 29.5735)
-IMP_FLOZ = VolumeUnit(["imperial fluid ounce", "uk fluid ounce", "imp_floz"],
+IMP_FLOZ = VolumeUnit(["imperial fluid ounce", "uk fluid ounce", "impfloz"],
                       28.4131)
 ML = VolumeUnit(["ml", "milliliter", "milliliters"], 1)
 KRM = VolumeUnit(["krm"], 1)
