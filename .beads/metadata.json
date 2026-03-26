@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "RationalRecipes",
+  "project_id": "d8398882-55a4-4164-9fad-245f288d2942"
+}

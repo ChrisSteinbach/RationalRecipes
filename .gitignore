@@ -36,3 +36,7 @@ nosetests.xml
 
 # Vim temp files
 *.sw[op]
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
