@@ -12,9 +12,9 @@ def get_ratio_and_stats(filenames, distinct, merge, zero_columns=None):
     """
     files = [open(filename) for filename in filenames]
     ingredients, proportions = read_files(files)
-    proportions = to_grams(ingredients, proportions)
+    proportions = list(to_grams(ingredients, proportions))
     if distinct:
-        proportions = set(proportions)
+        proportions = list(set(proportions))
     ingredients, proportions = merge_columns(ingredients, proportions,
                                                  merge)
     statistics = calculate_statistics(proportions, ingredients, zero_columns)

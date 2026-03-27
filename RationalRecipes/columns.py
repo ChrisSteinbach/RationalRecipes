@@ -1,6 +1,5 @@
-"""Column id translation. Provides translation of ingredient names to 
+"""Column id translation. Provides translation of ingredient names to
 column indexes."""
-import types
 from RationalRecipes.errors import InvalidInputException
 
 class ColumnTranslator(object):
@@ -22,7 +21,7 @@ class ColumnTranslator(object):
     def _id_to_indexes(self, column_identifier):
         """Normalize column identifier to one or more column indexes"""
         try:
-            if type(column_identifier) == types.StringType:
+            if isinstance(column_identifier, str):
                 for column_index in \
                   self.name_to_column_index[column_identifier.lower()]:
                     yield column_index

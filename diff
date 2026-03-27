@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 """Compare recipe ratios showing percentage change or percentage difference"""
 
 import RationalRecipes.utils as utils
@@ -31,6 +31,6 @@ def run():
     first_filename, remaining_filenames, options, merge = parse_command_line()
     script = DiffMain(first_filename, remaining_filenames, options.distinct,
                       merge)
-    print script.main(options.show_percentage_change, options.precision)
+    print(script.main(options.show_percentage_change, options.precision))
     
 run()

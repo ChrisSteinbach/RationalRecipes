@@ -1,4 +1,3 @@
-#!/usr/bin/python
 """Compare recipe ratios showing percentage change or percentage difference"""
 
 import RationalRecipes.utils as utils
@@ -11,7 +10,7 @@ def get_ratios_to_compare(first_filename, remaining_filenames, distinct, merge):
     ingredients1, ratio1 = utils.get_ratio(first_filename, distinct, merge)
     ingredients2, ratio2 = utils.get_ratio(remaining_filenames, distinct, merge)
     if ingredients1 != ingredients2:
-        print "Ingredients for input files do not match: unable to compare"
+        print("Ingredients for input files do not match: unable to compare")
         sys.exit(1)
     return ratio1, ratio2
       
@@ -49,8 +48,8 @@ class DiffMain(object):
     def print_percentage_change(self, output):
         """Print percentage change between ratios for each ingredient"""
         changes = percentage_change(self.ratio1, self.ratio2)
-        for change, ingredient in sorted(changes, cmp=lambda x, y:cmp(abs(x[0]),
-                                         abs(y[0])), reverse=True):
+        for change, ingredient in sorted(changes, key=lambda x: abs(x[0]),
+                                         reverse=True):
             direction = "increased"
             if change < 0.0:
                 change = abs(change)

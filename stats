@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 """Statistical analysis of multiple recipes of the same type."""
 
 import RationalRecipes.utils as utils
@@ -65,12 +65,12 @@ def run():
     if restrictions:
         script.set_restrictions(restrictions)
         if total_recipe_weight is None:
-            total_recipe_weight = sys.maxint
+            total_recipe_weight = sys.maxsize
     else:
         if total_recipe_weight is None:
             total_recipe_weight = 100
 
-    print script.main(ratio_precision, recipe_precision, total_recipe_weight,
-                      verbose)
+    print(script.main(ratio_precision, recipe_precision, total_recipe_weight,
+                      verbose))
 
 run()

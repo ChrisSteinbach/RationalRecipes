@@ -12,7 +12,7 @@ def read_ingredients_from_header(header):
     try:
         return tuple(IngredientFactory.get_by_name(ingredient.strip()) for \
                      ingredient in header.split(','))
-    except KeyError, error:
+    except KeyError as error:
         raise InvalidInputException(
                             "No such ingredient as %s, line 1" % str(error))
 
@@ -75,7 +75,7 @@ def read_files(input_files):
             if ingredients != tmp_ingredients:
                 raise InvalidInputException(
                             "All input files must have the same header.")
-        all_columns += columns
+        all_columns += list(columns)
     return ingredients, all_columns
   
 def read_rows(rows, nr_columns):

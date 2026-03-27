@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 RationalRecipes is a Python 2 CLI tool for statistical analysis and comparison of recipe ratios. It reads recipe data from CSV files (with mixed weight/volume units), normalizes everything to grams, and computes mean ratios with confidence intervals.
 
-**Python 2**: The codebase uses Python 2 syntax throughout (`print` statements, `except X, e:`, `optparse`, `sys.maxint`, `cmp` kwarg in `sorted`, `types.StringType`). Maintain Python 2 compatibility.
+The codebase targets **Python 3.12+**.
 
 ## Commands
 

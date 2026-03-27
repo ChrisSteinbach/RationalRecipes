@@ -21,12 +21,12 @@ class TestMerge(unittest.TestCase):
         ingredients, new_columns = merge_columns(ingredients, columns,
                 merge=[((1, 1.0), (2, 1.0)), ((0, 1.0), (4, 1.0), (5, 1.0))])
         
-        self.assertEquals(len(ingredients), 3)
-        self.assertEquals(ingredients, (FLOUR, SUGAR, SALT))
-        self.assertEquals(len(new_columns[0]), 3)
-        self.assertAlmostEquals(new_columns[0][0], 7.0, 2)
-        self.assertAlmostEquals(new_columns[0][1], 2.0, 2)
-        self.assertAlmostEquals(new_columns[0][2], 1.0, 2)
+        self.assertEqual(len(ingredients), 3)
+        self.assertEqual(ingredients, (FLOUR, SUGAR, SALT))
+        self.assertEqual(len(new_columns[0]), 3)
+        self.assertAlmostEqual(new_columns[0][0], 7.0, 2)
+        self.assertAlmostEqual(new_columns[0][1], 2.0, 2)
+        self.assertAlmostEqual(new_columns[0][2], 1.0, 2)
 
     def test_merge_named_columns(self):
         """Merge columns using mixed column indexes and named columns"""
@@ -41,12 +41,12 @@ class TestMerge(unittest.TestCase):
                     merge=[((1,1.0), ("butter", 1.0)), (("flour", 1.0),
                                                         ("water", 1.0))])
         
-        self.assertEquals(len(ingredients), 3)
-        self.assertEquals(ingredients, (FLOUR, SUGAR, SALT))
-        self.assertEquals(len(new_columns[0]), 3)
-        self.assertAlmostEquals(new_columns[0][0], 7.0, 2)
-        self.assertAlmostEquals(new_columns[0][1], 2.0, 2)
-        self.assertAlmostEquals(new_columns[0][2], 1.0, 2)
+        self.assertEqual(len(ingredients), 3)
+        self.assertEqual(ingredients, (FLOUR, SUGAR, SALT))
+        self.assertEqual(len(new_columns[0]), 3)
+        self.assertAlmostEqual(new_columns[0][0], 7.0, 2)
+        self.assertAlmostEqual(new_columns[0][1], 2.0, 2)
+        self.assertAlmostEqual(new_columns[0][2], 1.0, 2)
 
     def test_merge_partial_columns(self):
         """Specify that only a percentage of a column be merged"""
@@ -61,12 +61,12 @@ class TestMerge(unittest.TestCase):
                     merge=[(("sugar", 1.0), ("butter", 0.5)), (("flour", 0.25),
                                                                ("water", 0.5))])
         
-        self.assertEquals(len(ingredients), 3)
-        self.assertEquals(ingredients, (FLOUR, SUGAR, SALT))
-        self.assertEquals(len(new_columns[0]), 3)
-        self.assertAlmostEquals(new_columns[0][0], 7.0, 2)
-        self.assertAlmostEquals(new_columns[0][1], 2.0, 2)
-        self.assertAlmostEquals(new_columns[0][2], 1.0, 2)
+        self.assertEqual(len(ingredients), 3)
+        self.assertEqual(ingredients, (FLOUR, SUGAR, SALT))
+        self.assertEqual(len(new_columns[0]), 3)
+        self.assertAlmostEqual(new_columns[0][0], 7.0, 2)
+        self.assertAlmostEqual(new_columns[0][1], 2.0, 2)
+        self.assertAlmostEqual(new_columns[0][2], 1.0, 2)
 
     def test_retain_column(self):
         """When a column is merged into another, that column is removed.
@@ -83,12 +83,12 @@ class TestMerge(unittest.TestCase):
             merge=[(("sugar", 1.0), ("butter", 0.5), ("flour", 0.0)),
                    (("flour", 0.25), ("water", 0.5))])
         
-        self.assertEquals(len(ingredients), 3)
-        self.assertEquals(ingredients, (FLOUR, SUGAR, SALT))
-        self.assertEquals(len(new_columns[0]), 3)
-        self.assertAlmostEquals(new_columns[0][0], 7.0, 2)
-        self.assertAlmostEquals(new_columns[0][1], 2.0, 2)
-        self.assertAlmostEquals(new_columns[0][2], 1.0, 2)
+        self.assertEqual(len(ingredients), 3)
+        self.assertEqual(ingredients, (FLOUR, SUGAR, SALT))
+        self.assertEqual(len(new_columns[0]), 3)
+        self.assertAlmostEqual(new_columns[0][0], 7.0, 2)
+        self.assertAlmostEqual(new_columns[0][1], 2.0, 2)
+        self.assertAlmostEqual(new_columns[0][2], 1.0, 2)
 
     def test_missing_column_specifed(self):
         """Check that an error is raised with correct message when a missing
@@ -104,8 +104,8 @@ class TestMerge(unittest.TestCase):
             ingredients, _ = merge_columns(ingredients, columns, 
             merge = [((1, 1.0), (2, 1.0)), ((0, 1.0), (4, 1.0), (5, 1.0))])
             self.fail("Expected error")
-        except MergeConfigError, exception:
-            self.assertEquals(str(exception),
+        except MergeConfigError as exception:
+            self.assertEqual(str(exception),
                               "Attempted to merge missing column 5", exception)
 
     def test_missing_column_name(self):
@@ -122,8 +122,8 @@ class TestMerge(unittest.TestCase):
             merge = [((1, 1.0), (2, 1.0)), ((0, 1.0), (3, 1.0),
                                             ("water", 1.0))])
             self.fail("Expected error")
-        except InvalidInputException, exception:
-            self.assertEquals(str(exception),
+        except InvalidInputException as exception:
+            self.assertEqual(str(exception),
                               "Missing column specified: 'water'",
                               exception)
 
@@ -140,8 +140,8 @@ class TestMerge(unittest.TestCase):
             ingredients, _ = merge_columns(ingredients, columns, 
                         merge=[((1, 1.0), (2, 1.0)), ((5, 1.0), (4, 1.0))])
             self.fail("Expected error")
-        except MergeConfigError, exception:
-            self.assertEquals(str(exception),
+        except MergeConfigError as exception:
+            self.assertEqual(str(exception),
                               "Attempted to merge missing column 5")
 
     def test_missing_first_ncolumn(self):
@@ -158,6 +158,6 @@ class TestMerge(unittest.TestCase):
                         merge=[((1, 1.0), (2, 1.0)),
                                (("error", 1.0), (4, 1.0))])
             self.fail("Expected error")
-        except InvalidInputException, exception:
-            self.assertEquals(str(exception),
+        except InvalidInputException as exception:
+            self.assertEqual(str(exception),
                               "Missing column specified: 'error'")

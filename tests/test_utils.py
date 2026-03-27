@@ -8,7 +8,7 @@ def normalize(ingredients, columns):
          we use zip to swap back here so that the tests don't need
          to change"""
     columns = to_grams(ingredients, columns)
-    return zip(*normalize_to_100g(columns))
+    return list(zip(*normalize_to_100g(columns)))
 
 def norm(value, unit, ingredient=WATER, line_nr=None):
     """Simplified normalize function which allows tests to normalize without
@@ -22,9 +22,9 @@ class ScriptTestCase(TestCase):
         """Check that output is same as expected"""
         output = output.splitlines()
         expected = expected.splitlines()
-        self.assertEquals(len(output), len(expected))
-        for i in xrange(0, len(output)):
-            self.assertEquals(output[i], expected[i], 
+        self.assertEqual(len(output), len(expected))
+        for i in range(0, len(output)):
+            self.assertEqual(output[i], expected[i], 
                 "Output differs as line %d\n"
                 "output: %s\n"
                 "expected: %s" % 
