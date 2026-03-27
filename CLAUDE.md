@@ -15,10 +15,10 @@ The codebase targets **Python 3.12+**.
 ./test
 
 # Run a single test file
-PYTHONPATH=. python -m unittest tests.test_ratio
+python3 -m pytest tests/test_ratio.py
 
 # Run a single test method
-PYTHONPATH=. python -m unittest tests.test_ratio.TestRatio.test_precision
+python3 -m pytest tests/test_ratio.py::TestRatio::test_precision
 
 # Run the stats tool
 ./stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water
@@ -27,7 +27,7 @@ PYTHONPATH=. python -m unittest tests.test_ratio.TestRatio.test_precision
 ./diff sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv
 ```
 
-Dependency: `numpy`
+Dependencies are declared in `pyproject.toml`. Runtime: `numpy`. Dev: `ruff`, `mypy`, `pytest`, `pytest-cov`, `pre-commit`.
 
 ## Architecture
 
