@@ -2,8 +2,8 @@
 
 from optparse import OptionParser
 
-import RationalRecipes.utils as utils
-from RationalRecipes import DiffMain
+import rational_recipes.utils as utils
+from rational_recipes import DiffMain
 
 
 def parse_command_line():

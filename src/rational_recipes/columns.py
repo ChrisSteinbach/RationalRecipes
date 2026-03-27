@@ -1,6 +1,6 @@
 """Column id translation. Provides translation of ingredient names to
 column indexes."""
-from RationalRecipes.errors import InvalidInputException
+from rational_recipes.errors import InvalidInputException
 
 class ColumnTranslator(object):
     """Convert column identities to indexes"""

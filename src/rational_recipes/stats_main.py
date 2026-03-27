@@ -1,7 +1,7 @@
 """Statistical analysis of multiple recipes of the same type."""
 
-import RationalRecipes.utils as utils
-from RationalRecipes.output import Output
+import rational_recipes.utils as utils
+from rational_recipes.output import Output
 
 class StatsMain(object):
     """Defines entry point and supporting methods for stats script"""

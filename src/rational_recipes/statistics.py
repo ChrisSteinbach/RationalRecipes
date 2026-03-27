@@ -1,8 +1,8 @@
 """Calculation and formatting of statistics"""
 
-from RationalRecipes.difference import percentage_difference_from_mean
-from RationalRecipes.normalize import normalize_to_100g
-from RationalRecipes.columns import ColumnTranslator
+from rational_recipes.difference import percentage_difference_from_mean
+from rational_recipes.normalize import normalize_to_100g
+from rational_recipes.columns import ColumnTranslator
 import math
 import numpy
 

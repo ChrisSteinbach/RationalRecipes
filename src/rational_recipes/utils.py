@@ -1,11 +1,11 @@
 """Functions for adding and parsing command line options"""
 
-from RationalRecipes.read import read_files
-from RationalRecipes.normalize import to_grams
-from RationalRecipes.merge import merge_columns
-from RationalRecipes.ratio import Ratio
-from RationalRecipes.statistics import calculate_statistics
-from RationalRecipes.errors import InvalidInputException
+from rational_recipes.read import read_files
+from rational_recipes.normalize import to_grams
+from rational_recipes.merge import merge_columns
+from rational_recipes.ratio import Ratio
+from rational_recipes.statistics import calculate_statistics
+from rational_recipes.errors import InvalidInputException
 
 def get_ratio_and_stats(filenames, distinct, merge, zero_columns=None):
     """Parse input files to produce mean recipe ratio and related statistics

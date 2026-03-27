@@ -3,8 +3,8 @@
 import sys
 from optparse import OptionParser
 
-import RationalRecipes.utils as utils
-from RationalRecipes import StatsMain
+import rational_recipes.utils as utils
+from rational_recipes import StatsMain
 
 
 def parse_command_line():

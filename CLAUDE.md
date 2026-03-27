@@ -4,15 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-RationalRecipes is a Python 2 CLI tool for statistical analysis and comparison of recipe ratios. It reads recipe data from CSV files (with mixed weight/volume units), normalizes everything to grams, and computes mean ratios with confidence intervals.
+RationalRecipes is a Python CLI tool for statistical analysis and comparison of recipe ratios. It reads recipe data from CSV files (with mixed weight/volume units), normalizes everything to grams, and computes mean ratios with confidence intervals.
 
-The codebase targets **Python 3.12+**.
+The codebase targets **Python 3.12+**. Source lives in `src/rational_recipes/` (standard src layout).
 
 ## Commands
 
 ```bash
 # Run all tests
-./test
+python3 -m pytest
 
 # Run a single test file
 python3 -m pytest tests/test_ratio.py
@@ -20,18 +20,18 @@ python3 -m pytest tests/test_ratio.py
 # Run a single test method
 python3 -m pytest tests/test_ratio.py::TestRatio::test_precision
 
-# Run the stats tool
-./stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water
+# Run the stats tool (after pip install -e .)
+rr-stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water
 
-# Run the diff tool
-./diff sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv
+# Run the diff tool (after pip install -e .)
+rr-diff sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv
 ```
 
 Dependencies are declared in `pyproject.toml`. Runtime: `numpy`. Dev: `ruff`, `mypy`, `pytest`, `pytest-cov`, `pre-commit`.
 
 ## Architecture
 
-Two CLI entry points (`stats` and `diff` scripts at repo root) share a common pipeline:
+Two CLI entry points (`rr-stats` and `rr-diff`, defined in `pyproject.toml`) share a common pipeline:
 
 1. **CSV parsing** (`read.py`) — header row defines ingredients (looked up via `ingredient.Factory`), data rows are `value unit` pairs parsed via regex
 2. **Unit normalization** (`normalize.py`) — all measurements converted to grams using the unit system (`units.py`). Units self-register with `units.Factory`; ingredients self-register with `ingredient.Factory`

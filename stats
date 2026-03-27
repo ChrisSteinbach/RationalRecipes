@@ -1,4 +1,0 @@
-#!/usr/bin/env python3
-"""Statistical analysis of multiple recipes of the same type."""
-from RationalRecipes.stats_cli import run
-run()

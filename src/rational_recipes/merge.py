@@ -18,8 +18,8 @@ that ingredient at the start of cooking.
 
 This module allows column merging for these situations.
 """
-from RationalRecipes.errors import InvalidArgumentException
-from RationalRecipes.columns import ColumnTranslator
+from rational_recipes.errors import InvalidArgumentException
+from rational_recipes.columns import ColumnTranslator
 
 class MergeConfigError(InvalidArgumentException):
     """Exception triggered by invalid merge configuration or input argument"""

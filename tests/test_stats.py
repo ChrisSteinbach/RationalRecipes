@@ -1,6 +1,6 @@
 """Unit tests for stats script"""
-from RationalRecipes import StatsMain
-import RationalRecipes.utils as utils
+from rational_recipes import StatsMain
+import rational_recipes.utils as utils
 import tests.test_utils as test_utils
 
 EXPECTED_OUTPUT = """

@@ -1,4 +1,0 @@
-#!/usr/bin/env python3
-"""Compare recipe ratios showing percentage change or percentage difference"""
-from RationalRecipes.diff_cli import run
-run()

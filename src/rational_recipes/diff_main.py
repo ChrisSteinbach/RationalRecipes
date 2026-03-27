@@ -1,8 +1,8 @@
 """Compare recipe ratios showing percentage change or percentage difference"""
 
-import RationalRecipes.utils as utils
-from RationalRecipes.output import Output
-from RationalRecipes.difference import percentage_change, percentage_difference
+import rational_recipes.utils as utils
+from rational_recipes.output import Output
+from rational_recipes.difference import percentage_change, percentage_difference
 import sys
 
 def get_ratios_to_compare(first_filename, remaining_filenames, distinct, merge):

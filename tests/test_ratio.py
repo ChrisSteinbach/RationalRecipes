@@ -1,7 +1,7 @@
 """Unit tests for create_ratio module"""
-from RationalRecipes.ratio import Ratio
-from RationalRecipes.statistics import calculate_statistics
-from RationalRecipes.ingredient import FLOUR, EGG, BUTTER
+from rational_recipes.ratio import Ratio
+from rational_recipes.statistics import calculate_statistics
+from rational_recipes.ingredient import FLOUR, EGG, BUTTER
 from numpy import array
 import unittest
 

@@ -1,13 +1,13 @@
 """Tests for data normalization"""
 import unittest
-from RationalRecipes.units import OZ, GRAM, KG, LB, US_PINT, IMP_PINT, IMP_FLOZ
-from RationalRecipes.units import US_FLOZ, LITER, METRIC_CUP, METRIC_TBSP
-from RationalRecipes.units import DSTSPN, MEDIUM, SMALL, LARGE, PINCH, STICK
-from RationalRecipes.units import BadUnitException, ML, METRIC_TSP, DASH, KNOB
-from RationalRecipes.ingredient import SALT, FLOUR, BUTTER, SUGAR, MILK, EGG
-from RationalRecipes.ingredient import CREAM, CORNSTARCH, POTATO_STARCH
-from RationalRecipes.ingredient import HONEY, GRATED_CHEESE, COCOA
-from RationalRecipes.normalize import normalize_to_100g
+from rational_recipes.units import OZ, GRAM, KG, LB, US_PINT, IMP_PINT, IMP_FLOZ
+from rational_recipes.units import US_FLOZ, LITER, METRIC_CUP, METRIC_TBSP
+from rational_recipes.units import DSTSPN, MEDIUM, SMALL, LARGE, PINCH, STICK
+from rational_recipes.units import BadUnitException, ML, METRIC_TSP, DASH, KNOB
+from rational_recipes.ingredient import SALT, FLOUR, BUTTER, SUGAR, MILK, EGG
+from rational_recipes.ingredient import CREAM, CORNSTARCH, POTATO_STARCH
+from rational_recipes.ingredient import HONEY, GRATED_CHEESE, COCOA
+from rational_recipes.normalize import normalize_to_100g
 from tests.test_utils import normalize, norm
 
 class TestNormalizeWeight(unittest.TestCase):

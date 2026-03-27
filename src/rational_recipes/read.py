@@ -1,8 +1,8 @@
 """Read and parse input files"""
 
-from RationalRecipes.ingredient import Factory as IngredientFactory
-from RationalRecipes.units import Factory as UnitFactory, GRAM
-from RationalRecipes.errors import InvalidInputException
+from rational_recipes.ingredient import Factory as IngredientFactory
+from rational_recipes.units import Factory as UnitFactory, GRAM
+from rational_recipes.errors import InvalidInputException
 import re
 
 def read_ingredients_from_header(header):
