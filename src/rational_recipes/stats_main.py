@@ -1,7 +1,28 @@
 """Statistical analysis of multiple recipes of the same type."""
 
+from dataclasses import dataclass
+
 import rational_recipes.utils as utils
 from rational_recipes.output import Output
+from rational_recipes.statistics import calculate_minimum_sample_sizes
+
+
+@dataclass
+class StatsResult:
+    """Structured result from statistical analysis."""
+    output: str
+    ratio_values: list[float]
+    ingredients: list[str]
+    proportions: list[float]
+    intervals: list[tuple[float, float]]
+    min_sample_sizes: list[int]
+    recipe_weights: list[float]
+    total_recipe_weight: float
+    sample_size: int
+
+    def __str__(self):
+        return self.output
+
 
 class StatsMain(object):
     """Defines entry point and supporting methods for stats script"""
@@ -15,7 +36,7 @@ class StatsMain(object):
                                                     zero_columns=zero_columns)
 
     def set_restrictions(self, restrictions):
-        """Set per ingredient weight restrictions""" 
+        """Set per ingredient weight restrictions"""
         self.ratio.set_restrictions(restrictions)
 
     def set_desired_interval(self, interval):
@@ -34,7 +55,31 @@ class StatsMain(object):
             self.print_confidence_intervals(output, self.confidence)
         self.print_recipe(output, recipe_precision, total_recipe_weight)
         self.print_footer(output)
-        return str(output)
+        return self._build_result(str(output), total_recipe_weight)
+
+    def _build_result(self, output_text, total_recipe_weight):
+        """Build structured result from computed data"""
+        ingredients = [str(i) for i in self.ratio.ingredients]
+        ratio_values = self.stats.bakers_percentage()
+        total = sum(self.stats.means)
+        proportions = [(m / total) * 100 for m in self.stats.means]
+        intervals = [(p - iv, p + iv)
+                     for p, iv in zip(proportions, self.stats.intervals)]
+        min_sample_sizes = list(calculate_minimum_sample_sizes(
+            self.stats.std_deviations, self.stats.means, self.confidence))
+        weight, _ = self.ratio.recipe(total_recipe_weight)
+        recipe_weights = [p / 100 * weight for p in proportions]
+        return StatsResult(
+            output=output_text,
+            ratio_values=ratio_values,
+            ingredients=ingredients,
+            proportions=proportions,
+            intervals=intervals,
+            min_sample_sizes=min_sample_sizes,
+            recipe_weights=recipe_weights,
+            total_recipe_weight=weight,
+            sample_size=self.sample_size,
+        )
     
     def print_footer(self, output):
         """Print note on sample data at end of input"""

@@ -10,7 +10,7 @@ def calculate_ratio(ingredients, proportions, filter_zeros=None):
     statistics = calculate_statistics(proportions, ingredients, filter_zeros)
     return Ratio(ingredients, statistics.bakers_percentage())
 
-def test_data():
+def make_test_data():
     """Shared test data"""
     ingredients = (FLOUR, EGG, BUTTER)
     flour = array([1, 1, 1])
@@ -18,7 +18,7 @@ def test_data():
     butter = array([3, 3, 3])
     return ingredients, zip(flour, egg, butter)
 
-def test_data_with_zeros():
+def make_test_data_with_zeros():
     """Shared test data"""
     ingredients = (FLOUR, EGG, BUTTER)
     flour = array([1, 1, 1])
@@ -40,7 +40,7 @@ class TestRatio(unittest.TestCase):
     def test_calculate_ratio(self):
         """Calculate simple ratio from three ingredients and three identical
         recipes"""
-        ingredients, proportions = test_data()
+        ingredients, proportions = make_test_data()
         ratio = calculate_ratio(ingredients, proportions)
         ratio.set_precision(0)
         self.assertEqual(str(ratio).split()[0], "1:2:3")
@@ -48,7 +48,7 @@ class TestRatio(unittest.TestCase):
     def test_filter_zeros(self):
         """Calculate simple ratio from three ingredients and three identical
         recipes"""
-        ingredients, proportions = test_data_with_zeros()
+        ingredients, proportions = make_test_data_with_zeros()
         ratio = calculate_ratio(ingredients, proportions,
                                 filter_zeros=["butter"])
         ratio.set_precision(0)
@@ -57,7 +57,7 @@ class TestRatio(unittest.TestCase):
 
     def test_precision(self):
         """Test output precision to two decimal places"""
-        ingredients, _ = test_data()
+        ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3])
         ratio.set_precision(2)
         self.assertEqual(str(ratio).split()[0], "1.00:2.00:3.00")
@@ -65,21 +65,21 @@ class TestRatio(unittest.TestCase):
     def test_describe_value(self):
         """Test ratio output as if in a recipe using weight and volume measures
         """
-        ingredients, _ = test_data()
+        ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3])
         self.assertEqual(ratio.describe_ingredient("flour"),
                           "1.00g or 1.90ml all purpose flour")
 
     def test_describe_wholeunit_ualue(self):
         """Test descriptive output of whole-unit values (eggs in  this case)"""
-        ingredients, _ = test_data()
+        ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3])
         self.assertEqual(ratio.describe_ingredient("egg"),
                         "2.00g, 1.69ml or 0.04 egg(s) where each egg is 53.00g")
 
     def test_recipe_by_total_weight(self):
         """Test output of a recipe ratio scaled to a total weight"""
-        ingredients, _ = test_data()
+        ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3])
         ratio.set_precision(0)
         expected_recipe = """33g or 63ml all purpose flour
@@ -91,7 +91,7 @@ class TestRatio(unittest.TestCase):
     def test_recipe_retricted_weight(self):
         """Test output of a recipe ratio scaled to a total weight and then
            restricted on one ingredient"""
-        ingredients, _ = test_data()
+        ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3], [(1, 31.5)])
         ratio.set_precision(0)
         expected_recipe = """16g or 30ml all purpose flour
@@ -103,7 +103,7 @@ class TestRatio(unittest.TestCase):
     def test_retrict_weight_by_name(self):
         """Test output of a recipe ratio scaled to a total weight and then
            restricted on one ingredient"""
-        ingredients, _ = test_data()
+        ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3], [("egg", 31.5)])
         ratio.set_precision(0)
         expected_recipe = """16g or 30ml all purpose flour
@@ -128,7 +128,7 @@ class TestRatio(unittest.TestCase):
     def test_retricted_weight_multiple(self):
         """Test output of a recipe ratio scaled to a total weight and then
            restricted on one ingredient"""
-        ingredients, _ = test_data()
+        ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3],
                              [(0, 17), (1, 31.5), (2, 48)])
         ratio.set_precision(0)

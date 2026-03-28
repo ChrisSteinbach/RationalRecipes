@@ -5,7 +5,7 @@ from rational_recipes.difference import calc_percentage_difference
 from rational_recipes.difference import percentage_difference_from_mean
 from rational_recipes.difference import percentage_difference
 from rational_recipes.ingredient import FLOUR, EGG
-from tests.test_ratio import create_ratio, test_data
+from tests.test_ratio import create_ratio, make_test_data
 
 
 class TestDifference(unittest.TestCase):
@@ -99,7 +99,7 @@ class TestDifference(unittest.TestCase):
 
     def test_ratio_difference_zero(self):
         """Test difference of two identical ratios"""
-        ingredients, _ = test_data()
+        ingredients, _ = make_test_data()
         ratio_1 = create_ratio(ingredients, [1, 2, 3])
         ratio_2 = create_ratio(ingredients, [1, 2, 3])
         difference, _ = percentage_difference(ratio_1, ratio_2)
@@ -107,7 +107,7 @@ class TestDifference(unittest.TestCase):
 
     def test_ratio_difference(self):
         """Test per ingredient and over all percentage difference"""
-        ingredients, _ = test_data()
+        ingredients, _ = make_test_data()
         ratio_1 = create_ratio(ingredients, [1, 30, 100])
         ratio_2 = create_ratio(ingredients, [1, 60, 50])
         difference, differences = percentage_difference(ratio_1, ratio_2)

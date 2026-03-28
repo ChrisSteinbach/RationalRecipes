@@ -79,21 +79,31 @@ def calculate_variables(data):
     intervals = calculate_confidence_intervals(data, std_deviations)
     return intervals, std_deviations, means
 
+def filter_zero_columns(raw_data, ingredients, zero_columns):
+    """Filter zero values from specified columns and apply defaults.
+
+    Normalizes data to 100g proportions, filters zeros from the specified
+    columns, computes default values from the filtered data, and applies
+    them back. Returns row-major data ready for further processing.
+    """
+    raw_data = list(normalize_to_100g(raw_data))
+    data = numpy.array(raw_data).transpose()
+    filter_map = create_zero_filter(ingredients, zero_columns)
+    data = filter_zeros(data, filter_map)
+    _, _, defaults = calculate_variables(data)
+    return apply_defaults(raw_data, defaults, filter_map)
+
+
 def calculate_statistics(raw_data, ingredients, zero_columns):
     """Calculate mean, confidence interval and minimum sample size for each
        ingredient.
     """
+    if zero_columns is not None and len(zero_columns) > 0:
+        raw_data = filter_zero_columns(raw_data, ingredients, zero_columns)
     raw_data = list(normalize_to_100g(raw_data))
     data = numpy.array(raw_data).transpose()
-    if zero_columns is not None and len(zero_columns) > 0:
-        filter_map = create_zero_filter(ingredients, zero_columns)
-        data = filter_zeros(data, filter_map)
-        _, _, defaults = calculate_variables(data)
-        data = apply_defaults(raw_data, defaults, filter_map)
-        return calculate_statistics(data, ingredients, None)
-    else:
-        intervals, std_deviations, means = calculate_variables(data)
-        return Statistics(ingredients, intervals, std_deviations, means)
+    intervals, std_deviations, means = calculate_variables(data)
+    return Statistics(ingredients, intervals, std_deviations, means)
 
 
 class Statistics:

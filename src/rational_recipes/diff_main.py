@@ -1,9 +1,27 @@
 """Compare recipe ratios showing percentage change or percentage difference"""
 
+from dataclasses import dataclass
+
 import rational_recipes.utils as utils
 from rational_recipes.output import Output
 from rational_recipes.difference import percentage_change, percentage_difference
 import sys
+
+
+@dataclass
+class DiffResult:
+    """Structured result from ratio comparison."""
+    output: str
+    ratio1_percentages: list[float]
+    ratio2_percentages: list[float]
+    ingredients: list[str]
+    percentage_differences: list[tuple[float, str]]
+    mean_difference: float
+    percentage_changes: list[tuple[float, str]]
+
+    def __str__(self):
+        return self.output
+
 
 def get_ratios_to_compare(first_filename, remaining_filenames, distinct, merge):
     """Get ratios to compare from input files"""
@@ -13,10 +31,11 @@ def get_ratios_to_compare(first_filename, remaining_filenames, distinct, merge):
         print("Ingredients for input files do not match: unable to compare")
         sys.exit(1)
     return ratio1, ratio2
-      
+
+
 class DiffMain(object):
     """Defines entry point and supporting methods for diff script"""
-    
+
     def __init__(self, first_filename, remaining_filenames, distinct, merge):
         self.number_template = "%%0.%df"
         self.ratio1, self.ratio2 = get_ratios_to_compare(first_filename,
@@ -34,7 +53,16 @@ class DiffMain(object):
         else:
             self.print_percentage_change(output)
         self.print_overall_percentage_diff(output, mean_difference)
-        return str(output)
+        changes = percentage_change(self.ratio1, self.ratio2)
+        return DiffResult(
+            output=str(output),
+            ratio1_percentages=self.ratio1.as_percentages(),
+            ratio2_percentages=self.ratio2.as_percentages(),
+            ingredients=[str(i) for i in self.ratio1.ingredients],
+            percentage_differences=[(d, str(i)) for d, i in differences],
+            mean_difference=mean_difference,
+            percentage_changes=[(c, str(i)) for c, i in changes],
+        )
     
     def print_overall_percentage_diff(self, output, mean_difference):
         """Print overall percentage difference between ratios. This is

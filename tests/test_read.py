@@ -32,12 +32,10 @@ class TestReadFiles(unittest.TestCase):
            ingredients"""
         input_file_1 = StringIO("Flour, Sugar\n1g,2g")
         input_file_2 = StringIO("Flour, Salt\n1g,2g")
-        try:
+        with self.assertRaises(InvalidInputException) as cm:
             _ingredients, _columns = read_files([input_file_1, input_file_2])
-            self.fail("Expected error")
-        except InvalidInputException as error:
-            self.assertEqual(str(error),
-                              "All input files must have the same header.")
+        self.assertEqual(str(cm.exception),
+                          "All input files must have the same header.")
         
     
 class TestReadProportions(unittest.TestCase):
@@ -65,12 +63,10 @@ class TestReadProportions(unittest.TestCase):
         """Test reading of header referencing an unknown ingredient (Blah)"""
         recipes = """Flour, Sugar, Blah
                      7 OZ, 1 CUP, 1 CUP"""
-        try:
+        with self.assertRaises(InvalidInputException) as cm:
             self.assert_proportions(recipes)
-            self.fail("Expected exception")
-        except InvalidInputException as error:
-            self.assertEqual(str(error),
-                              "No such ingredient as 'blah', line 1")
+        self.assertEqual(str(cm.exception),
+                          "No such ingredient as 'blah', line 1")
 
     def test_read_alternative_format(self):
         """Test parsing using synonyms for units"""
@@ -86,12 +82,10 @@ class TestReadProportions(unittest.TestCase):
                                  7 ounces, 1c, 1 cup
                                  200g, 4oz
                             """
-        try:
+        with self.assertRaises(InvalidInputException) as cm:
             self.assert_proportions(recipes)
-            self.fail("Expected exception concerning missing column")
-        except InvalidInputException as error:
-            self.assertEqual(str(error),
-                    "The row on line 3 has 2 columns where 3 were expected")
+        self.assertEqual(str(cm.exception),
+                "The row on line 3 has 2 columns where 3 were expected")
 
 def parse_measure(measure):
     """Parse a measure into value and unit. Provide dummy values
@@ -141,30 +135,22 @@ class TestReadMeasure(unittest.TestCase):
     def test_value_missing(self):
         """Test error condition: when the value part of a measurement is
            missing"""
-        try:
+        with self.assertRaises(InvalidInputException) as cm:
             _value, _unit = parse_measure("cup")
-            self.fail("Expected: Incorrect format of measurement on line 1, "
-                      "column 1")
-        except InvalidInputException as error:
-            self.assertEqual(str(error),
-                    "Incorrect format of measurement at line 1, column 1")
+        self.assertEqual(str(cm.exception),
+                "Incorrect format of measurement at line 1, column 1")
 
     def test_unit_missing(self):
         """Test error condition: when the unit part of a measurement i
            missing"""
-        try:
+        with self.assertRaises(InvalidInputException) as cm:
             _value, _unit = parse_measure("1 ")
-            self.fail("Expected: Incorrect format of measurement on line 1,"
-                      " column 1")
-        except InvalidInputException as error:
-            self.assertEqual(str(error),
-                        "Incorrect format of measurement at line 1, column 1")
+        self.assertEqual(str(cm.exception),
+                    "Incorrect format of measurement at line 1, column 1")
 
     def test_unknown_unit(self):
         """Test error condition: unknown unit name"""
-        try:
+        with self.assertRaises(InvalidInputException) as cm:
             _value, _unit = parse_measure("1 blah")
-            self.fail("Expected exception")
-        except InvalidInputException as error:
-            self.assertEqual(str(error),
-                             "No unit named 'blah' at line 1, column 1")
+        self.assertEqual(str(cm.exception),
+                         "No unit named 'blah' at line 1, column 1")

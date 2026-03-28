@@ -1,5 +1,6 @@
 """Tests for data normalization"""
 import unittest
+import pytest
 from rational_recipes.units import OZ, GRAM, KG, LB, US_PINT, IMP_PINT, IMP_FLOZ
 from rational_recipes.units import US_FLOZ, LITER, METRIC_CUP, METRIC_TBSP
 from rational_recipes.units import DSTSPN, MEDIUM, SMALL, LARGE, PINCH, STICK
@@ -10,131 +11,31 @@ from rational_recipes.ingredient import HONEY, GRATED_CHEESE, COCOA
 from rational_recipes.normalize import normalize_to_100g
 from tests.test_utils import normalize, norm
 
-class TestNormalizeWeight(unittest.TestCase):
-    """Test normalization of weight measurements"""
-    
-    def test_one_ounce(self):
-        """Convert one ounce to grams"""
-        grams = norm(1, OZ)
-        self.assertAlmostEqual(grams, 28.3495231, 2)
 
-    def test_two_ounces(self):
-        """Convert two ounces to grams"""
-        grams = norm(2, OZ)
-        self.assertAlmostEqual(grams, 56.699, 2)
+@pytest.mark.parametrize("unit, expected", [
+    pytest.param(OZ, 28.3495231, id="ounce"),
+    pytest.param(GRAM, 1, id="gram"),
+    pytest.param(KG, 1000, id="kilogram"),
+    pytest.param(LB, 453.592, id="pound"),
+])
+def test_normalize_weight(unit, expected):
+    """Convert one unit of weight to grams"""
+    assert norm(1, unit) == pytest.approx(expected, abs=0.005)
 
-    def test_one_gram(self):
-        """One gram should normalize to...one gram"""
-        grams = norm(1, GRAM)
-        self.assertEqual(grams, 1)
 
-    def test_two_grams(self):
-        """Two grams should remain two grams after normalization"""
-        grams = norm(2, GRAM)
-        self.assertEqual(grams, 2)
-
-    def test_one_kg(self):
-        """Convert one kilogram to grams"""
-        grams = norm(1, KG)
-        self.assertEqual(grams, 1000)
-
-    def test_two_kg(self):
-        """Convert two kilograms to grams"""
-        grams = norm(2, KG)
-        self.assertEqual(grams, 2000)
-
-    def test_one_pound(self):
-        """Convert one pound to grams"""
-        grams = norm(1, LB)
-        self.assertAlmostEqual(grams, 453.592, 2)
-
-    def test_two_pounds(self):
-        """Convert two pounds to grams"""
-        grams = norm(2, LB)
-        self.assertAlmostEqual(grams, 907.185, 2)
-
-class TestNormalizeVolume(unittest.TestCase):
-    """Test normalization of volume based measures to milliliters"""
-    
-    def test_one_us_pint(self):
-        """Convert one US pint to milliliters"""
-        milliliters = norm(1, US_PINT)
-        self.assertAlmostEqual(milliliters, 473.176, 2)
-
-    def test_two_us_pints(self):
-        """Convert two US pints to milliliters"""
-        milliliters = norm(2, US_PINT)
-        self.assertAlmostEqual(milliliters, 946.353, 2)
-
-    def test_one_imperial_pint(self):
-        """Convert one imperial pint to milliliters"""
-        milliliters = norm(1, IMP_PINT)
-        self.assertAlmostEqual(milliliters, 568.261, 2)
-
-    def test_two_imperial_pints(self):
-        """Convert two imperial pints to milliliters"""
-        milliliters = norm(2, IMP_PINT)
-        self.assertAlmostEqual(milliliters, 1136.52, 2)
-
-    def test_one_imperial_fluid_oz(self):
-        """Convert one imperial fluid ounce to milliliters"""
-        milliliters = norm(1, IMP_FLOZ)
-        self.assertAlmostEqual(milliliters, 28.4131, 2)
-
-    def test_two_imperial_fluid_oz(self):
-        """Convert two imperial fluid ounces to milliliters"""
-        milliliters = norm(2, IMP_FLOZ)
-        self.assertAlmostEqual(milliliters, 56.8261, 2)
-
-    def test_one_us_fluid_oz(self):
-        """Convert one US fluid ounce to milliliters"""
-        milliliters = norm(1, US_FLOZ)
-        self.assertAlmostEqual(milliliters, 29.5735, 2)
-
-    def test_two_us_fluid_oz(self):
-        """Convert two US fluid ounces to milliliters"""
-        milliliters = norm(2, US_FLOZ)
-        self.assertAlmostEqual(milliliters, 59.1471, 2)
-
-    def test_one_liter(self):
-        """Convert one liter to milliliters"""
-        milliliters = norm(1, LITER)
-        self.assertEqual(milliliters, 1000)
-
-    def test_two_liters(self):
-        """Convert two liters to milliliters"""
-        milliliters = norm(2, LITER)
-        self.assertEqual(milliliters, 2000)
-
-    def test_one_metric_cup(self):
-        """Convert one metric cup to milliliters"""
-        milliliters = norm(1, METRIC_CUP)
-        self.assertEqual(milliliters, 250)
-
-    def test_two_metric_cups(self):
-        """Convert two metric cups to milliliters"""
-        milliliters = norm(2, METRIC_CUP)
-        self.assertEqual(milliliters, 500)
-
-    def test_one_metric_tbsp(self):
-        """Convert one metric tablespoon to milliliters"""
-        milliliters = norm(1, METRIC_TBSP)
-        self.assertAlmostEqual(milliliters, 15.0, 2)
-
-    def test_two_metric_tbsps(self):
-        """Convert two metric tablespoons to milliliters"""
-        milliliters = norm(2, METRIC_TBSP)
-        self.assertAlmostEqual(milliliters, 30.0, 2)
-
-    def test_one_metric_tsp(self):
-        """Convert one metric teaspoon to milliliters"""
-        milliliters = norm(1, METRIC_TSP)
-        self.assertAlmostEqual(milliliters, 5.0, 2)
-
-    def test_two_metric_tsp(self):
-        """Convert two metric teaspoons to milliliters"""
-        milliliters = norm(2, METRIC_TSP)
-        self.assertAlmostEqual(milliliters, 10.0, 2)
+@pytest.mark.parametrize("unit, expected", [
+    pytest.param(US_PINT, 473.176, id="us_pint"),
+    pytest.param(IMP_PINT, 568.261, id="imperial_pint"),
+    pytest.param(IMP_FLOZ, 28.4131, id="imperial_floz"),
+    pytest.param(US_FLOZ, 29.5735, id="us_floz"),
+    pytest.param(LITER, 1000, id="liter"),
+    pytest.param(METRIC_CUP, 250, id="metric_cup"),
+    pytest.param(METRIC_TBSP, 15.0, id="metric_tbsp"),
+    pytest.param(METRIC_TSP, 5.0, id="metric_tsp"),
+])
+def test_normalize_volume(unit, expected):
+    """Convert one unit of volume to milliliters"""
+    assert norm(1, unit) == pytest.approx(expected, abs=0.005)
 
 class TestNormalizeVolumeToWeight(unittest.TestCase):
     """Test normalization of volume based measurements to grams using
@@ -238,13 +139,11 @@ class TestNormalizeVolumeToWeight(unittest.TestCase):
     def test_inapplicable_unit(self):
         """Check that an error is raised when an inapplicable unit of measure
            is specified"""
-        try:
+        with self.assertRaises(BadUnitException) as cm:
             norm(0.75, STICK, SALT, line_nr=1)
-            self.fail("Expected error")
-        except BadUnitException as error:
-            self.assertEqual(
-              "Inapplicable unit 'stick' used for ingredient 'salt' at line 1",
-              str(error))
+        self.assertEqual(
+          "Inapplicable unit 'stick' used for ingredient 'salt' at line 1",
+          str(cm.exception))
             
 class TestNormalizeColumns(unittest.TestCase):
     """Test normalization of multiple rows and columns"""

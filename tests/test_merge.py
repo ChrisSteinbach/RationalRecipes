@@ -100,13 +100,11 @@ class TestMerge(unittest.TestCase):
         salt = array([1])
         water = array([3])
         columns = zip(flour, sugar, butter, salt, water)
-        try:
-            ingredients, _ = merge_columns(ingredients, columns, 
+        with self.assertRaises(MergeConfigError) as cm:
+            ingredients, _ = merge_columns(ingredients, columns,
             merge = [((1, 1.0), (2, 1.0)), ((0, 1.0), (4, 1.0), (5, 1.0))])
-            self.fail("Expected error")
-        except MergeConfigError as exception:
-            self.assertEqual(str(exception),
-                              "Attempted to merge missing column 5", exception)
+        self.assertEqual(str(cm.exception),
+                          "Attempted to merge missing column 5")
 
     def test_missing_column_name(self):
         """Check that an error is raised with correct message when a missing
@@ -117,15 +115,12 @@ class TestMerge(unittest.TestCase):
         butter = array([1])
         salt = array([1])
         columns = zip(flour, sugar, butter, salt)
-        try:
-            ingredients, _ = merge_columns(ingredients, columns, 
+        with self.assertRaises(InvalidInputException) as cm:
+            ingredients, _ = merge_columns(ingredients, columns,
             merge = [((1, 1.0), (2, 1.0)), ((0, 1.0), (3, 1.0),
                                             ("water", 1.0))])
-            self.fail("Expected error")
-        except InvalidInputException as exception:
-            self.assertEqual(str(exception),
-                              "Missing column specified: 'water'",
-                              exception)
+        self.assertEqual(str(cm.exception),
+                          "Missing column specified: 'water'")
 
     def test_missing_first_column(self):
         """Test error case when destination column specified is missing"""
@@ -136,13 +131,11 @@ class TestMerge(unittest.TestCase):
         salt = array([1])
         water = array([3])
         columns = zip(flour, sugar, butter, salt, water)
-        try:
-            ingredients, _ = merge_columns(ingredients, columns, 
+        with self.assertRaises(MergeConfigError) as cm:
+            ingredients, _ = merge_columns(ingredients, columns,
                         merge=[((1, 1.0), (2, 1.0)), ((5, 1.0), (4, 1.0))])
-            self.fail("Expected error")
-        except MergeConfigError as exception:
-            self.assertEqual(str(exception),
-                              "Attempted to merge missing column 5")
+        self.assertEqual(str(cm.exception),
+                          "Attempted to merge missing column 5")
 
     def test_missing_first_ncolumn(self):
         """Test error case when destination column specified is missing"""
@@ -153,11 +146,9 @@ class TestMerge(unittest.TestCase):
         salt = array([1])
         water = array([3])
         columns = zip(flour, sugar, butter, salt, water)
-        try:
-            ingredients, _ = merge_columns(ingredients, columns, 
+        with self.assertRaises(InvalidInputException) as cm:
+            ingredients, _ = merge_columns(ingredients, columns,
                         merge=[((1, 1.0), (2, 1.0)),
                                (("error", 1.0), (4, 1.0))])
-            self.fail("Expected error")
-        except InvalidInputException as exception:
-            self.assertEqual(str(exception),
-                              "Missing column specified: 'error'")
+        self.assertEqual(str(cm.exception),
+                          "Missing column specified: 'error'")

@@ -1,6 +1,5 @@
 """Rational recipe unit test module"""
 from tests.test_ingredient import TestIngredient
-from tests.test_normalize import TestNormalizeWeight, TestNormalizeVolume
 from tests.test_normalize import TestNormalizeVolumeToWeight
 from tests.test_normalize import TestNormalizeColumns
 from tests.test_ratio import TestRatio
