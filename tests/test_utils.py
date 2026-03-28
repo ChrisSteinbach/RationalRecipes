@@ -1,6 +1,4 @@
-"""Utility functions and classes for test cases"""
-
-from unittest import TestCase
+"""Utility functions for test cases"""
 
 from rational_recipes.ingredient import WATER
 from rational_recipes.normalize import normalize_to_100g, to_grams
@@ -20,19 +18,16 @@ def norm(value, unit, ingredient=WATER, line_nr=None):
     return unit.norm(value, ingredient, line_nr)
 
 
-class ScriptTestCase(TestCase):
-    """Base class for script test cases"""
-
-    def verify_output(self, output, expected):
-        """Check that output is same as expected"""
-        output = output.splitlines()
-        expected = expected.splitlines()
-        self.assertEqual(len(output), len(expected))
-        for i in range(0, len(output)):
-            self.assertEqual(
-                output[i],
-                expected[i],
-                f"Output differs as line {i + 1}\n"
-                f"output: {output[i]}\n"
-                f"expected: {expected[i]}",
-            )
+def verify_output(output, expected):
+    """Check that output is same as expected"""
+    output_lines = output.splitlines()
+    expected_lines = expected.splitlines()
+    assert len(output_lines) == len(expected_lines), (
+        f"Output has {len(output_lines)} lines, expected {len(expected_lines)}"
+    )
+    for i in range(len(output_lines)):
+        assert output_lines[i] == expected_lines[i], (
+            f"Output differs at line {i + 1}\n"
+            f"output: {output_lines[i]}\n"
+            f"expected: {expected_lines[i]}"
+        )

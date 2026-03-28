@@ -1,7 +1,8 @@
 """Tests for reading and parsing of input files"""
 
-import unittest
 from io import StringIO
+
+import pytest
 
 from rational_recipes.errors import InvalidInputException
 from rational_recipes.ingredient import FLOUR, SUGAR
@@ -10,51 +11,50 @@ from rational_recipes.units import CUP, GRAM, METRIC_CUP
 from tests.test_utils import normalize
 
 
-class TestReadFiles(unittest.TestCase):
+class TestReadFiles:
     """Unit tests for reading and parsing input files"""
 
     def test_one_file(self):
         """Test reading of one input file with two columns and one row"""
         input_file = StringIO("Flour, Sugar\n1g,2g")
         ingredients, columns = read_files([input_file])
-        self.assertEqual((FLOUR, SUGAR), ingredients)
-        self.assertEqual(len(columns[0]), 2)
-        self.assertEqual(len(columns), 1)
+        assert (FLOUR, SUGAR) == ingredients
+        assert len(columns[0]) == 2
+        assert len(columns) == 1
 
     def test_two_files(self):
         """Test reading of two (identical) input files"""
         input_file_1 = StringIO("Flour, Sugar\n1g,2g")
         input_file_2 = StringIO("Flour, Sugar\n1g,2g")
         ingredients, columns = read_files([input_file_1, input_file_2])
-        self.assertEqual((FLOUR, SUGAR), ingredients)
-        self.assertEqual(len(columns), 2)
-        self.assertEqual(len(columns[0]), 2)
+        assert (FLOUR, SUGAR) == ingredients
+        assert len(columns) == 2
+        assert len(columns[0]) == 2
 
     def test_non_matching_headers(self):
         """Test error condition where two input files are read with differing
         ingredients"""
         input_file_1 = StringIO("Flour, Sugar\n1g,2g")
         input_file_2 = StringIO("Flour, Salt\n1g,2g")
-        with self.assertRaises(InvalidInputException) as cm:
+        with pytest.raises(InvalidInputException) as exc_info:
             _ingredients, _columns = read_files([input_file_1, input_file_2])
-        self.assertEqual(
-            str(cm.exception), "All input files must have the same header."
-        )
+        assert str(exc_info.value) == "All input files must have the same header."
 
 
-class TestReadProportions(unittest.TestCase):
+class TestReadProportions:
     """Test parsing of proportions from input file"""
 
-    def assert_proportions(self, recipes):
+    @staticmethod
+    def assert_proportions(recipes):
         """The tests in this class are designed so that the results are the
         same for each tests despite the inputs being different. This allows
         us to test for correctness with just one method (this one)"""
         ingredients, columns = parse_file_contents(recipes)
         new_columns = normalize(ingredients, columns)
-        self.assertAlmostEqual(new_columns[0][0], 30.96, 2)
-        self.assertAlmostEqual(new_columns[0][1], 46.860, 2)
-        self.assertAlmostEqual(new_columns[1][0], 31.38, 2)
-        self.assertAlmostEqual(new_columns[1][1], 26.57, 2)
+        assert new_columns[0][0] == pytest.approx(30.96, abs=1e-2)
+        assert new_columns[0][1] == pytest.approx(46.860, abs=1e-2)
+        assert new_columns[1][0] == pytest.approx(31.38, abs=1e-2)
+        assert new_columns[1][1] == pytest.approx(26.57, abs=1e-2)
 
     def test_read_proportions(self):
         """Test reading of ingredient proportions in ounces, cups and grams"""
@@ -67,9 +67,9 @@ class TestReadProportions(unittest.TestCase):
         """Test reading of header referencing an unknown ingredient (Blah)"""
         recipes = """Flour, Sugar, Blah
                      7 OZ, 1 CUP, 1 CUP"""
-        with self.assertRaises(InvalidInputException) as cm:
+        with pytest.raises(InvalidInputException) as exc_info:
             self.assert_proportions(recipes)
-        self.assertEqual(str(cm.exception), "No such ingredient as 'blah', line 1")
+        assert str(exc_info.value) == "No such ingredient as 'blah', line 1"
 
     def test_read_alternative_format(self):
         """Test parsing using synonyms for units"""
@@ -85,10 +85,10 @@ class TestReadProportions(unittest.TestCase):
                                  7 ounces, 1c, 1 cup
                                  200g, 4oz
                             """
-        with self.assertRaises(InvalidInputException) as cm:
+        with pytest.raises(InvalidInputException) as exc_info:
             self.assert_proportions(recipes)
-        self.assertEqual(
-            str(cm.exception), "The row on line 3 has 2 columns where 3 were expected"
+        assert str(exc_info.value) == (
+            "The row on line 3 has 2 columns where 3 were expected"
         )
 
 
@@ -98,66 +98,66 @@ def parse_measure(measure):
     return value_and_unit(line_nr=1, column_index=1, measure=measure)
 
 
-class TestReadMeasure(unittest.TestCase):
+class TestReadMeasure:
     """Test parsing of ingredient measurements"""
 
     def test_simple_measure(self):
         """Read measure with space between value and unit"""
         value, unit = parse_measure("1 cup")
         assert unit is CUP
-        self.assertEqual(1, value)
+        assert value == 1
 
     def test_unit_synonym(self):
         """Read measure using a unit synonym"""
         value, unit = parse_measure("1 c")
         assert unit is CUP
-        self.assertEqual(1, value)
+        assert value == 1
 
     def test_read_zero(self):
         """Read a measure of zero. Unit defaults to grams."""
         value, unit = parse_measure("0")
         assert unit is GRAM
-        self.assertEqual(0, value)
+        assert value == 0
 
     def test_no_space(self):
         """Parse a measure with no whitespace between the value and the unit"""
         value, unit = parse_measure("1c")
         assert unit is CUP
-        self.assertEqual(1, value)
+        assert value == 1
 
     def test_read_float(self):
         """Read a measure where the value is a float"""
         value, unit = parse_measure("1.1c")
         assert unit is CUP
-        self.assertEqual(1.1, value)
+        assert value == 1.1
 
     def test_blank_before_decimal_point(self):
         """Read a value where the zero before the decimal point has been
         omitted"""
         value, unit = parse_measure(".1metric cup ")
         assert unit is METRIC_CUP
-        self.assertEqual(0.1, value)
+        assert value == 0.1
 
     def test_value_missing(self):
         """Test error condition: when the value part of a measurement is
         missing"""
-        with self.assertRaises(InvalidInputException) as cm:
+        with pytest.raises(InvalidInputException) as exc_info:
             _value, _unit = parse_measure("cup")
-        self.assertEqual(
-            str(cm.exception), "Incorrect format of measurement at line 1, column 1"
+        assert str(exc_info.value) == (
+            "Incorrect format of measurement at line 1, column 1"
         )
 
     def test_unit_missing(self):
         """Test error condition: when the unit part of a measurement i
         missing"""
-        with self.assertRaises(InvalidInputException) as cm:
+        with pytest.raises(InvalidInputException) as exc_info:
             _value, _unit = parse_measure("1 ")
-        self.assertEqual(
-            str(cm.exception), "Incorrect format of measurement at line 1, column 1"
+        assert str(exc_info.value) == (
+            "Incorrect format of measurement at line 1, column 1"
         )
 
     def test_unknown_unit(self):
         """Test error condition: unknown unit name"""
-        with self.assertRaises(InvalidInputException) as cm:
+        with pytest.raises(InvalidInputException) as exc_info:
             _value, _unit = parse_measure("1 blah")
-        self.assertEqual(str(cm.exception), "No unit named 'blah' at line 1, column 1")
+        assert str(exc_info.value) == "No unit named 'blah' at line 1, column 1"

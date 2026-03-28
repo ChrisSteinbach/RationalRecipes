@@ -1,7 +1,5 @@
 """Unit tests for create_ratio module"""
 
-import unittest
-
 from numpy import array
 
 from rational_recipes.ingredient import BUTTER, EGG, FLOUR
@@ -41,7 +39,7 @@ def create_ratio(ingredients, proportions, restrictions=None):
     return ratio
 
 
-class TestRatio(unittest.TestCase):
+class TestRatio:
     """Unit test class for ratio module"""
 
     def test_calculate_ratio(self):
@@ -50,7 +48,7 @@ class TestRatio(unittest.TestCase):
         ingredients, proportions = make_test_data()
         ratio = calculate_ratio(ingredients, proportions)
         ratio.set_precision(0)
-        self.assertEqual(str(ratio).split()[0], "1:2:3")
+        assert str(ratio).split()[0] == "1:2:3"
 
     def test_filter_zeros(self):
         """Calculate simple ratio from three ingredients and three identical
@@ -58,30 +56,27 @@ class TestRatio(unittest.TestCase):
         ingredients, proportions = make_test_data_with_zeros()
         ratio = calculate_ratio(ingredients, proportions, filter_zeros=["butter"])
         ratio.set_precision(0)
-        self.assertEqual(str(ratio).split()[0], "1:2:3")
+        assert str(ratio).split()[0] == "1:2:3"
 
     def test_precision(self):
         """Test output precision to two decimal places"""
         ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3])
         ratio.set_precision(2)
-        self.assertEqual(str(ratio).split()[0], "1.00:2.00:3.00")
+        assert str(ratio).split()[0] == "1.00:2.00:3.00"
 
     def test_describe_value(self):
         """Test ratio output as if in a recipe using weight and volume measures"""
         ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3])
-        self.assertEqual(
-            ratio.describe_ingredient("flour"), "1.00g or 1.90ml all purpose flour"
-        )
+        assert ratio.describe_ingredient("flour") == "1.00g or 1.90ml all purpose flour"
 
     def test_describe_wholeunit_ualue(self):
         """Test descriptive output of whole-unit values (eggs in  this case)"""
         ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3])
-        self.assertEqual(
-            ratio.describe_ingredient("egg"),
-            "2.00g, 1.69ml or 0.04 egg(s) where each egg is 53.00g",
+        assert ratio.describe_ingredient("egg") == (
+            "2.00g, 1.69ml or 0.04 egg(s) where each egg is 53.00g"
         )
 
     def test_recipe_by_total_weight(self):
@@ -92,7 +87,7 @@ class TestRatio(unittest.TestCase):
         expected_recipe = """33g or 63ml all purpose flour
 67g, 56ml or 1 egg(s) where each egg is 53g
 100g or 99ml butter"""
-        self.assertEqual(ratio.recipe(weight=200)[1], expected_recipe)
+        assert ratio.recipe(weight=200)[1] == expected_recipe
 
     def test_recipe_retricted_weight(self):
         """Test output of a recipe ratio scaled to a total weight and then
@@ -103,7 +98,7 @@ class TestRatio(unittest.TestCase):
         expected_recipe = """16g or 30ml all purpose flour
 32g, 27ml or 1 egg(s) where each egg is 53g
 47g or 47ml butter"""
-        self.assertEqual(ratio.recipe(weight=200)[1], expected_recipe)
+        assert ratio.recipe(weight=200)[1] == expected_recipe
 
     def test_retrict_weight_by_name(self):
         """Test output of a recipe ratio scaled to a total weight and then
@@ -114,7 +109,7 @@ class TestRatio(unittest.TestCase):
         expected_recipe = """16g or 30ml all purpose flour
 32g, 27ml or 1 egg(s) where each egg is 53g
 47g or 47ml butter"""
-        self.assertEqual(ratio.recipe(weight=200)[1], expected_recipe)
+        assert ratio.recipe(weight=200)[1] == expected_recipe
 
     def test_retrict_repeat_ingredient(self):
         """Test output of a recipe ratio scaled to a total weight and then
@@ -126,7 +121,7 @@ class TestRatio(unittest.TestCase):
 31g, 27ml or 1 egg(s) where each egg is 53g
 47g or 46ml butter
 47g or 46ml butter"""
-        self.assertEqual(ratio.recipe(weight=200)[1], expected_recipe)
+        assert ratio.recipe(weight=200)[1] == expected_recipe
 
     def test_retricted_weight_multiple(self):
         """Test output of a recipe ratio scaled to a total weight and then
@@ -137,4 +132,4 @@ class TestRatio(unittest.TestCase):
         expected_recipe = """16g or 30ml all purpose flour
 32g, 27ml or 1 egg(s) where each egg is 53g
 47g or 47ml butter"""
-        self.assertEqual(ratio.recipe(weight=200)[1], expected_recipe)
+        assert ratio.recipe(weight=200)[1] == expected_recipe
