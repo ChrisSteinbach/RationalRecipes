@@ -1,16 +1,17 @@
 """Compare recipe ratios showing percentage change or percentage difference"""
 
+import sys
 from dataclasses import dataclass
 
 import rational_recipes.utils as utils
-from rational_recipes.output import Output
 from rational_recipes.difference import percentage_change, percentage_difference
-import sys
+from rational_recipes.output import Output
 
 
 @dataclass
 class DiffResult:
     """Structured result from ratio comparison."""
+
     output: str
     ratio1_percentages: list[float]
     ratio2_percentages: list[float]
@@ -33,17 +34,18 @@ def get_ratios_to_compare(first_filename, remaining_filenames, distinct, merge):
     return ratio1, ratio2
 
 
-class DiffMain(object):
+class DiffMain:
     """Defines entry point and supporting methods for diff script"""
 
     def __init__(self, first_filename, remaining_filenames, distinct, merge):
         self.number_template = "%%0.%df"
-        self.ratio1, self.ratio2 = get_ratios_to_compare(first_filename,
-                                        remaining_filenames, distinct, merge)
+        self.ratio1, self.ratio2 = get_ratios_to_compare(
+            first_filename, remaining_filenames, distinct, merge
+        )
 
     def main(self, show_percentage_change, precision):
         """Entry method for script"""
-        self.number_template = "%%0.%df" % precision
+        self.number_template = f"%0.{precision}f"
         output = Output()
         self.print_ratios(output)
         diff_info = percentage_difference(self.ratio1, self.ratio2)
@@ -63,40 +65,52 @@ class DiffMain(object):
             mean_difference=mean_difference,
             percentage_changes=[(c, str(i)) for c, i in changes],
         )
-    
+
     def print_overall_percentage_diff(self, output, mean_difference):
         """Print overall percentage difference between ratios. This is
-           calculated as the mean value of the percentage change for all
-           ingredients"""
+        calculated as the mean value of the percentage change for all
+        ingredients"""
         output.line()
-        output.line(("Overall percentage difference = " + \
-               self.number_template + "%%") % (mean_difference * 100))
+        output.line(
+            ("Overall percentage difference = " + self.number_template + "%%")
+            % (mean_difference * 100)
+        )
         output.line()
-    
+
     def print_percentage_change(self, output):
         """Print percentage change between ratios for each ingredient"""
         changes = percentage_change(self.ratio1, self.ratio2)
-        for change, ingredient in sorted(changes, key=lambda x: abs(x[0]),
-                                         reverse=True):
+        for change, ingredient in sorted(
+            changes, key=lambda x: abs(x[0]), reverse=True
+        ):
             direction = "increased"
             if change < 0.0:
                 change = abs(change)
                 direction = "decreased"
-            output.line(("The %s proportion has %s by " + \
-                    self.number_template + "%% from data set 1 to 2") % \
-                    (ingredient, direction, change * 100))
-    
+            output.line(
+                (
+                    "The %s proportion has %s by "
+                    + self.number_template
+                    + "%% from data set 1 to 2"
+                )
+                % (ingredient, direction, change * 100)
+            )
+
     def print_percentage_difference(self, output, differences):
         """Print percentage difference between ratios for each ingredient"""
         for difference, ingredient in sorted(differences, reverse=True):
-            output.line(("Percentage difference between %s proportions " + \
-                self.number_template + "%%") % (ingredient, difference * 100))
-    
+            output.line(
+                (
+                    "Percentage difference between %s proportions "
+                    + self.number_template
+                    + "%%"
+                )
+                % (ingredient, difference * 100)
+            )
+
     def print_ratios(self, output):
         """Print ratios to be compared"""
         output.line()
-        output.line("Ratio for data set 1 in units of weight is %s" % \
-                    self.ratio1)
-        output.line("Ratio for data set 2 in units of weight is %s" % \
-                    self.ratio2)
+        output.line(f"Ratio for data set 1 in units of weight is {self.ratio1}")
+        output.line(f"Ratio for data set 2 in units of weight is {self.ratio2}")
         output.line()

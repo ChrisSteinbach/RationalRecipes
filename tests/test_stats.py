@@ -1,7 +1,8 @@
 """Unit tests for stats script"""
-from rational_recipes import StatsMain
+
 import rational_recipes.utils as utils
 import tests.test_utils as test_utils
+from rational_recipes import StatsMain
 
 EXPECTED_OUTPUT = """
 Recipe ratio in units of weight is 1.00:1.97:0.75:0.17 (all purpose flour:milk:egg:butter)
@@ -46,12 +47,17 @@ def script_instance(merge_spec, restrictions=""):
 class TestStats(test_utils.ScriptTestCase):
     """Unit tests for stats script"""
 
-    def get_result(self, merge_spec="milk+water:flour+salt",
-                   restrictions="", total_weight=450):
+    def get_result(
+        self, merge_spec="milk+water:flour+salt", restrictions="", total_weight=450
+    ):
         """Get structured result for testing"""
         script = script_instance(merge_spec, restrictions)
-        return script.main(ratio_precision=2, recipe_precision=0,
-                           total_recipe_weight=total_weight, verbose=True)
+        return script.main(
+            ratio_precision=2,
+            recipe_precision=0,
+            total_recipe_weight=total_weight,
+            verbose=True,
+        )
 
     def test_output_format(self):
         """Integration test: verify full formatted output"""
@@ -62,9 +68,9 @@ class TestStats(test_utils.ScriptTestCase):
         """Merge by column index produces same values as merge by name"""
         by_name = self.get_result("milk+water:flour+salt")
         by_index = self.get_result("1+2:0+5")
-        for a, b in zip(by_name.ratio_values, by_index.ratio_values):
+        for a, b in zip(by_name.ratio_values, by_index.ratio_values, strict=False):
             self.assertAlmostEqual(a, b)
-        for a, b in zip(by_name.proportions, by_index.proportions):
+        for a, b in zip(by_name.proportions, by_index.proportions, strict=False):
             self.assertAlmostEqual(a, b)
         self.assertEqual(by_name.sample_size, by_index.sample_size)
 
@@ -72,14 +78,14 @@ class TestStats(test_utils.ScriptTestCase):
         """Baker's percentage ratio values"""
         result = self.get_result()
         expected = [1.0, 1.97, 0.75, 0.17]
-        for actual, exp in zip(result.ratio_values, expected):
+        for actual, exp in zip(result.ratio_values, expected, strict=False):
             self.assertAlmostEqual(actual, exp, places=2)
 
     def test_proportions(self):
         """Mean ingredient proportions"""
         result = self.get_result()
         expected = [25.72, 50.61, 19.17, 4.50]
-        for actual, exp in zip(result.proportions, expected):
+        for actual, exp in zip(result.proportions, expected, strict=False):
             self.assertAlmostEqual(actual, exp, places=2)
 
     def test_confidence_intervals(self):
@@ -91,8 +97,9 @@ class TestStats(test_utils.ScriptTestCase):
             (17.65, 20.69),
             (3.86, 5.14),
         ]
-        for (lower, upper), (exp_lo, exp_hi) in zip(result.intervals,
-                                                     expected_bounds):
+        for (lower, upper), (exp_lo, exp_hi) in zip(
+            result.intervals, expected_bounds, strict=False
+        ):
             self.assertAlmostEqual(lower, exp_lo, places=2)
             self.assertAlmostEqual(upper, exp_hi, places=2)
 
@@ -105,7 +112,7 @@ class TestStats(test_utils.ScriptTestCase):
         """Recipe weight calculations"""
         result = self.get_result()
         expected = [116, 228, 86, 20]
-        for actual, exp in zip(result.recipe_weights, expected):
+        for actual, exp in zip(result.recipe_weights, expected, strict=False):
             self.assertAlmostEqual(actual, exp, places=0)
         self.assertAlmostEqual(result.total_recipe_weight, 450, places=0)
 
@@ -117,15 +124,16 @@ class TestStats(test_utils.ScriptTestCase):
     def test_ingredients(self):
         """Ingredient names in correct order"""
         result = self.get_result()
-        self.assertEqual(result.ingredients,
-                         ["all purpose flour", "milk", "egg", "butter"])
+        self.assertEqual(
+            result.ingredients, ["all purpose flour", "milk", "egg", "butter"]
+        )
 
     def test_restrictions(self):
         """Weight restrictions limit recipe total below requested weight"""
-        result = self.get_result("1+2:0+5",
-                                 "flour=116,milk=228,egg=86.27,butter=20.4",
-                                 total_weight=500)
+        result = self.get_result(
+            "1+2:0+5", "flour=116,milk=228,egg=86.27,butter=20.4", total_weight=500
+        )
         self.assertAlmostEqual(result.total_recipe_weight, 450, places=0)
         expected = [116, 228, 86, 20]
-        for actual, exp in zip(result.recipe_weights, expected):
+        for actual, exp in zip(result.recipe_weights, expected, strict=False):
             self.assertAlmostEqual(actual, exp, places=0)

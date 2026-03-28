@@ -1,7 +1,8 @@
 """Unit tests for diff script"""
+
 import rational_recipes.utils as utils
-from rational_recipes import DiffMain
 import tests.test_utils as test_utils
+from rational_recipes import DiffMain
 
 PERCENT_CHANGE_EXPECTED_OUTPUT = """
 Ratio for data set 1 in units of weight is 1.00:2.36:1.16:0.22 (all purpose flour:milk:egg:butter)
@@ -27,11 +28,15 @@ Percentage difference between milk proportions 1.60%
 Overall percentage difference = 12.59%
 """
 
+
 def script_instance():
     """Run the script from the command line"""
-    script = DiffMain(["tests/test_diff_a.csv"], ["tests/test_diff_b.csv"],
-                      distinct=True,
-                      merge=utils.parse_column_merge("1+2:0+5"))
+    script = DiffMain(
+        ["tests/test_diff_a.csv"],
+        ["tests/test_diff_b.csv"],
+        distinct=True,
+        merge=utils.parse_column_merge("1+2:0+5"),
+    )
     return script
 
 
@@ -66,8 +71,7 @@ class TestDiff(test_utils.ScriptTestCase):
         result = script.main(show_percentage_change=False, precision=2)
         diffs = {name: value for value, name in result.percentage_differences}
         self.assertAlmostEqual(diffs["egg"] * 100, 23.97, places=2)
-        self.assertAlmostEqual(diffs["all purpose flour"] * 100, 19.86,
-                               places=2)
+        self.assertAlmostEqual(diffs["all purpose flour"] * 100, 19.86, places=2)
         self.assertAlmostEqual(diffs["butter"] * 100, 4.92, places=2)
         self.assertAlmostEqual(diffs["milk"] * 100, 1.60, places=2)
 
@@ -81,5 +85,6 @@ class TestDiff(test_utils.ScriptTestCase):
         """Ingredient names are reported correctly"""
         script = script_instance()
         result = script.main(show_percentage_change=False, precision=2)
-        self.assertEqual(result.ingredients,
-                         ["all purpose flour", "milk", "egg", "butter"])
+        self.assertEqual(
+            result.ingredients, ["all purpose flour", "milk", "egg", "butter"]
+        )

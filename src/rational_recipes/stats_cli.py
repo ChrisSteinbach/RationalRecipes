@@ -11,33 +11,73 @@ def parse_command_line():
     """Parse command line arguments"""
     usage = "usage: %prog [options] csv-file"
     parser = OptionParser(usage=usage)
-    parser.add_option("-p", "--precision", type="int",
-        dest="ratio_precision", help="number of DIGITS to show after "
-        "decimal point for ratio values (default is %default)", default=2,
-        metavar="DIGITS")
-    parser.add_option("-r", "--recipe-precision", type="int",
-        dest="recipe_precision", help="number of DIGITS to show after "
-        "decimal point for recipe values (default is %default)", default=0,
-        metavar="DIGITS")
-    parser.add_option("-w", "--weight", type="int", dest="total_recipe_weight",
-        help="total weight to use for example recipe in GRAMS "
-        "(default is 100)", default=None, metavar="GRAMS")
-    parser.add_option("-v", "--verbose", action="store_true", dest="verbose",
-        default=False, help="output extra information")
+    parser.add_option(
+        "-p",
+        "--precision",
+        type="int",
+        dest="ratio_precision",
+        help="number of DIGITS to show after "
+        "decimal point for ratio values (default is %default)",
+        default=2,
+        metavar="DIGITS",
+    )
+    parser.add_option(
+        "-r",
+        "--recipe-precision",
+        type="int",
+        dest="recipe_precision",
+        help="number of DIGITS to show after "
+        "decimal point for recipe values (default is %default)",
+        default=0,
+        metavar="DIGITS",
+    )
+    parser.add_option(
+        "-w",
+        "--weight",
+        type="int",
+        dest="total_recipe_weight",
+        help="total weight to use for example recipe in GRAMS (default is 100)",
+        default=None,
+        metavar="GRAMS",
+    )
+    parser.add_option(
+        "-v",
+        "--verbose",
+        action="store_true",
+        dest="verbose",
+        default=False,
+        help="output extra information",
+    )
     utils.add_include_option(parser)
-    parser.add_option("-c", "--confidence-interval", type="float",
-        dest="confidence", default=0.05,
+    parser.add_option(
+        "-c",
+        "--confidence-interval",
+        type="float",
+        dest="confidence",
+        default=0.05,
         help="desired confidence interval expressed as a percentage "
-        "difference from zero to the mean, default is %default")
+        "difference from zero to the mean, default is %default",
+    )
     utils.add_merge_option(parser)
-    parser.add_option("-t", "--restrict", type="string",
-        dest="restrictions", default=None,
+    parser.add_option(
+        "-t",
+        "--restrict",
+        type="string",
+        dest="restrictions",
+        default=None,
         help="restrict ingredients by weight, per ingredient where RESTRICTIONS"
-           " is col=weight[,col=weight]", metavar="RESTRICTIONS")
-    parser.add_option("-z", "--ignore-zeros", type="string",
-                      dest="ignorezeros", default=None,
-                      help="Ignore zero values where IGNOREZEROS is col,[col]",
-                      metavar="IGNOREZEROS")
+        " is col=weight[,col=weight]",
+        metavar="RESTRICTIONS",
+    )
+    parser.add_option(
+        "-z",
+        "--ignore-zeros",
+        type="string",
+        dest="ignorezeros",
+        default=None,
+        help="Ignore zero values where IGNOREZEROS is col,[col]",
+        metavar="IGNOREZEROS",
+    )
     options, filenames = parser.parse_args()
     merge = utils.parse_column_merge(options.merge)
     restrictions = utils.parse_restrictions(options.restrictions)
@@ -72,5 +112,4 @@ def run():
         if total_recipe_weight is None:
             total_recipe_weight = 100
 
-    print(script.main(ratio_precision, recipe_precision, total_recipe_weight,
-                      verbose))
+    print(script.main(ratio_precision, recipe_precision, total_recipe_weight, verbose))

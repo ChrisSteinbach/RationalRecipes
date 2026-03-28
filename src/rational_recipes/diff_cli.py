@@ -10,14 +10,25 @@ def parse_command_line():
     """Parse command line arguments"""
     usage = "usage: %prog [options] csv-file1 csv-file2 [csv-file3]"
     parser = OptionParser(usage=usage)
-    parser.add_option("-p", "--precision", type="int",
-        dest="precision", help="number of DIGITS to show after decimal "
-        "point for percentage values (default is %default)", default=0,
-        metavar="DIGITS")
+    parser.add_option(
+        "-p",
+        "--precision",
+        type="int",
+        dest="precision",
+        help="number of DIGITS to show after decimal "
+        "point for percentage values (default is %default)",
+        default=0,
+        metavar="DIGITS",
+    )
     utils.add_include_option(parser)
-    parser.add_option("-c", "--change", action="store_true",
-        dest="show_percentage_change", default=False,
-        help="show percentage change instead of percentage difference")
+    parser.add_option(
+        "-c",
+        "--change",
+        action="store_true",
+        dest="show_percentage_change",
+        default=False,
+        help="show percentage change instead of percentage difference",
+    )
     utils.add_merge_option(parser)
     options, args = parser.parse_args()
     merge = utils.parse_column_merge(options.merge)
@@ -31,6 +42,5 @@ def parse_command_line():
 def run():
     """Run the diff tool from the command line."""
     first_filename, remaining_filenames, options, merge = parse_command_line()
-    script = DiffMain(first_filename, remaining_filenames, options.distinct,
-                      merge)
+    script = DiffMain(first_filename, remaining_filenames, options.distinct, merge)
     print(script.main(options.show_percentage_change, options.precision))

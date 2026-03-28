@@ -1,15 +1,17 @@
 """Column id translation. Provides translation of ingredient names to
 column indexes."""
+
 from rational_recipes.errors import InvalidInputException
 
-class ColumnTranslator(object):
+
+class ColumnTranslator:
     """Convert column identities to indexes"""
 
     def __init__(self, ingredients):
         self.name_to_column_index = {}
         self.column_index_to_columns = {}
         self.map_ingredient_names(ingredients)
- 
+
     def map_ingredient_names(self, ingredients):
         """Map ingredient names to column indexes"""
         for i in range(0, len(ingredients)):
@@ -22,14 +24,13 @@ class ColumnTranslator(object):
         """Normalize column identifier to one or more column indexes"""
         try:
             if isinstance(column_identifier, str):
-                for column_index in \
-                  self.name_to_column_index[column_identifier.lower()]:
-                    yield column_index
+                yield from self.name_to_column_index[column_identifier.lower()]
             else:
                 yield column_identifier
-        except KeyError:
+        except KeyError as err:
             raise InvalidInputException(
-                "Missing column specified: '%s'" % column_identifier)
+                f"Missing column specified: '{column_identifier}'"
+            ) from err
 
     def id_to_indexes(self, column_identifier):
         """Normalize column identifier to one or more column indexes"""

@@ -1,20 +1,22 @@
 """Direct unit tests for statistics module"""
+
 import math
 import unittest
+
 import numpy
 
+from rational_recipes.ingredient import Ingredient
 from rational_recipes.statistics import (
-    calculate_statistics,
-    calculate_confidence_intervals,
-    calculate_minimum_sample_sizes,
-    calculate_variables,
-    filter_zero_columns,
-    create_zero_filter,
-    filter_zeros,
     Z_VALUE,
     Statistics,
+    calculate_confidence_intervals,
+    calculate_minimum_sample_sizes,
+    calculate_statistics,
+    calculate_variables,
+    create_zero_filter,
+    filter_zero_columns,
+    filter_zeros,
 )
-from rational_recipes.ingredient import Ingredient
 
 
 def make_ingredient(name):
@@ -37,8 +39,7 @@ class TestCalculateMinimumSampleSizes(unittest.TestCase):
 
     def test_multiple_ingredients(self):
         """Each ingredient computed independently"""
-        result = list(calculate_minimum_sample_sizes(
-            [10.0, 20.0], [50.0, 100.0], 0.05))
+        result = list(calculate_minimum_sample_sizes([10.0, 20.0], [50.0, 100.0], 0.05))
         # Both: ceil((1.96*std / (mean*0.05))^2) = ceil(61.47) = 62
         self.assertEqual(result, [62, 62])
 
@@ -137,7 +138,7 @@ class TestCalculateStatistics(unittest.TestCase):
         raw_data = [(50, 50), (60, 40)]
         stats_none = calculate_statistics(raw_data, ingredients, None)
         stats_empty = calculate_statistics(raw_data, ingredients, [])
-        for a, b in zip(stats_none.means, stats_empty.means):
+        for a, b in zip(stats_none.means, stats_empty.means, strict=False):
             self.assertAlmostEqual(a, b)
 
 
@@ -148,7 +149,10 @@ class TestBakersPercentage(unittest.TestCase):
         """All means divided by the first mean"""
         stats = Statistics(
             [make_ingredient("bp_a"), make_ingredient("bp_b")],
-            [0, 0], [0, 0], [60.0, 40.0])
+            [0, 0],
+            [0, 0],
+            [60.0, 40.0],
+        )
         bp = stats.bakers_percentage()
         self.assertAlmostEqual(bp[0], 1.0)
         self.assertAlmostEqual(bp[1], 40.0 / 60.0)
@@ -156,9 +160,11 @@ class TestBakersPercentage(unittest.TestCase):
     def test_three_ingredients(self):
         """means [25, 50, 25] → [1.0, 2.0, 1.0]"""
         stats = Statistics(
-            [make_ingredient("bp_c"), make_ingredient("bp_d"),
-             make_ingredient("bp_e")],
-            [0, 0, 0], [0, 0, 0], [25.0, 50.0, 25.0])
+            [make_ingredient("bp_c"), make_ingredient("bp_d"), make_ingredient("bp_e")],
+            [0, 0, 0],
+            [0, 0, 0],
+            [25.0, 50.0, 25.0],
+        )
         bp = stats.bakers_percentage()
         self.assertAlmostEqual(bp[0], 1.0)
         self.assertAlmostEqual(bp[1], 2.0)
@@ -166,8 +172,7 @@ class TestBakersPercentage(unittest.TestCase):
 
     def test_single_ingredient(self):
         """Single ingredient always 1.0"""
-        stats = Statistics(
-            [make_ingredient("bp_f")], [0], [0], [42.0])
+        stats = Statistics([make_ingredient("bp_f")], [0], [0], [42.0])
         self.assertEqual(stats.bakers_percentage(), [1.0])
 
 
@@ -207,8 +212,11 @@ class TestCreateZeroFilter(unittest.TestCase):
         self.assertEqual(result, {0: False, 1: False})
 
     def test_multiple_columns(self):
-        ingredients = [make_ingredient("zf_e"), make_ingredient("zf_f"),
-                       make_ingredient("zf_g")]
+        ingredients = [
+            make_ingredient("zf_e"),
+            make_ingredient("zf_f"),
+            make_ingredient("zf_g"),
+        ]
         result = create_zero_filter(ingredients, ["zf_e", "zf_g"])
         self.assertEqual(result, {0: True, 1: False, 2: True})
 
@@ -217,8 +225,7 @@ class TestFilterZeros(unittest.TestCase):
     """Tests for filter_zeros"""
 
     def test_removes_zeros_from_marked_columns(self):
-        data = [numpy.array([0.0, 10.0, 20.0]),
-                numpy.array([5.0, 0.0, 15.0])]
+        data = [numpy.array([0.0, 10.0, 20.0]), numpy.array([5.0, 0.0, 15.0])]
         filter_map = {0: True, 1: False}
         result = filter_zeros(data, filter_map)
         numpy.testing.assert_array_equal(result[0], [10.0, 20.0])

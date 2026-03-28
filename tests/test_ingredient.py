@@ -1,10 +1,13 @@
 """Unit tests for ingredient classes"""
+
 import unittest
-from rational_recipes.ingredient import FLOUR, EGG
+
+from rational_recipes.ingredient import EGG, FLOUR
+
 
 class TestIngredient(unittest.TestCase):
     """Unit tests for ingredient classes"""
-    
+
     def test_volume2weight(self):
         """Test conversion from milliliters to grams"""
         self.assertAlmostEqual(FLOUR.milliliters2grams(1), 0.527426)
@@ -24,7 +27,7 @@ class TestIngredient(unittest.TestCase):
     def test_weight2whole_units_halfegg(self):
         """Test conversion of grams to whole units (half an egg)"""
         self.assertAlmostEqual(EGG.grams2wholeunits(53 / 2.0), 0.5, 2)
-        
-        
+
+
 if __name__ == "__main__":
     unittest.main()

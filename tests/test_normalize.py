@@ -1,46 +1,87 @@
 """Tests for data normalization"""
+
 import unittest
+
 import pytest
-from rational_recipes.units import OZ, GRAM, KG, LB, US_PINT, IMP_PINT, IMP_FLOZ
-from rational_recipes.units import US_FLOZ, LITER, METRIC_CUP, METRIC_TBSP
-from rational_recipes.units import DSTSPN, MEDIUM, SMALL, LARGE, PINCH, STICK
-from rational_recipes.units import BadUnitException, ML, METRIC_TSP, DASH, KNOB
-from rational_recipes.ingredient import SALT, FLOUR, BUTTER, SUGAR, MILK, EGG
-from rational_recipes.ingredient import CREAM, CORNSTARCH, POTATO_STARCH
-from rational_recipes.ingredient import HONEY, GRATED_CHEESE, COCOA
+
+from rational_recipes.ingredient import (
+    BUTTER,
+    COCOA,
+    CORNSTARCH,
+    CREAM,
+    EGG,
+    FLOUR,
+    GRATED_CHEESE,
+    HONEY,
+    MILK,
+    POTATO_STARCH,
+    SALT,
+    SUGAR,
+)
 from rational_recipes.normalize import normalize_to_100g
-from tests.test_utils import normalize, norm
+from rational_recipes.units import (
+    DASH,
+    DSTSPN,
+    GRAM,
+    IMP_FLOZ,
+    IMP_PINT,
+    KG,
+    KNOB,
+    LARGE,
+    LB,
+    LITER,
+    MEDIUM,
+    METRIC_CUP,
+    METRIC_TBSP,
+    METRIC_TSP,
+    ML,
+    OZ,
+    PINCH,
+    SMALL,
+    STICK,
+    US_FLOZ,
+    US_PINT,
+    BadUnitException,
+)
+from tests.test_utils import norm, normalize
 
 
-@pytest.mark.parametrize("unit, expected", [
-    pytest.param(OZ, 28.3495231, id="ounce"),
-    pytest.param(GRAM, 1, id="gram"),
-    pytest.param(KG, 1000, id="kilogram"),
-    pytest.param(LB, 453.592, id="pound"),
-])
+@pytest.mark.parametrize(
+    "unit, expected",
+    [
+        pytest.param(OZ, 28.3495231, id="ounce"),
+        pytest.param(GRAM, 1, id="gram"),
+        pytest.param(KG, 1000, id="kilogram"),
+        pytest.param(LB, 453.592, id="pound"),
+    ],
+)
 def test_normalize_weight(unit, expected):
     """Convert one unit of weight to grams"""
     assert norm(1, unit) == pytest.approx(expected, abs=0.005)
 
 
-@pytest.mark.parametrize("unit, expected", [
-    pytest.param(US_PINT, 473.176, id="us_pint"),
-    pytest.param(IMP_PINT, 568.261, id="imperial_pint"),
-    pytest.param(IMP_FLOZ, 28.4131, id="imperial_floz"),
-    pytest.param(US_FLOZ, 29.5735, id="us_floz"),
-    pytest.param(LITER, 1000, id="liter"),
-    pytest.param(METRIC_CUP, 250, id="metric_cup"),
-    pytest.param(METRIC_TBSP, 15.0, id="metric_tbsp"),
-    pytest.param(METRIC_TSP, 5.0, id="metric_tsp"),
-])
+@pytest.mark.parametrize(
+    "unit, expected",
+    [
+        pytest.param(US_PINT, 473.176, id="us_pint"),
+        pytest.param(IMP_PINT, 568.261, id="imperial_pint"),
+        pytest.param(IMP_FLOZ, 28.4131, id="imperial_floz"),
+        pytest.param(US_FLOZ, 29.5735, id="us_floz"),
+        pytest.param(LITER, 1000, id="liter"),
+        pytest.param(METRIC_CUP, 250, id="metric_cup"),
+        pytest.param(METRIC_TBSP, 15.0, id="metric_tbsp"),
+        pytest.param(METRIC_TSP, 5.0, id="metric_tsp"),
+    ],
+)
 def test_normalize_volume(unit, expected):
     """Convert one unit of volume to milliliters"""
     assert norm(1, unit) == pytest.approx(expected, abs=0.005)
 
+
 class TestNormalizeVolumeToWeight(unittest.TestCase):
     """Test normalization of volume based measurements to grams using
-       food density information."""
-       
+    food density information."""
+
     def test_one_cup_flour(self):
         """Convert one metric cup of flour to grams"""
         grams = norm(1, METRIC_CUP, FLOUR)
@@ -138,25 +179,27 @@ class TestNormalizeVolumeToWeight(unittest.TestCase):
 
     def test_inapplicable_unit(self):
         """Check that an error is raised when an inapplicable unit of measure
-           is specified"""
+        is specified"""
         with self.assertRaises(BadUnitException) as cm:
             norm(0.75, STICK, SALT, line_nr=1)
         self.assertEqual(
-          "Inapplicable unit 'stick' used for ingredient 'salt' at line 1",
-          str(cm.exception))
-            
+            "Inapplicable unit 'stick' used for ingredient 'salt' at line 1",
+            str(cm.exception),
+        )
+
+
 class TestNormalizeColumns(unittest.TestCase):
     """Test normalization of multiple rows and columns"""
-    
+
     def test_three_rows_to_grams(self):
         """Convert three rows of mixed weight and volume measures to grams"""
         ingredients = (FLOUR, SUGAR, BUTTER)
         flour = ((7, OZ), (200, GRAM), (1, ML))
         sugar = ((1, METRIC_CUP), (4, OZ), (1, ML))
         butter = ((1, METRIC_CUP), (4, OZ), (1, ML))
-        columns = zip(flour, sugar, butter)
+        columns = zip(flour, sugar, butter, strict=False)
         new_columns = normalize(ingredients, columns)
-        
+
         self.assertEqual(len(new_columns), 3)
         self.assertEqual(len(new_columns[0]), 3)
 
@@ -165,12 +208,12 @@ class TestNormalizeColumns(unittest.TestCase):
         self.assertAlmostEqual(new_columns[2][1], 26.569, 2)
 
     def test_normalize_to_100g(self):
-        """Normalize a row of weight based measurements (in grams) to 100g""" 
+        """Normalize a row of weight based measurements (in grams) to 100g"""
         flour = [1.0]
         milk = [3.75]
         egg = [1.01]
         butter = [0.16]
-        columns = zip(flour, milk, egg, butter)
+        columns = zip(flour, milk, egg, butter, strict=False)
         new_columns = list(normalize_to_100g(columns))
         self.assertEqual(len(new_columns), 1)
         self.assertEqual(len(new_columns[0]), 4)
@@ -178,4 +221,3 @@ class TestNormalizeColumns(unittest.TestCase):
         self.assertAlmostEqual(new_columns[0][1], 63.32, 1)
         self.assertAlmostEqual(new_columns[0][2], 17.05, 1)
         self.assertAlmostEqual(new_columns[0][3], 2.73, 1)
-

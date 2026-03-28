@@ -45,6 +45,10 @@ select = [
     "B",   # flake8-bugbear
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/test_diff.py" = ["E501"]
+"tests/test_stats.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = true
