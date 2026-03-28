@@ -19,8 +19,14 @@ that ingredient at the start of cooking.
 This module allows column merging for these situations.
 """
 
+from collections.abc import Callable, Generator, Iterable, Sequence
+from typing import TypeVar
+
 from rational_recipes.columns import ColumnTranslator
 from rational_recipes.errors import InvalidArgumentException
+from rational_recipes.ingredient import Ingredient
+
+_T = TypeVar("_T")
 
 
 class MergeConfigError(InvalidArgumentException):
@@ -34,12 +40,14 @@ class Merge:
     set of merged columns.
     """
 
-    def _convert_spec_to_indexes(self, merge_specification):
+    def _convert_spec_to_indexes(
+        self, merge_specification: list[list[tuple[str | int, float]]]
+    ) -> list[list[tuple[int, float]]]:
         """Normalize merge specification so that it only uses column indexes
         and not mixed indexes and ingredient names."""
-        new_merge_specification = []
+        new_merge_specification: list[list[tuple[int, float]]] = []
         for combine_spec in merge_specification:
-            new_combine_spec = []
+            new_combine_spec: list[tuple[int, float]] = []
             for column_identifier, percentage in combine_spec:
                 for column_index in self.column_translator.id_to_indexes(
                     column_identifier
@@ -48,15 +56,19 @@ class Merge:
             new_merge_specification.append(new_combine_spec)
         return new_merge_specification
 
-    def map_column_indexes(self, merge_specification, ingredients):
+    def map_column_indexes(
+        self,
+        merge_specification: list[list[tuple[int, float]]],
+        ingredients: tuple[Ingredient, ...],
+    ) -> None:
         """Map column indexes to combination of columns to merge. For
         columns that will be removed, the column index maps to None. Column
         combinations are a list of tuples where each tuple has two elements:
         the column index to merge followed by the percentage of that column's
         value to add."""
         last_column = len(ingredients) - 1
-        accumulating = {}
-        remove = set()
+        accumulating: dict[int, list[tuple[int, float]]] = {}
+        remove: set[int] = set()
         # default behavior, no column merge
         for column_index in range(0, last_column + 1):
             self.column_index_to_columns[column_index] = [(column_index, 1.0)]
@@ -86,30 +98,44 @@ class Merge:
         for column_index, columns in accumulating.items():
             self.column_index_to_columns[column_index] = columns
 
-    def __init__(self, merge_specification, ingredients):
+    def __init__(
+        self,
+        merge_specification: list[list[tuple[str | int, float]]],
+        ingredients: tuple[Ingredient, ...],
+    ) -> None:
         self.column_translator = ColumnTranslator(ingredients)
-        self.column_index_to_columns = {}
-        merge_specification = self._convert_spec_to_indexes(merge_specification)
-        self.map_column_indexes(merge_specification, ingredients)
+        self.column_index_to_columns: dict[int, list[tuple[int, float]] | None] = {}
+        merge_specification_indexed = self._convert_spec_to_indexes(merge_specification)
+        self.map_column_indexes(merge_specification_indexed, ingredients)
 
-    def merge_one_row(self, row, combine):
+    def merge_one_row(
+        self,
+        row: Sequence[_T],
+        combine: Callable[[Sequence[_T], list[tuple[int, float]]], _T],
+    ) -> Generator[_T, None, None]:
         """Yield a new row by combining columns"""
         for index in range(0, len(row)):
             columns_to_combine = self.column_index_to_columns[index]
             if columns_to_combine is not None:
                 yield combine(row, columns_to_combine)
 
-    def merge_rows(self, rows):
+    def merge_rows(
+        self, rows: Iterable[Sequence[float]]
+    ) -> Generator[tuple[float, ...], None, None]:
         """Merge all rows of measurements"""
         for row in rows:
             yield tuple(self.merge_one_row(row, combine_measurements))
 
-    def merge_ingredients(self, ingredients):
+    def merge_ingredients(
+        self, ingredients: tuple[Ingredient, ...]
+    ) -> tuple[Ingredient, ...]:
         """Merge ingredients"""
         return tuple(self.merge_one_row(ingredients, combine_ingredients))
 
 
-def combine_measurements(row, columns_to_combine):
+def combine_measurements(
+    row: Sequence[float], columns_to_combine: list[tuple[int, float]]
+) -> float:
     """Combine columns in a row of measurements in grams according to
     specification."""
     return sum(
@@ -118,16 +144,22 @@ def combine_measurements(row, columns_to_combine):
     )
 
 
-def combine_ingredients(ingredients, columns_to_combine):
+def combine_ingredients(
+    ingredients: Sequence[Ingredient], columns_to_combine: list[tuple[int, float]]
+) -> Ingredient:
     """Combine columns in a row of ingredients according to specification."""
     return ingredients[columns_to_combine[0][0]]
 
 
-def merge_columns(ingredients, rows, merge=None):
+def merge_columns(
+    ingredients: tuple[Ingredient, ...],
+    rows: list[tuple[float, ...]],
+    merge: list[list[tuple[str | int, float]]] | None = None,
+) -> tuple[tuple[Ingredient, ...], list[tuple[float, ...]]]:
     """Merge columns of input data according to specification."""
     if merge is None or len(merge) == 0:
         return ingredients, rows
-    merge = Merge(merge, ingredients)
-    new_rows = list(merge.merge_rows(rows))
-    new_ingredients = merge.merge_ingredients(ingredients)
+    merger = Merge(merge, ingredients)
+    new_rows = list(merger.merge_rows(rows))
+    new_ingredients = merger.merge_ingredients(ingredients)
     return new_ingredients, new_rows

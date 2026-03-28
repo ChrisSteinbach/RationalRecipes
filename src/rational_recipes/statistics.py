@@ -1,17 +1,24 @@
 """Calculation and formatting of statistics"""
 
 import math
+from collections.abc import Generator, Sequence
+from typing import Any
 
 import numpy
+import numpy.typing as npt
 
 from rational_recipes.columns import ColumnTranslator
 from rational_recipes.difference import percentage_difference_from_mean
+from rational_recipes.ingredient import Ingredient
 from rational_recipes.normalize import normalize_to_100g
+from rational_recipes.output import Output
 
 Z_VALUE = 1.96  # represents a confidence level of 95%
 
 
-def calculate_minimum_sample_sizes(std_deviations, means, desired_interval):
+def calculate_minimum_sample_sizes(
+    std_deviations: list[float], means: list[float], desired_interval: float
+) -> Generator[int, None, None]:
     """Calculate minimum sample size needed for a confidence interval
     of 5% difference from the mean with 95% confidence level"""
     for std, mean in zip(std_deviations, means, strict=False):
@@ -21,9 +28,11 @@ def calculate_minimum_sample_sizes(std_deviations, means, desired_interval):
             yield math.ceil(((Z_VALUE * std) / (mean * desired_interval)) ** 2)
 
 
-def calculate_confidence_intervals(data, std_deviations):
+def calculate_confidence_intervals(
+    data: Any, std_deviations: list[float]
+) -> list[float]:
     """Calculate confidence intervals for each ingredient"""
-    intervals = []
+    intervals: list[float] = []
     for column, std in zip(data, std_deviations, strict=False):
         sample_size = len(column)
         std_error = std / math.sqrt(sample_size)
@@ -31,10 +40,12 @@ def calculate_confidence_intervals(data, std_deviations):
     return intervals
 
 
-def create_zero_filter(ingredients, zero_columns):
+def create_zero_filter(
+    ingredients: tuple[Ingredient, ...], zero_columns: list[str]
+) -> dict[int, bool]:
     """Convert column id list into specification for which columns should be
     filtered for zeros"""
-    filter_map = {}
+    filter_map: dict[int, bool] = {}
     for i in range(len(ingredients)):
         filter_map[i] = False
     column_translator = ColumnTranslator(ingredients)
@@ -44,9 +55,11 @@ def create_zero_filter(ingredients, zero_columns):
     return filter_map
 
 
-def filter_zeros(data, filter_map):
+def filter_zeros(
+    data: npt.NDArray[numpy.floating[Any]], filter_map: dict[int, bool]
+) -> list[Any]:
     """Filter zero values according to specification"""
-    new_data = []
+    new_data: list[Any] = []
     for i in range(len(data)):
         column = data[i]
         if filter_map[i]:
@@ -58,13 +71,18 @@ def filter_zeros(data, filter_map):
     return new_data
 
 
-def apply_defaults(data, defaults, filter_map):
+def apply_defaults(
+    data: Sequence[Sequence[float]],
+    defaults: list[float],
+    filter_map: dict[int, bool],
+) -> list[list[float]]:
     """Apply default values to zero columns according to settings"""
-    new_data = []
+    new_data: list[list[float]] = []
     total = sum(defaults)
     percentages = [default / total for default in defaults]
     col_range = range(len(data[0]))
-    for row in data:
+    for original_row in data:
+        row = list(original_row)
         for i in col_range:
             if filter_map[i] and row[i] == 0:
                 row = [column - (column * percentages[i]) for column in row]
@@ -75,40 +93,57 @@ def apply_defaults(data, defaults, filter_map):
     return new_data
 
 
-def calculate_variables(data):
+def calculate_variables(
+    data: Any,
+) -> tuple[list[float], list[float], list[float]]:
     """Calculate standard deviation, mean and confidence interval vectors"""
-    std_deviations = []
-    means = []
+    std_deviations: list[float] = []
+    means: list[float] = []
     for column in data:
-        std_deviations.append(column.std())
-        means.append(column.mean())
+        std_deviations.append(float(column.std()))
+        means.append(float(column.mean()))
     intervals = calculate_confidence_intervals(data, std_deviations)
     return intervals, std_deviations, means
 
 
-def filter_zero_columns(raw_data, ingredients, zero_columns):
+def filter_zero_columns(
+    raw_data: list[tuple[float, ...]],
+    ingredients: tuple[Ingredient, ...],
+    zero_columns: list[str],
+) -> list[list[float]]:
     """Filter zero values from specified columns and apply defaults.
 
     Normalizes data to 100g proportions, filters zeros from the specified
     columns, computes default values from the filtered data, and applies
     them back. Returns row-major data ready for further processing.
     """
-    raw_data = list(normalize_to_100g(raw_data))
-    data = numpy.array(raw_data).transpose()
+    normalized = list(normalize_to_100g(raw_data))
+    data = numpy.array(normalized).transpose()
     filter_map = create_zero_filter(ingredients, zero_columns)
-    data = filter_zeros(data, filter_map)
-    _, _, defaults = calculate_variables(data)
-    return apply_defaults(raw_data, defaults, filter_map)
+    data_filtered = filter_zeros(data, filter_map)
+    _, _, defaults = calculate_variables(data_filtered)
+    return apply_defaults(normalized, defaults, filter_map)
 
 
-def calculate_statistics(raw_data, ingredients, zero_columns):
+def calculate_statistics(
+    raw_data: Sequence[Sequence[float]],
+    ingredients: tuple[Ingredient, ...],
+    zero_columns: list[str] | None,
+) -> "Statistics":
     """Calculate mean, confidence interval and minimum sample size for each
     ingredient.
     """
+    processed: Sequence[Sequence[float]]
     if zero_columns is not None and len(zero_columns) > 0:
-        raw_data = filter_zero_columns(raw_data, ingredients, zero_columns)
-    raw_data = list(normalize_to_100g(raw_data))
-    data = numpy.array(raw_data).transpose()
+        processed = filter_zero_columns(
+            [tuple(row) for row in raw_data],
+            ingredients,
+            zero_columns,
+        )
+    else:
+        processed = raw_data
+    normalized = list(normalize_to_100g(processed))
+    data = numpy.array(normalized).transpose()
     intervals, std_deviations, means = calculate_variables(data)
     return Statistics(ingredients, intervals, std_deviations, means)
 
@@ -116,32 +151,38 @@ def calculate_statistics(raw_data, ingredients, zero_columns):
 class Statistics:
     """Calculate statistics"""
 
-    def __init__(self, ingredients, intervals, std_deviations, means):
+    def __init__(
+        self,
+        ingredients: tuple[Ingredient, ...],
+        intervals: list[float],
+        std_deviations: list[float],
+        means: list[float],
+    ) -> None:
         self.ingredients = ingredients
         self.intervals = intervals
         self.std_deviations = std_deviations
-        self.desired_interval = 0.05
+        self.desired_interval: float = 0.05
         self.means = means
-        self._precision = 2
+        self._precision: int = 2
 
-    def _float_format(self):
+    def _float_format(self) -> str:
         """String format for floats with correct precision"""
         return f"%1.{self._precision}f"
 
-    def set_precision(self, precision):
+    def set_precision(self, precision: int) -> None:
         """Set precision (i.e. number of digits shown after decimal point)
         for floating point as_percentages."""
         self._precision = precision
 
-    def set_desired_interval(self, desired_interval):
+    def set_desired_interval(self, desired_interval: float) -> None:
         """Set desired confidence interval"""
         self.desired_interval = desired_interval
 
-    def bakers_percentage(self):
+    def bakers_percentage(self) -> list[float]:
         """Express mean values as bakers percentage"""
         return [mean / self.means[0] for mean in self.means]
 
-    def print_min_sample_sizes(self, output):
+    def print_min_sample_sizes(self, output: Output) -> None:
         """Print (pre-calculated) minimum samples size for each ingredient
         proportion mean"""
         min_sample_sizes = tuple(
@@ -156,7 +197,13 @@ class Statistics:
                 f" proportion: {min_sample_sizes[i]}"
             )
 
-    def _print_interval(self, output, percentage, interval, ingredient):
+    def _print_interval(
+        self,
+        output: Output,
+        percentage: float,
+        interval: float,
+        ingredient: Ingredient,
+    ) -> None:
         """Output confidence interval for one ingredient"""
         upper_value = percentage + interval
         upper = self._float_format() % upper_value
@@ -177,7 +224,7 @@ class Statistics:
         else:
             output.line(text + lower)
 
-    def print_confidence_intervals(self, output):
+    def print_confidence_intervals(self, output: Output) -> None:
         """Print confidence intervals for mean of each ingredient proportion"""
         total = sum(self.means)
         percentages = [(mean / total) * 100 for mean in self.means]

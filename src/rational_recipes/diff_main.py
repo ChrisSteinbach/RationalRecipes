@@ -5,7 +5,9 @@ from dataclasses import dataclass
 
 import rational_recipes.utils as utils
 from rational_recipes.difference import percentage_change, percentage_difference
+from rational_recipes.ingredient import Ingredient
 from rational_recipes.output import Output
+from rational_recipes.ratio import Ratio
 
 
 @dataclass
@@ -20,11 +22,16 @@ class DiffResult:
     mean_difference: float
     percentage_changes: list[tuple[float, str]]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.output
 
 
-def get_ratios_to_compare(first_filename, remaining_filenames, distinct, merge):
+def get_ratios_to_compare(
+    first_filename: list[str],
+    remaining_filenames: list[str],
+    distinct: bool,
+    merge: list[list[tuple[str | int, float]]],
+) -> tuple[Ratio, Ratio]:
     """Get ratios to compare from input files"""
     ingredients1, ratio1 = utils.get_ratio(first_filename, distinct, merge)
     ingredients2, ratio2 = utils.get_ratio(remaining_filenames, distinct, merge)
@@ -37,13 +44,19 @@ def get_ratios_to_compare(first_filename, remaining_filenames, distinct, merge):
 class DiffMain:
     """Defines entry point and supporting methods for diff script"""
 
-    def __init__(self, first_filename, remaining_filenames, distinct, merge):
+    def __init__(
+        self,
+        first_filename: list[str],
+        remaining_filenames: list[str],
+        distinct: bool,
+        merge: list[list[tuple[str | int, float]]],
+    ) -> None:
         self.number_template = "%%0.%df"
         self.ratio1, self.ratio2 = get_ratios_to_compare(
             first_filename, remaining_filenames, distinct, merge
         )
 
-    def main(self, show_percentage_change, precision):
+    def main(self, show_percentage_change: bool, precision: int) -> DiffResult:
         """Entry method for script"""
         self.number_template = f"%0.{precision}f"
         output = Output()
@@ -66,7 +79,9 @@ class DiffMain:
             percentage_changes=[(c, str(i)) for c, i in changes],
         )
 
-    def print_overall_percentage_diff(self, output, mean_difference):
+    def print_overall_percentage_diff(
+        self, output: Output, mean_difference: float
+    ) -> None:
         """Print overall percentage difference between ratios. This is
         calculated as the mean value of the percentage change for all
         ingredients"""
@@ -77,7 +92,7 @@ class DiffMain:
         )
         output.line()
 
-    def print_percentage_change(self, output):
+    def print_percentage_change(self, output: Output) -> None:
         """Print percentage change between ratios for each ingredient"""
         changes = percentage_change(self.ratio1, self.ratio2)
         for change, ingredient in sorted(
@@ -96,7 +111,11 @@ class DiffMain:
                 % (ingredient, direction, change * 100)
             )
 
-    def print_percentage_difference(self, output, differences):
+    def print_percentage_difference(
+        self,
+        output: Output,
+        differences: list[tuple[float, Ingredient]],
+    ) -> None:
         """Print percentage difference between ratios for each ingredient"""
         for difference, ingredient in sorted(differences, reverse=True):
             output.line(
@@ -108,7 +127,7 @@ class DiffMain:
                 % (ingredient, difference * 100)
             )
 
-    def print_ratios(self, output):
+    def print_ratios(self, output: Output) -> None:
         """Print ratios to be compared"""
         output.line()
         output.line(f"Ratio for data set 1 in units of weight is {self.ratio1}")

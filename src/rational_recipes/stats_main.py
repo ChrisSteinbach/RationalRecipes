@@ -21,31 +21,45 @@ class StatsResult:
     total_recipe_weight: float
     sample_size: int
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.output
 
 
 class StatsMain:
     """Defines entry point and supporting methods for stats script"""
 
-    def __init__(self, filenames, distinct, merge, zero_columns):
+    def __init__(
+        self,
+        filenames: list[str],
+        distinct: bool,
+        merge: list[list[tuple[str | int, float]]],
+        zero_columns: list[str],
+    ) -> None:
         self.distinct = distinct
-        self.confidence = 0.05
-        self.restrictions = []
-        _, self.ratio, self.stats, self.sample_size = utils.get_ratio_and_stats(
+        self.confidence: float = 0.05
+        self.restrictions: list[tuple[str | int, float]] = []
+        result = utils.get_ratio_and_stats(
             filenames, distinct, merge, zero_columns=zero_columns
         )
+        _: object
+        _, self.ratio, self.stats, self.sample_size = result
 
-    def set_restrictions(self, restrictions):
+    def set_restrictions(self, restrictions: list[tuple[str | int, float]]) -> None:
         """Set per ingredient weight restrictions"""
         self.ratio.set_restrictions(restrictions)
 
-    def set_desired_interval(self, interval):
+    def set_desired_interval(self, interval: float) -> None:
         """Set desired confidence interval"""
         self.confidence = interval
         self.stats.set_desired_interval(interval)
 
-    def main(self, ratio_precision, recipe_precision, total_recipe_weight, verbose):
+    def main(
+        self,
+        ratio_precision: int,
+        recipe_precision: int,
+        total_recipe_weight: float,
+        verbose: bool,
+    ) -> StatsResult:
         """Entry method for script"""
         self.ratio.set_precision(ratio_precision)
         self.stats.set_precision(ratio_precision)
@@ -57,7 +71,9 @@ class StatsMain:
         self.print_footer(output)
         return self._build_result(str(output), total_recipe_weight)
 
-    def _build_result(self, output_text, total_recipe_weight):
+    def _build_result(
+        self, output_text: str, total_recipe_weight: float
+    ) -> StatsResult:
         """Build structured result from computed data"""
         ingredients = [str(i) for i in self.ratio.ingredients]
         ratio_values = self.stats.bakers_percentage()
@@ -86,14 +102,16 @@ class StatsMain:
             sample_size=self.sample_size,
         )
 
-    def print_footer(self, output):
+    def print_footer(self, output: Output) -> None:
         """Print note on sample data at end of input"""
         text = "recipe proportions. The data may contain duplicates."
         if self.distinct:
             text = "distinct recipe proportions. Duplicates have been removed."
         output.line(f"Note: these calculations are based on {self.sample_size} {text}")
 
-    def print_recipe(self, output, recipe_precision, total_recipe_weight):
+    def print_recipe(
+        self, output: Output, recipe_precision: int, total_recipe_weight: float
+    ) -> None:
         """Print recipe with a specified total weight"""
         self.ratio.set_precision(recipe_precision)
         weight, text = self.ratio.recipe(total_recipe_weight)
@@ -101,13 +119,13 @@ class StatsMain:
         output.line(text)
         output.line()
 
-    def print_ratio(self, output):
+    def print_ratio(self, output: Output) -> None:
         """Print calculated ingredient ratio"""
         output.line()
         output.line(f"Recipe ratio in units of weight is {self.ratio}")
         output.line()
 
-    def print_confidence_intervals(self, output, confidence):
+    def print_confidence_intervals(self, output: Output, confidence: float) -> None:
         """Print confidence intervals for each ingredient proportion"""
         if self.sample_size < 2:
             output.line()

@@ -1,12 +1,17 @@
 """CLI entry point for recipe diff."""
 
-from optparse import OptionParser
+from optparse import OptionParser, Values
 
 import rational_recipes.utils as utils
 from rational_recipes import DiffMain
 
 
-def parse_command_line():
+def parse_command_line() -> tuple[
+    list[str],
+    list[str],
+    Values,
+    list[list[tuple[str | int, float]]],
+]:
     """Parse command line arguments"""
     usage = "usage: %prog [options] csv-file1 csv-file2 [csv-file3]"
     parser = OptionParser(usage=usage)
@@ -39,7 +44,7 @@ def parse_command_line():
     return first_filename, remaining_filenames, options, merge
 
 
-def run():
+def run() -> None:
     """Run the diff tool from the command line."""
     first_filename, remaining_filenames, options, merge = parse_command_line()
     script = DiffMain(first_filename, remaining_filenames, options.distinct, merge)

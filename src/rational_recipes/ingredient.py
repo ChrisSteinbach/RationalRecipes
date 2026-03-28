@@ -1,19 +1,21 @@
 """Ingredient conversions from milliliters to grams"""
 
+from __future__ import annotations
+
 
 class Factory:
     """Factory and registry for ingredient instances"""
 
-    _INGREDIENTS = {}
+    _INGREDIENTS: dict[str, Ingredient] = {}
 
     @classmethod
-    def register(cls, ingredient):
+    def register(cls, ingredient: Ingredient) -> None:
         """Register ingredient name and synonyms"""
         for name in ingredient.synonyms():
             cls._INGREDIENTS[name.lower().strip()] = ingredient
 
     @classmethod
-    def get_by_name(cls, name):
+    def get_by_name(cls, name: str) -> Ingredient:
         """Lookup a Ingredient instance by name"""
         return cls._INGREDIENTS[name.lower()]
 
@@ -23,38 +25,43 @@ class Ingredient:
     measurements"""
 
     def __init__(
-        self, names, conversion, wholeunits2weight=None, default_wholeunit_weight=None
-    ):
+        self,
+        names: list[str],
+        conversion: float,
+        wholeunits2weight: dict[str, float] | None = None,
+        default_wholeunit_weight: str | None = None,
+    ) -> None:
         self._conversion = conversion
         self._name = names[0]
         self._names = names
-        self._wholeunits2grams = {}
+        self._wholeunits2grams: dict[str, float] = {}
         if wholeunits2weight is not None:
             for unit, weight in wholeunits2weight.items():
                 self._wholeunits2grams[unit.lower()] = weight
+        self._default_wholeunit_weight: str | None
         if default_wholeunit_weight is not None:
             self._default_wholeunit_weight = default_wholeunit_weight.lower()
         else:
             self._default_wholeunit_weight = None
         Factory.register(self)
 
-    def name(self):
+    def name(self) -> str:
         """Returns ingredient name"""
         return self._name
 
-    def synonyms(self):
+    def synonyms(self) -> list[str]:
         """Returns a list of ingredient synonyms"""
         return self._names
 
-    def milliliters2grams(self, milliliters):
+    def milliliters2grams(self, milliliters: float) -> float:
         """Convert milliliter measure to grams"""
         return milliliters * self._conversion
 
-    def grams2milliliters(self, grams):
+    def grams2milliliters(self, grams: float) -> float:
         """Convert measure in grams to milliliters"""
         return grams / self._conversion
 
-    def wholeunits2grams(self, wholeunit):
+    def wholeunits2grams(self, wholeunit: str) -> float | None:
         """Convert whole unit measurement to grams"""
         if self._wholeunits2grams is None:
             return None
@@ -63,15 +70,15 @@ class Ingredient:
         except KeyError:
             return None
 
-    def grams2wholeunits(self, grams):
+    def grams2wholeunits(self, grams: float) -> float | None:
         """Convert measure in grams to the default wholeunit
         (if such exists)"""
-        if self.default_wholeunit_weight() is not None:
-            return grams / self.default_wholeunit_weight()
-        else:
-            return None
+        weight = self.default_wholeunit_weight()
+        if weight is not None:
+            return grams / weight
+        return None
 
-    def default_wholeunit_weight(self):
+    def default_wholeunit_weight(self) -> float | None:
         """Returns a standard weight for an ingredient, or None if there is no
         such weight"""
         if self._default_wholeunit_weight:
@@ -79,10 +86,10 @@ class Ingredient:
         else:
             return None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.name()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name()
 
 

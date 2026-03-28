@@ -2,22 +2,29 @@
 to grams.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from rational_recipes.errors import InvalidInputException
+
+if TYPE_CHECKING:
+    from rational_recipes.ingredient import Ingredient
 
 
 class Factory:
     """Registry and factory for all units of measure."""
 
-    _UNITS = {}
+    _UNITS: dict[str, Unit] = {}
 
     @classmethod
-    def register(cls, unit):
+    def register(cls, unit: Unit) -> None:
         """Register unit name and synonyms"""
         for name in unit.synonyms():
             cls._UNITS[name.lower().strip()] = unit
 
     @classmethod
-    def get_by_name(cls, name):
+    def get_by_name(cls, name: str) -> Unit | None:
         """Lookup a Unit instance by name"""
         try:
             return cls._UNITS[name.lower()]
@@ -28,15 +35,17 @@ class Factory:
 class Unit:
     """Abstract unit of measure"""
 
-    def __init__(self, names):
+    def __init__(self, names: list[str]) -> None:
         self._names = names
         Factory.register(self)
 
-    def synonyms(self):
+    def synonyms(self) -> list[str]:
         """List synonyms for a unit"""
         return self._names
 
-    def norm(self, value, ingredient, line_nr=None):
+    def norm(
+        self, value: float, ingredient: Ingredient, line_nr: int | None = None
+    ) -> float:
         """Normalize an ingredient measure to grams"""
         raise NotImplementedError("Unit.norm() must be implemented in derived class")
 
@@ -44,11 +53,13 @@ class Unit:
 class WeightUnit(Unit):
     """Units of measure by weight"""
 
-    def __init__(self, names, conversion):
+    def __init__(self, names: list[str], conversion: float) -> None:
         Unit.__init__(self, names)
         self._conversion = conversion
 
-    def norm(self, value, ingredient, line_nr=None):
+    def norm(
+        self, value: float, ingredient: Ingredient, line_nr: int | None = None
+    ) -> float:
         """Normalizes any weight unit to grams"""
         return value * self._conversion
 
@@ -63,11 +74,13 @@ LB = WeightUnit(["lbs", "lb", "pounds"], 453.592)
 class VolumeUnit(Unit):
     """Units of measure by volume"""
 
-    def __init__(self, names, conversion):
+    def __init__(self, names: list[str], conversion: float) -> None:
         Unit.__init__(self, names)
         self._conversion = conversion
 
-    def norm(self, value, ingredient, line_nr=None):
+    def norm(
+        self, value: float, ingredient: Ingredient, line_nr: int | None = None
+    ) -> float:
         """Normalizes any volume unit to milliliters and then converts to grams"""
         milliliters = value * self._conversion
         return ingredient.milliliters2grams(milliliters)
@@ -123,11 +136,13 @@ class BadUnitException(InvalidInputException):
 class WholeUnit(Unit):
     """Whole units of measure"""
 
-    def __init__(self, sizes):
+    def __init__(self, sizes: list[str]) -> None:
         Unit.__init__(self, sizes)
         self._size = sizes[0]
 
-    def norm(self, value, ingredient, line_nr=None):
+    def norm(
+        self, value: float, ingredient: Ingredient, line_nr: int | None = None
+    ) -> float:
         """Normalizes sizeable food stuffs to grams"""
         conversion = ingredient.wholeunits2grams(self._size)
         if conversion is None:

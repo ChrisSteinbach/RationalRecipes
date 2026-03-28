@@ -1,14 +1,17 @@
 """Read and parse input files"""
 
 import re
+from collections.abc import Generator, Sequence
+from typing import TextIO
 
 from rational_recipes.errors import InvalidInputException
 from rational_recipes.ingredient import Factory as IngredientFactory
-from rational_recipes.units import GRAM
+from rational_recipes.ingredient import Ingredient
+from rational_recipes.units import GRAM, Unit
 from rational_recipes.units import Factory as UnitFactory
 
 
-def read_ingredients_from_header(header):
+def read_ingredients_from_header(header: str) -> tuple[Ingredient, ...]:
     """The header line of each input file is a comma separated string of
     ingredient names. Each ingredient represents a column in the input file.
     """
@@ -23,7 +26,7 @@ def read_ingredients_from_header(header):
         ) from error
 
 
-def split_header_and_rows(file_contents):
+def split_header_and_rows(file_contents: str) -> tuple[str, list[str]]:
     """Split file_contents file into header and rows"""
     lines = [
         line.strip() for line in file_contents.splitlines() if len(line.strip()) > 0
@@ -31,7 +34,9 @@ def split_header_and_rows(file_contents):
     return (lines[0], lines[1:])
 
 
-def ingredient_measures_from_row(line_nr, row, nr_columns):
+def ingredient_measures_from_row(
+    line_nr: int, row: str, nr_columns: int
+) -> Generator[tuple[int, str], None, None]:
     """Parse measures from one row"""
     measures = row.split(",")
     if len(measures) != nr_columns:
@@ -49,7 +54,7 @@ MEASURE_PATTERN = re.compile(
 )
 
 
-def value_and_unit(line_nr, column_index, measure):
+def value_and_unit(line_nr: int, column_index: int, measure: str) -> tuple[float, Unit]:
     """Parse measure value and unit. The general form is a number followed by
     the unit, for example "1g" will be read as 1 gram. Any unit synonym
     may be used, so "1gram" or "1grams" will have the same parse result.
@@ -74,13 +79,15 @@ def value_and_unit(line_nr, column_index, measure):
         )
 
 
-def read_files(input_files):
+def read_files(
+    input_files: Sequence[TextIO],
+) -> tuple[tuple[Ingredient, ...], list[list[tuple[float, Unit]]]]:
     """Read one or more input files. For multiple files, columns
     (i.e. ingredients) must be identical between files. Rows from
     multiple files will be concatenated.
     """
-    all_columns = []
-    ingredients = None
+    all_columns: list[list[tuple[float, Unit]]] = []
+    ingredients: tuple[Ingredient, ...] | None = None
     for input_file in input_files:
         file_contents = input_file.read()
         input_file.close()
@@ -93,10 +100,13 @@ def read_files(input_files):
                     "All input files must have the same header."
                 )
         all_columns += list(columns)
+    assert ingredients is not None
     return ingredients, all_columns
 
 
-def read_rows(rows, nr_columns):
+def read_rows(
+    rows: list[str], nr_columns: int
+) -> Generator[list[tuple[float, Unit]], None, None]:
     """Parse the rows of ingredient measurements from one file"""
     line_nr = 2
     for row in rows:
@@ -110,7 +120,9 @@ def read_rows(rows, nr_columns):
         line_nr += 1
 
 
-def parse_file_contents(file_contents):
+def parse_file_contents(
+    file_contents: str,
+) -> tuple[tuple[Ingredient, ...], Generator[list[tuple[float, Unit]], None, None]]:
     """Parse the contents of one file returning the ingredients and rows
     of measurements.
     """

@@ -1,13 +1,18 @@
 """CLI entry point for recipe statistics."""
 
 import sys
-from optparse import OptionParser
+from optparse import OptionParser, Values
 
 import rational_recipes.utils as utils
 from rational_recipes import StatsMain
 
 
-def parse_command_line():
+def parse_command_line() -> tuple[
+    list[str],
+    Values,
+    list[list[tuple[str | int, float]]],
+    list[tuple[str | int, float]],
+]:
     """Parse command line arguments"""
     usage = "usage: %prog [options] csv-file"
     parser = OptionParser(usage=usage)
@@ -86,12 +91,12 @@ def parse_command_line():
     return filenames, options, merge, restrictions
 
 
-def run():
+def run() -> None:
     """Run the stats tool from the command line."""
     filenames, options, merge, restrictions = parse_command_line()
     distinct = options.distinct
 
-    ignorezeros = []
+    ignorezeros: list[str] = []
     if options.ignorezeros is not None:
         ignorezeros = options.ignorezeros.split(",")
 
