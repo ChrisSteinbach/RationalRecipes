@@ -55,20 +55,17 @@ class Ratio:
         total_grams = sum(self.values())
         return weight / float(total_grams)
 
-    def _restrict_by_ingredient(self, scale: float) -> float:
-        """Restrict a recipe based on individual ingredient/weight-limit
-        specifications"""
+    def _apply_restrictions(self, scale: float) -> float:
+        """Find the largest scale where no ingredient exceeds its limit.
+
+        Each restriction defines a ceiling: scale <= limit / unscaled_weight.
+        The answer is min(target_scale, all restriction ceilings).
+        """
         for column_indexes, weight_limit in self._restrictions:
-            scaled_weight = sum(
-                self._elements[index].value(scale) for index in column_indexes
-            )
             unscaled_weight = sum(
                 self._elements[index].value() for index in column_indexes
             )
-            if scaled_weight > weight_limit:
-                new_scale = weight_limit / unscaled_weight
-                if new_scale < scale:
-                    scale = new_scale
+            scale = min(scale, weight_limit / unscaled_weight)
         return scale
 
     def set_restrictions(self, restrictions: list[tuple[str | int, float]]) -> None:
@@ -86,7 +83,7 @@ class Ratio:
     def recipe(self, weight: float) -> tuple[float, list[float]]:
         """Compute a scaled recipe. Returns (total_weight, per_ingredient_grams)."""
         scale = self._restrict_total_weight(weight)
-        scale = self._restrict_by_ingredient(scale)
+        scale = self._apply_restrictions(scale)
         scaled = self.values(scale)
         return sum(scaled), scaled
 

@@ -111,6 +111,53 @@ class TestRatioDataModel:
         assert abs(pairs[0][0] - 1) < 0.001
         assert pairs[0][1].name() == "flour"
 
+    def test_multiple_restrictions_most_constraining_wins(self) -> None:
+        """With multiple restrictions, the tightest one determines the scale"""
+        ingredients, _ = make_test_data()
+        # proportions [1, 2, 3], target 600 → unrestricted scale=100
+        # flour≤50 → scale≤50, egg≤150 → scale≤75, butter≤300 → scale≤100
+        # flour is most constraining
+        ratio = create_ratio(ingredients, [1, 2, 3], [(0, 50), (1, 150), (2, 300)])
+        total_weight, values = ratio.recipe(600)
+        assert abs(values[0] - 50) < 0.001
+        assert abs(values[1] - 100) < 0.001
+        assert abs(values[2] - 150) < 0.001
+        assert abs(total_weight - 300) < 0.001
+
+    def test_pantry_constraint(self) -> None:
+        """Pantry scenario: 'I have 80g flour, how much can I make?'"""
+        ingredients, _ = make_test_data()
+        # proportions [1, 2, 3], target 1000 → unrestricted scale≈166.7
+        # flour≤80 → scale≤80, which constrains
+        ratio = create_ratio(ingredients, [1, 2, 3], [("flour", 80)])
+        total_weight, values = ratio.recipe(1000)
+        assert abs(values[0] - 80) < 0.001
+        assert abs(values[1] - 160) < 0.001
+        assert abs(values[2] - 240) < 0.001
+        assert abs(total_weight - 480) < 0.001
+
+    def test_non_constraining_restriction(self) -> None:
+        """A restriction higher than the scaled weight has no effect"""
+        ingredients, _ = make_test_data()
+        # proportions [1, 2, 3], target 200 → scale≈33.3, butter≈100
+        # butter≤500 does not constrain
+        ratio = create_ratio(ingredients, [1, 2, 3], [(2, 500)])
+        total_weight, values = ratio.recipe(200)
+        assert abs(total_weight - 200) < 0.001
+        assert abs(sum(values) - 200) < 0.001
+
+    def test_restriction_on_repeated_ingredient(self) -> None:
+        """Restriction on an ingredient that appears twice sums both columns"""
+        ingredients = (FLOUR, EGG, BUTTER, BUTTER)
+        # proportions [1, 2, 3, 3], total=9, target 200 → scale≈22.2
+        # butter (cols 2+3) unscaled=6, limit 94 → scale≤94/6≈15.67
+        ratio = create_ratio(ingredients, [1, 2, 3, 3], [("butter", 94)])
+        total_weight, values = ratio.recipe(200)
+        butter_total = values[2] + values[3]
+        assert butter_total <= 94 + 0.001
+        assert abs(butter_total - 94) < 0.01
+        assert total_weight < 200
+
     def test_len(self) -> None:
         """len returns number of elements"""
         ingredients, _ = make_test_data()
