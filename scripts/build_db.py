@@ -22,8 +22,10 @@ from pathlib import Path
 try:
     import openpyxl
 except ImportError:
-    print("Error: openpyxl is required. Install with: pip install openpyxl",
-          file=sys.stderr)
+    print(
+        "Error: openpyxl is required. Install with: pip install openpyxl",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 ROOT = Path(__file__).parent.parent
@@ -84,6 +86,7 @@ CREATE INDEX IF NOT EXISTS idx_food_fdc_id ON food(fdc_id);
 # USDA FDC loading
 # ---------------------------------------------------------------------------
 
+
 def load_fdc_foods(conn: sqlite3.Connection) -> dict[str, int]:
     """Load all SR Legacy foods into the food table.
 
@@ -117,9 +120,7 @@ def load_fdc_foods(conn: sqlite3.Connection) -> dict[str, int]:
     return fdc_id_map
 
 
-def load_fdc_portions(
-    conn: sqlite3.Connection, fdc_id_map: dict[str, int]
-) -> None:
+def load_fdc_portions(conn: sqlite3.Connection, fdc_id_map: dict[str, int]) -> None:
     """Load portion data from food_portion.csv."""
     portion_csv = FDC_DIR / "food_portion.csv"
 
@@ -179,36 +180,35 @@ def derive_fdc_densities(conn: sqlite3.Connection) -> int:
     return count
 
 
-def _derive_density_for_food(
-    conn: sqlite3.Connection, food_id: int
-) -> float | None:
+def _derive_density_for_food(conn: sqlite3.Connection, food_id: int) -> float | None:
     """Derive density for a single food from its portion data."""
-    portions = conn.execute(
+    raw_portions = conn.execute(
         "SELECT unit_name, gram_weight FROM portion "
         "WHERE food_id = ? AND source = 'fdc'",
         (food_id,),
     ).fetchall()
+    portions: list[tuple[str, float]] = [
+        (str(row[0]), float(row[1])) for row in raw_portions
+    ]
 
     # Try cup portions first
     cup_portions = [
-        (name, weight) for name, weight in portions
-        if "cup" in name.lower()
+        (name, weight) for name, weight in portions if "cup" in name.lower()
     ]
     if cup_portions:
         # Prefer plain "cup", then "fluid" cups, then any cup
         # Exclude "whipped" cups as they measure aerated volume
         plain = [(n, w) for n, w in cup_portions if n.strip().lower() == "cup"]
         fluid = [(n, w) for n, w in cup_portions if "fluid" in n.lower()]
-        non_whipped = [
-            (n, w) for n, w in cup_portions if "whip" not in n.lower()
-        ]
+        non_whipped = [(n, w) for n, w in cup_portions if "whip" not in n.lower()]
         best = plain or fluid or non_whipped or cup_portions
-        name, weight = best[0]
+        _name, weight = best[0]
         return weight / US_CUP_ML
 
     # Fall back to tablespoon
     tbsp_portions = [
-        (name, weight) for name, weight in portions
+        (name, weight)
+        for name, weight in portions
         if name.strip().lower() in ("tbsp", "tablespoon")
     ]
     if tbsp_portions:
@@ -216,7 +216,8 @@ def _derive_density_for_food(
 
     # Fall back to teaspoon
     tsp_portions = [
-        (name, weight) for name, weight in portions
+        (name, weight)
+        for name, weight in portions
         if re.match(r"^tsp\b", name.strip().lower())
     ]
     if tsp_portions:
@@ -224,7 +225,8 @@ def _derive_density_for_food(
 
     # Fall back to fluid ounce (29.5735 mL)
     floz_portions = [
-        (name, weight) for name, weight in portions
+        (name, weight)
+        for name, weight in portions
         if name.strip().lower() in ("fl oz", "fluid ounce")
     ]
     if floz_portions:
@@ -236,6 +238,7 @@ def _derive_density_for_food(
 # ---------------------------------------------------------------------------
 # FAO/INFOODS loading
 # ---------------------------------------------------------------------------
+
 
 def load_fao_densities(conn: sqlite3.Connection) -> int:
     """Load density values from FAO/INFOODS database.
@@ -316,7 +319,7 @@ def load_fao_densities(conn: sqlite3.Connection) -> int:
 # ---------------------------------------------------------------------------
 
 # Ingredients not in FDC/FAO, or needing specific synonym/portion overrides
-SUPPLEMENTARY = [
+SUPPLEMENTARY: list[dict[str, str | float | list[str]]] = [
     {
         "name": "Rum",
         "synonyms": ["rum"],
@@ -397,7 +400,10 @@ FDC_SYNONYM_ALIASES: list[tuple[str, str]] = [
     ("baking soda", "Leavening agents, baking soda"),
     ("bicarbonate", "Leavening agents, baking soda"),
     ("bicarbonate of soda", "Leavening agents, baking soda"),
-    ("baking powder", "Leavening agents, baking powder, double-acting, sodium aluminum sulfate"),
+    (
+        "baking powder",
+        "Leavening agents, baking powder, double-acting, sodium aluminum sulfate",
+    ),
     ("vanilla extract", "Vanilla extract"),
     ("buttermilk", "Milk, buttermilk, fluid, whole"),
     ("butter milk", "Milk, buttermilk, fluid, whole"),
@@ -459,14 +465,19 @@ def load_supplementary(conn: sqlite3.Connection) -> None:
 
     # 1. Supplementary ingredients
     for entry in SUPPLEMENTARY:
+        name = str(entry["name"])
+        synonyms = list(entry["synonyms"])  # type: ignore[arg-type]
+        density = float(entry["density"])  # type: ignore[arg-type]
+        source_note = str(entry.get("source_note", ""))
+
         cur = conn.execute(
             "INSERT INTO food (name, source) VALUES (?, 'supplementary')",
-            (entry["name"],),
+            (name,),
         )
         food_id = cur.lastrowid
         assert food_id is not None
 
-        for syn in entry["synonyms"]:
+        for syn in synonyms:
             try:
                 conn.execute(
                     "INSERT INTO synonym (food_id, name) VALUES (?, ?)",
@@ -478,7 +489,7 @@ def load_supplementary(conn: sqlite3.Connection) -> None:
         conn.execute(
             "INSERT INTO density (food_id, g_per_ml, source, notes) "
             "VALUES (?, ?, 'supplementary', ?)",
-            (food_id, entry["density"], entry.get("source_note")),
+            (food_id, density, source_note),
         )
 
     # 2. Synonym aliases (map short names to FDC foods)
@@ -488,8 +499,10 @@ def load_supplementary(conn: sqlite3.Connection) -> None:
             (fdc_name,),
         ).fetchone()
         if row is None:
-            print(f"  Warning: FDC food not found for synonym '{synonym}': "
-                  f"'{fdc_name}'", file=sys.stderr)
+            print(
+                f"  Warning: FDC food not found for synonym '{synonym}': '{fdc_name}'",
+                file=sys.stderr,
+            )
             continue
 
         food_id = row[0]
@@ -508,8 +521,10 @@ def load_supplementary(conn: sqlite3.Connection) -> None:
             (fdc_name,),
         ).fetchone()
         if row is None:
-            print(f"  Warning: FDC food not found for portion: '{fdc_name}'",
-                  file=sys.stderr)
+            print(
+                f"  Warning: FDC food not found for portion: '{fdc_name}'",
+                file=sys.stderr,
+            )
             continue
 
         conn.execute(
@@ -522,6 +537,7 @@ def load_supplementary(conn: sqlite3.Connection) -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     # Check data files exist

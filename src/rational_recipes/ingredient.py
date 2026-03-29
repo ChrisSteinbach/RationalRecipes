@@ -17,11 +17,21 @@ _DB_PATH = Path(__file__).parent / "data" / "ingredients.db"
 
 # Portion unit names that represent whole-unit sizes (not volume measures).
 # Used to filter portion data into wholeunits2grams mappings.
-_VOLUME_UNITS = frozenset({
-    "cup", "tbsp", "tablespoon", "tsp", "teaspoon",
-    "fl oz", "fluid ounce", "quart", "pint", "liter",
-    "oz",  # weight, not a "whole unit"
-})
+_VOLUME_UNITS = frozenset(
+    {
+        "cup",
+        "tbsp",
+        "tablespoon",
+        "tsp",
+        "teaspoon",
+        "fl oz",
+        "fluid ounce",
+        "quart",
+        "pint",
+        "liter",
+        "oz",  # weight, not a "whole unit"
+    }
+)
 
 
 def _is_volume_or_weight_unit(unit_name: str) -> bool:
@@ -77,9 +87,7 @@ class Factory:
             suggestions = cls._suggest(key)
             if suggestions:
                 hint = "\n".join(f"  - {s}" for s in suggestions)
-                raise KeyError(
-                    f"{name!r}. Did you mean:\n{hint}"
-                )
+                raise KeyError(f"{name!r}. Did you mean:\n{hint}")
             raise KeyError(key)
 
         cls._INGREDIENTS[key] = ingredient
@@ -94,9 +102,7 @@ class Factory:
             return []
 
         # Search both food names and synonyms
-        conditions = " AND ".join(
-            "name LIKE ?" for _ in words
-        )
+        conditions = " AND ".join("name LIKE ?" for _ in words)
         params = [f"%{w}%" for w in words]
 
         rows = conn.execute(
@@ -154,10 +160,7 @@ class Factory:
 
         # Build names list: lookup name first, then other short aliases,
         # excluding the verbose FDC description.
-        short_names = [
-            n for n in all_names
-            if n != food_name and n.lower() != name
-        ]
+        short_names = [n for n in all_names if n != food_name and n.lower() != name]
         names = [name] + short_names
 
         # Get portion data (for whole-unit conversions)

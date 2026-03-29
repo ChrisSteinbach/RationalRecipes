@@ -23,15 +23,10 @@ def read_ingredients_from_header(header: str) -> tuple[Ingredient, ...]:
     reader = csv.reader(io.StringIO(header))
     fields = next(reader)
     try:
-        return tuple(
-            IngredientFactory.get_by_name(field.strip())
-            for field in fields
-        )
+        return tuple(IngredientFactory.get_by_name(field.strip()) for field in fields)
     except KeyError as error:
         msg = error.args[0]
-        raise InvalidInputException(
-            f"No such ingredient as {msg} (line 1)"
-        ) from error
+        raise InvalidInputException(f"No such ingredient as {msg} (line 1)") from error
 
 
 def split_header_and_rows(file_contents: str) -> tuple[str, list[str]]:
