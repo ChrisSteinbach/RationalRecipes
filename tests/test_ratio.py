@@ -2,9 +2,13 @@
 
 from numpy import array
 
-from rational_recipes.ingredient import BUTTER, EGG, FLOUR
+from rational_recipes.ingredient import Factory
 from rational_recipes.ratio import Ratio
 from rational_recipes.statistics import calculate_statistics
+
+BUTTER = Factory.get_by_name("butter")
+EGG = Factory.get_by_name("egg")
+FLOUR = Factory.get_by_name("flour")
 
 
 def calculate_ratio(ingredients, proportions, filter_zeros=None):
@@ -69,14 +73,14 @@ class TestRatio:
         """Test ratio output as if in a recipe using weight and volume measures"""
         ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3])
-        assert ratio.describe_ingredient("flour") == "1.00g or 1.90ml all purpose flour"
+        assert ratio.describe_ingredient("flour") == "1.00g or 1.89ml flour"
 
     def test_describe_wholeunit_ualue(self):
         """Test descriptive output of whole-unit values (eggs in  this case)"""
         ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3])
         assert ratio.describe_ingredient("egg") == (
-            "2.00g, 1.69ml or 0.04 egg(s) where each egg is 53.00g"
+            "2.00g, 1.95ml or 0.05 egg(s) where each egg is 44.00g"
         )
 
     def test_recipe_by_total_weight(self):
@@ -84,9 +88,9 @@ class TestRatio:
         ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3])
         ratio.set_precision(0)
-        expected_recipe = """33g or 63ml all purpose flour
-67g, 56ml or 1 egg(s) where each egg is 53g
-100g or 99ml butter"""
+        expected_recipe = """33g or 63ml flour
+67g, 65ml or 2 egg(s) where each egg is 44g
+100g or 104ml butter"""
         assert ratio.recipe(weight=200)[1] == expected_recipe
 
     def test_recipe_retricted_weight(self):
@@ -95,9 +99,9 @@ class TestRatio:
         ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3], [(1, 31.5)])
         ratio.set_precision(0)
-        expected_recipe = """16g or 30ml all purpose flour
-32g, 27ml or 1 egg(s) where each egg is 53g
-47g or 47ml butter"""
+        expected_recipe = """16g or 30ml flour
+32g, 31ml or 1 egg(s) where each egg is 44g
+47g or 49ml butter"""
         assert ratio.recipe(weight=200)[1] == expected_recipe
 
     def test_retrict_weight_by_name(self):
@@ -106,9 +110,9 @@ class TestRatio:
         ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3], [("egg", 31.5)])
         ratio.set_precision(0)
-        expected_recipe = """16g or 30ml all purpose flour
-32g, 27ml or 1 egg(s) where each egg is 53g
-47g or 47ml butter"""
+        expected_recipe = """16g or 30ml flour
+32g, 31ml or 1 egg(s) where each egg is 44g
+47g or 49ml butter"""
         assert ratio.recipe(weight=200)[1] == expected_recipe
 
     def test_retrict_repeat_ingredient(self):
@@ -117,10 +121,10 @@ class TestRatio:
         ingredients = (FLOUR, EGG, BUTTER, BUTTER)
         ratio = create_ratio(ingredients, [1, 2, 3, 3], [("butter", 94)])
         ratio.set_precision(0)
-        expected_recipe = """16g or 30ml all purpose flour
-31g, 27ml or 1 egg(s) where each egg is 53g
-47g or 46ml butter
-47g or 46ml butter"""
+        expected_recipe = """16g or 30ml flour
+31g, 31ml or 1 egg(s) where each egg is 44g
+47g or 49ml butter
+47g or 49ml butter"""
         assert ratio.recipe(weight=200)[1] == expected_recipe
 
     def test_retricted_weight_multiple(self):
@@ -129,7 +133,7 @@ class TestRatio:
         ingredients, _ = make_test_data()
         ratio = create_ratio(ingredients, [1, 2, 3], [(0, 17), (1, 31.5), (2, 48)])
         ratio.set_precision(0)
-        expected_recipe = """16g or 30ml all purpose flour
-32g, 27ml or 1 egg(s) where each egg is 53g
-47g or 47ml butter"""
+        expected_recipe = """16g or 30ml flour
+32g, 31ml or 1 egg(s) where each egg is 44g
+47g or 49ml butter"""
         assert ratio.recipe(weight=200)[1] == expected_recipe

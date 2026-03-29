@@ -5,10 +5,13 @@ from io import StringIO
 import pytest
 
 from rational_recipes.errors import InvalidInputException
-from rational_recipes.ingredient import FLOUR, SUGAR
+from rational_recipes.ingredient import Factory
 from rational_recipes.read import parse_file_contents, read_files, value_and_unit
 from rational_recipes.units import CUP, GRAM, METRIC_CUP
 from tests.test_utils import normalize
+
+FLOUR = Factory.get_by_name("flour")
+SUGAR = Factory.get_by_name("sugar")
 
 
 class TestReadFiles:
@@ -51,9 +54,9 @@ class TestReadProportions:
         us to test for correctness with just one method (this one)"""
         ingredients, columns = parse_file_contents(recipes)
         new_columns = normalize(ingredients, columns)
-        assert new_columns[0][0] == pytest.approx(30.96, abs=1e-2)
+        assert new_columns[0][0] == pytest.approx(31.57, abs=1e-2)
         assert new_columns[0][1] == pytest.approx(46.860, abs=1e-2)
-        assert new_columns[1][0] == pytest.approx(31.38, abs=1e-2)
+        assert new_columns[1][0] == pytest.approx(32.05, abs=1e-2)
         assert new_columns[1][1] == pytest.approx(26.57, abs=1e-2)
 
     def test_read_proportions(self):
@@ -69,7 +72,7 @@ class TestReadProportions:
                      7 OZ, 1 CUP, 1 CUP"""
         with pytest.raises(InvalidInputException) as exc_info:
             self.assert_proportions(recipes)
-        assert str(exc_info.value) == "No such ingredient as 'blah', line 1"
+        assert str(exc_info.value) == "No such ingredient as blah (line 1)"
 
     def test_read_alternative_format(self):
         """Test parsing using synonyms for units"""

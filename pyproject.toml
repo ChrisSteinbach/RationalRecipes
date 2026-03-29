@@ -27,6 +27,9 @@ rr-diff = "rational_recipes.diff_cli:run"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+rational_recipes = ["data/*.db"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

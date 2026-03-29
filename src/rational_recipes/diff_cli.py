@@ -1,7 +1,9 @@
 """CLI entry point for recipe diff."""
 
+import sys
 from optparse import OptionParser, Values
 
+import rational_recipes.errors
 import rational_recipes.utils as utils
 from rational_recipes import DiffMain
 
@@ -47,5 +49,9 @@ def parse_command_line() -> tuple[
 def run() -> None:
     """Run the diff tool from the command line."""
     first_filename, remaining_filenames, options, merge = parse_command_line()
-    script = DiffMain(first_filename, remaining_filenames, options.distinct, merge)
-    print(script.main(options.show_percentage_change, options.precision))
+    try:
+        script = DiffMain(first_filename, remaining_filenames, options.distinct, merge)
+        print(script.main(options.show_percentage_change, options.precision))
+    except rational_recipes.errors.InvalidInputException as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)

@@ -42,4 +42,7 @@ nosetests.xml
 
 # Dolt database files (added by bd init)
 .dolt/
-*.db
+.dolt*.db
+
+# Bulk data downloads (USDA FDC, FAO/INFOODS)
+/data/

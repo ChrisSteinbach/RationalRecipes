@@ -1,7 +1,9 @@
 """Utility functions for test cases"""
 
-from rational_recipes.ingredient import WATER
+from rational_recipes.ingredient import Factory
 from rational_recipes.normalize import normalize_to_100g, to_grams
+
+WATER = Factory.get_by_name("water")
 
 
 def normalize(ingredients, columns):

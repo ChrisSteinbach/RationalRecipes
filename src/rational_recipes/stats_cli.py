@@ -3,6 +3,7 @@
 import sys
 from optparse import OptionParser, Values
 
+import rational_recipes.errors
 import rational_recipes.utils as utils
 from rational_recipes import StatsMain
 
@@ -100,7 +101,11 @@ def run() -> None:
     if options.ignorezeros is not None:
         ignorezeros = options.ignorezeros.split(",")
 
-    script = StatsMain(filenames, distinct, merge, ignorezeros)
+    try:
+        script = StatsMain(filenames, distinct, merge, ignorezeros)
+    except rational_recipes.errors.InvalidInputException as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     total_recipe_weight = options.total_recipe_weight
     ratio_precision = options.ratio_precision

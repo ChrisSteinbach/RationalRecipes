@@ -44,4 +44,11 @@ The `utils.py` module wires the pipeline together (`get_ratio_and_stats`) and ha
 
 ### Unit/Ingredient registries
 
-`units.py` and `ingredient.py` use a module-level Factory pattern: instances register themselves at import time via class-level `_UNITS`/`_INGREDIENTS` dicts. Lookup is case-insensitive with synonym support. Adding a new ingredient or unit only requires defining the instance at module scope.
+`units.py` uses a module-level Factory pattern: instances register themselves at import time via class-level `_UNITS` dict. Lookup is case-insensitive with synonym support. Adding a new unit only requires defining the instance at module scope.
+
+`ingredient.py` uses a SQLite-backed lazy lookup via `Factory.get_by_name()`. The database (`src/rational_recipes/data/ingredients.db`) is built from USDA FoodData Central SR Legacy (~8K foods with portion weights) and FAO/INFOODS Density Database v2.0 (~600 density values), plus supplementary data for ingredients not in either source. To rebuild the database:
+
+```bash
+scripts/download_data.sh   # fetch raw data to data/fdc/ and data/fao/
+python3 scripts/build_db.py  # build ingredients.db (requires openpyxl)
+```
