@@ -82,7 +82,7 @@ def parse_column_merge(
                 percentage = 1.0
                 if len(column_spec) == 2:
                     if not column_spec[1].isdigit():
-                        raise Exception(
+                        raise InvalidInputException(
                             "Expected percentage after period in merge specification"
                         )
                     percentage = float("0." + column_spec[1])
