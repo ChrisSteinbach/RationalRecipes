@@ -138,18 +138,24 @@ class Factory:
         food_name: str = row[1]
 
         # Get density (prefer fdc_derived, then supplementary, then fao)
-        density_row = conn.execute(
-            "SELECT g_per_ml FROM density WHERE food_id = ? "
+        density_rows = conn.execute(
+            "SELECT g_per_ml, source FROM density WHERE food_id = ? "
             "ORDER BY CASE source "
             "  WHEN 'fdc_derived' THEN 1 "
             "  WHEN 'supplementary' THEN 2 "
             "  ELSE 3 "
-            "END "
-            "LIMIT 1",
+            "END",
             (food_id,),
-        ).fetchone()
+        ).fetchall()
 
-        density = density_row[0] if density_row else 1.0
+        if density_rows:
+            density = density_rows[0][0]
+            density_src = density_rows[0][1]
+            density_alts = [(val, src) for val, src in density_rows]
+        else:
+            density = 1.0
+            density_src = "default"
+            density_alts = []
 
         # Get all synonyms for this food
         synonym_rows = conn.execute(
@@ -184,6 +190,8 @@ class Factory:
         ingredient = Ingredient(
             names=names,
             conversion=density,
+            density_source=density_src,
+            density_alternatives=density_alts,
             wholeunits2weight=wholeunits if wholeunits else None,
             default_wholeunit_weight=default_wholeunit,
         )
@@ -203,10 +211,14 @@ class Ingredient:
         self,
         names: list[str],
         conversion: float,
+        density_source: str = "default",
+        density_alternatives: list[tuple[float, str]] | None = None,
         wholeunits2weight: dict[str, float] | None = None,
         default_wholeunit_weight: str | None = None,
     ) -> None:
         self._conversion = conversion
+        self._density_source = density_source
+        self._density_alternatives = density_alternatives or []
         self._name = names[0]
         self._names = names
         self._wholeunits2grams: dict[str, float] = {}
@@ -226,6 +238,22 @@ class Ingredient:
     def synonyms(self) -> list[str]:
         """Returns a list of ingredient synonyms"""
         return self._names
+
+    @property
+    def density(self) -> float:
+        """Returns the density value (g/ml) used for volume conversions."""
+        return self._conversion
+
+    @property
+    def density_source(self) -> str:
+        """Returns the source of the density value (e.g. 'fdc_derived',
+        'supplementary', 'fao', or 'default')."""
+        return self._density_source
+
+    def density_alternatives(self) -> list[tuple[float, str]]:
+        """Returns all available density values as (g_per_ml, source) tuples,
+        ordered by source preference."""
+        return list(self._density_alternatives)
 
     def milliliters2grams(self, milliliters: float) -> float:
         """Convert milliliter measure to grams"""
