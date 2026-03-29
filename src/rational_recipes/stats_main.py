@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import rational_recipes.utils as utils
 from rational_recipes.output import Output
+from rational_recipes.ratio_format import RatioFormatter
 from rational_recipes.statistics import calculate_minimum_sample_sizes
 
 
@@ -38,6 +39,7 @@ class StatsMain:
         self.distinct = distinct
         self.confidence: float = 0.05
         self.restrictions: list[tuple[str | int, float]] = []
+        self.formatter = RatioFormatter()
         result = utils.get_ratio_and_stats(
             filenames, distinct, merge, zero_columns=zero_columns
         )
@@ -61,7 +63,7 @@ class StatsMain:
         verbose: bool,
     ) -> StatsResult:
         """Entry method for script"""
-        self.ratio.set_precision(ratio_precision)
+        self.formatter.set_precision(ratio_precision)
         self.stats.set_precision(ratio_precision)
         output = Output()
         self.print_ratio(output)
@@ -113,16 +115,17 @@ class StatsMain:
         self, output: Output, recipe_precision: int, total_recipe_weight: float
     ) -> None:
         """Print recipe with a specified total weight"""
-        self.ratio.set_precision(recipe_precision)
-        weight, text = self.ratio.recipe(total_recipe_weight)
+        self.formatter.set_precision(recipe_precision)
+        weight, text = self.formatter.format_recipe(self.ratio, total_recipe_weight)
         output.title(f"{weight:g}g Recipe")
         output.line(text)
         output.line()
 
     def print_ratio(self, output: Output) -> None:
         """Print calculated ingredient ratio"""
+        ratio = self.formatter.format_ratio(self.ratio)
         output.line()
-        output.line(f"Recipe ratio in units of weight is {self.ratio}")
+        output.line(f"Recipe ratio in units of weight is {ratio}")
         output.line()
 
     def print_confidence_intervals(self, output: Output, confidence: float) -> None:
