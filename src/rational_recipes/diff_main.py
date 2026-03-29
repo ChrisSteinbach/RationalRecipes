@@ -1,10 +1,10 @@
 """Compare recipe ratios showing percentage change or percentage difference"""
 
-import sys
 from dataclasses import dataclass
 
 import rational_recipes.utils as utils
 from rational_recipes.difference import percentage_change, percentage_difference
+from rational_recipes.errors import InvalidInputException
 from rational_recipes.ingredient import Ingredient
 from rational_recipes.output import Output
 from rational_recipes.ratio import Ratio
@@ -36,8 +36,9 @@ def get_ratios_to_compare(
     ingredients1, ratio1 = utils.get_ratio(first_filename, distinct, merge)
     ingredients2, ratio2 = utils.get_ratio(remaining_filenames, distinct, merge)
     if ingredients1 != ingredients2:
-        print("Ingredients for input files do not match: unable to compare")
-        sys.exit(1)
+        raise InvalidInputException(
+            "Ingredients for input files do not match: unable to compare"
+        )
     return ratio1, ratio2
 
 
