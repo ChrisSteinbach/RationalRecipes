@@ -1,5 +1,7 @@
 """Read and parse input files"""
 
+import csv
+import io
 import re
 from collections.abc import Generator, Sequence
 from typing import TextIO
@@ -14,16 +16,17 @@ from rational_recipes.units import Factory as UnitFactory
 def read_ingredients_from_header(header: str) -> tuple[Ingredient, ...]:
     """The header line of each input file is a comma separated string of
     ingredient names. Each ingredient represents a column in the input file.
+
+    Supports quoted fields so ingredient names may contain commas,
+    e.g.: "Oil, olive",flour,egg
     """
+    reader = csv.reader(io.StringIO(header))
+    fields = next(reader)
     try:
-        return tuple(
-            IngredientFactory.get_by_name(ingredient.strip())
-            for ingredient in header.split(",")
-        )
+        return tuple(IngredientFactory.get_by_name(field.strip()) for field in fields)
     except KeyError as error:
-        raise InvalidInputException(
-            f"No such ingredient as {str(error)}, line 1"
-        ) from error
+        msg = error.args[0]
+        raise InvalidInputException(f"No such ingredient as {msg} (line 1)") from error
 
 
 def split_header_and_rows(file_contents: str) -> tuple[str, list[str]]:

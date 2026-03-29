@@ -8,8 +8,11 @@ from rational_recipes.difference import (
     percentage_difference,
     percentage_difference_from_mean,
 )
-from rational_recipes.ingredient import EGG, FLOUR
+from rational_recipes.ingredient import Factory
 from tests.test_ratio import create_ratio, make_test_data
+
+EGG = Factory.get_by_name("egg")
+FLOUR = Factory.get_by_name("flour")
 
 
 class TestDifference:

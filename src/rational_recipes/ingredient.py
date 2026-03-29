@@ -1,23 +1,198 @@
-"""Ingredient conversions from milliliters to grams"""
+"""Ingredient conversions from milliliters to grams.
+
+Conversion data loaded from a SQLite database built from:
+  - USDA FoodData Central SR Legacy (~8K foods, portion weights)
+  - FAO/INFOODS Density Database v2.0 (~600 density values)
+  - Supplementary data for ingredients not in either source
+
+See scripts/build_db.py for the database build pipeline.
+"""
 
 from __future__ import annotations
 
+import sqlite3
+from pathlib import Path
+
+_DB_PATH = Path(__file__).parent / "data" / "ingredients.db"
+
+# Portion unit names that represent whole-unit sizes (not volume measures).
+# Used to filter portion data into wholeunits2grams mappings.
+_VOLUME_UNITS = frozenset(
+    {
+        "cup",
+        "tbsp",
+        "tablespoon",
+        "tsp",
+        "teaspoon",
+        "fl oz",
+        "fluid ounce",
+        "quart",
+        "pint",
+        "liter",
+        "oz",  # weight, not a "whole unit"
+    }
+)
+
+
+def _is_volume_or_weight_unit(unit_name: str) -> bool:
+    """Return True if this portion unit is a volume/weight measure, not a
+    whole-unit like 'large' or 'stick'."""
+    lower = unit_name.strip().lower()
+    for vol in _VOLUME_UNITS:
+        if lower == vol or lower.startswith(vol + " ") or lower.startswith(vol + ","):
+            return True
+    return False
+
 
 class Factory:
-    """Factory and registry for ingredient instances"""
+    """Factory and registry for ingredient instances.
+
+    Looks up ingredients from a SQLite database, with an in-memory cache.
+    """
 
     _INGREDIENTS: dict[str, Ingredient] = {}
+    _conn: sqlite3.Connection | None = None
+
+    @classmethod
+    def _get_conn(cls) -> sqlite3.Connection:
+        if cls._conn is None:
+            cls._conn = sqlite3.connect(
+                str(_DB_PATH),
+                check_same_thread=False,
+            )
+        return cls._conn
 
     @classmethod
     def register(cls, ingredient: Ingredient) -> None:
-        """Register ingredient name and synonyms"""
+        """Register ingredient name and synonyms (for backward compat)"""
         for name in ingredient.synonyms():
             cls._INGREDIENTS[name.lower().strip()] = ingredient
 
     @classmethod
     def get_by_name(cls, name: str) -> Ingredient:
-        """Lookup a Ingredient instance by name"""
-        return cls._INGREDIENTS[name.lower()]
+        """Lookup an Ingredient instance by name.
+
+        First checks the in-memory cache, then queries the SQLite database.
+        Raises KeyError if the ingredient is not found.
+        """
+        key = name.lower().strip()
+
+        # Check cache first
+        if key in cls._INGREDIENTS:
+            return cls._INGREDIENTS[key]
+
+        # Query the database
+        ingredient = cls._load_from_db(key)
+        if ingredient is None:
+            suggestions = cls._suggest(key)
+            if suggestions:
+                hint = "\n".join(f"  - {s}" for s in suggestions)
+                raise KeyError(f"{name!r}. Did you mean:\n{hint}")
+            raise KeyError(key)
+
+        cls._INGREDIENTS[key] = ingredient
+        return ingredient
+
+    @classmethod
+    def _suggest(cls, name: str, limit: int = 5) -> list[str]:
+        """Search for foods whose name or synonym contains all query words."""
+        conn = cls._get_conn()
+        words = name.lower().split()
+        if not words:
+            return []
+
+        # Search both food names and synonyms
+        conditions = " AND ".join("name LIKE ?" for _ in words)
+        params = [f"%{w}%" for w in words]
+
+        rows = conn.execute(
+            "SELECT DISTINCT name FROM ("
+            f"  SELECT f.name, length(f.name) AS len FROM food f "
+            f"  WHERE {conditions} "
+            "  UNION "
+            f"  SELECT s.name, length(s.name) AS len FROM synonym s "
+            f"  WHERE {conditions} "
+            ") ORDER BY len LIMIT ?",
+            params + params + [limit],
+        ).fetchall()
+
+        return [r[0] for r in rows]
+
+    @classmethod
+    def _load_from_db(cls, name: str) -> Ingredient | None:
+        """Load an ingredient from the SQLite database by synonym lookup."""
+        conn = cls._get_conn()
+
+        # Find the food via synonym
+        row = conn.execute(
+            "SELECT f.id, f.name "
+            "FROM synonym s JOIN food f ON f.id = s.food_id "
+            "WHERE s.name = ? COLLATE NOCASE",
+            (name,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        food_id: int = row[0]
+        food_name: str = row[1]
+
+        # Get density (prefer fdc_derived, then supplementary, then fao)
+        density_row = conn.execute(
+            "SELECT g_per_ml FROM density WHERE food_id = ? "
+            "ORDER BY CASE source "
+            "  WHEN 'fdc_derived' THEN 1 "
+            "  WHEN 'supplementary' THEN 2 "
+            "  ELSE 3 "
+            "END "
+            "LIMIT 1",
+            (food_id,),
+        ).fetchone()
+
+        density = density_row[0] if density_row else 1.0
+
+        # Get all synonyms for this food
+        synonym_rows = conn.execute(
+            "SELECT name FROM synonym WHERE food_id = ?",
+            (food_id,),
+        ).fetchall()
+        all_names = [r[0] for r in synonym_rows]
+
+        # Build names list: lookup name first, then other short aliases,
+        # excluding the verbose FDC description.
+        short_names = [n for n in all_names if n != food_name and n.lower() != name]
+        names = [name] + short_names
+
+        # Get portion data (for whole-unit conversions)
+        portion_rows = conn.execute(
+            "SELECT unit_name, gram_weight FROM portion WHERE food_id = ?",
+            (food_id,),
+        ).fetchall()
+
+        wholeunits: dict[str, float] = {}
+        default_wholeunit: str | None = None
+
+        for unit_name, gram_weight in portion_rows:
+            if not _is_volume_or_weight_unit(unit_name):
+                wholeunits[unit_name] = gram_weight
+
+        # Determine default whole unit
+        lower_units = {k.lower(): k for k in wholeunits}
+        if "medium" in lower_units:
+            default_wholeunit = lower_units["medium"]
+
+        ingredient = Ingredient(
+            names=names,
+            conversion=density,
+            wholeunits2weight=wholeunits if wholeunits else None,
+            default_wholeunit_weight=default_wholeunit,
+        )
+
+        # Cache all synonyms
+        for syn in names:
+            cls._INGREDIENTS[syn.lower().strip()] = ingredient
+
+        return ingredient
 
 
 class Ingredient:
@@ -43,7 +218,6 @@ class Ingredient:
             self._default_wholeunit_weight = default_wholeunit_weight.lower()
         else:
             self._default_wholeunit_weight = None
-        Factory.register(self)
 
     def name(self) -> str:
         """Returns ingredient name"""
@@ -91,117 +265,3 @@ class Ingredient:
 
     def __str__(self) -> str:
         return self.name()
-
-
-MILK = Ingredient(["milk"], 1)
-WATER = Ingredient(["water"], 1)
-RUM = Ingredient(["rum"], 1)
-JUICE = Ingredient(["juice"], 1)
-EGG = Ingredient(
-    ["egg", "eggs"],
-    1.181592,
-    {
-        "XL": 67,
-        "LARGE": 60,
-        "MEDIUM": 53,
-        "SMALL": 46,
-        "EU LARGE": 59,
-        "EU MEDIUM": 52,
-        "EU SMALL": 45,
-        "EU XL": 66,
-    },
-    "MEDIUM",
-)
-PC_YOLK = 0.31
-EGG_YOLK = Ingredient(
-    ["egg yolk", "yolk"],
-    1.03,
-    {
-        "XL": 67 * 0.31,
-        "LARGE": 60 * 0.31,
-        "MEDIUM": 53 * 0.31,
-        "SMALL": 46 * 0.31,
-        "EU LARGE": 59 * 0.31,
-        "EU MEDIUM": 52 * 0.31,
-        "EU SMALL": 45 * 0.31,
-        "EU XL": 66 * 0.31,
-    },
-    "MEDIUM",
-)
-PC_WHITE = 0.58
-EGG_YOLK = Ingredient(
-    ["egg white"],
-    1.03,
-    {
-        "XL": 67 * 0.58,
-        "LARGE": 60 * 0.58,
-        "MEDIUM": 53 * 0.58,
-        "SMALL": 46 * 0.58,
-        "EU LARGE": 59 * 0.58,
-        "EU MEDIUM": 52 * 0.58,
-        "EU SMALL": 45 * 0.58,
-        "EU XL": 66 * 0.58,
-    },
-    "MEDIUM",
-)
-APPLE = Ingredient(["apple", "apples"], 1.181592)
-RAISIN = Ingredient(["raisin", "raisins"], 1.181592)
-PEEL = Ingredient(["peel"], 1.181592)
-FLOUR = Ingredient(["all purpose flour", "plain flour", "flour"], 0.527426)
-SALT = Ingredient(["salt"], 1.2658)
-BUTTER = Ingredient(
-    ["butter"], 1.012658, {"STICK": 113.398, "CUBE": 56.699, "KNOB": 30.37974}
-)
-GRATED_CHEESE = Ingredient(["grated cheese"], 0.379747)
-GRATED_PARMESAN = Ingredient(["grated parmesan"], 0.42)
-RICOTTA = Ingredient(["ricotta", "ricotta cheese"], 0.93)
-COCOA = Ingredient(["cocoa"], 1.388888)
-CREAM = Ingredient(["cream"], 0.777777)
-SOUR_CREAM = Ingredient(["sour cream"], 0.811537)
-CORNSTARCH = Ingredient(["cornstarch"], 0.640000)
-POTATO_STARCH = Ingredient(["potato starch"], 0.72)
-HONEY = Ingredient(["honey"], 1.3)
-SUGAR = Ingredient(["granulated sugar", "sugar"], 0.843880)
-MOLASSES = Ingredient(["molasses", "black treacle"], 1.42)
-BROWN_SUGAR = Ingredient(["brown sugar"], 0.93)
-ICING_SUGAR = Ingredient(
-    ["icing sugar", " powder sugar", "confectioner's sugar"], 0.506329
-)
-CORN_SYRUP = Ingredient(["corn syrup"], 1.3688)
-MALT_EXTRACT = Ingredient(["malt extract", "malt syrup"], 1.403281939)
-CHOCOLATE_70_PERCENT = Ingredient(["chocolate 70 percent", "dark chocolate"], 0.731228)
-VANILLA_EXTRACT = Ingredient(["vanilla extract"], 0.879165)
-BLUEBERRIES = Ingredient(["blueberries"], 0.625559)
-BAKING_SODA = Ingredient(
-    ["baking soda", "bicarbonate", "bicarbonate of soda"], 0.934112
-)
-VEG_SHORTENING = Ingredient(["vegetable shortening", "crisco"], 0.87)
-BAKING_POWDER = Ingredient(["baking powder"], 0.934112)
-BUTTER_MILK = Ingredient(["buttermilk", "butter milk"], 1.035554)
-CARDAMOM = Ingredient(["ground cardamom", "cardamom"], 0.39)
-CARDAMOM_SEED = Ingredient(["cardamom seed", "cardamom seeds"], 0.6509)
-CINNAMON = Ingredient(["ground cinnamon", "cinnamon"], 0.53)
-CLOVES = Ingredient(["ground cloves", "cloves"], 0.53)
-GINGER = Ingredient(["ground ginger"], 0.53)
-ALL_SPICE = Ingredient(["all spice"], 0.53)
-NUTMEG = Ingredient(["ground nutmeg", "nutmeg"], 0.47)
-RICE = Ingredient(["rice"], 0.801688)
-YEAST = Ingredient(["fresh yeast"], 1.0354)
-
-# Milliliter conversion for potatoes assumes shredded (i.e grated) potatoes
-POTATO = Ingredient(
-    ["potato", "potatoes", "shredded potato", "grated potato"],
-    1.3796292,
-    {
-        "medium": 184,
-        "large": 283,
-        "large baking": 340,
-        "medium baking": 283,
-        "small baking": 226,
-    },
-    "medium",
-)
-
-ONION = Ingredient(
-    ["onion", "onions"], 1.04, {"large": 340, "medium": 227, "small": 113}, "medium"
-)

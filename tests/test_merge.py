@@ -4,8 +4,14 @@ import pytest
 from numpy import array
 
 from rational_recipes.errors import InvalidInputException
-from rational_recipes.ingredient import BUTTER, FLOUR, SALT, SUGAR, WATER
+from rational_recipes.ingredient import Factory
 from rational_recipes.merge import MergeConfigError, merge_columns
+
+BUTTER = Factory.get_by_name("butter")
+FLOUR = Factory.get_by_name("flour")
+SALT = Factory.get_by_name("salt")
+SUGAR = Factory.get_by_name("sugar")
+WATER = Factory.get_by_name("water")
 
 
 class TestMerge:
