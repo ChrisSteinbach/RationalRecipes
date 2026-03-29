@@ -8,6 +8,7 @@ from rational_recipes.errors import InvalidInputException
 from rational_recipes.ingredient import Ingredient
 from rational_recipes.output import Output
 from rational_recipes.ratio import Ratio
+from rational_recipes.ratio_format import RatioFormatter
 
 
 @dataclass
@@ -53,6 +54,7 @@ class DiffMain:
         merge: list[list[tuple[str | int, float]]],
     ) -> None:
         self.number_template = "%%0.%df"
+        self.formatter = RatioFormatter()
         self.ratio1, self.ratio2 = get_ratios_to_compare(
             first_filename, remaining_filenames, distinct, merge
         )
@@ -130,7 +132,9 @@ class DiffMain:
 
     def print_ratios(self, output: Output) -> None:
         """Print ratios to be compared"""
+        ratio1 = self.formatter.format_ratio(self.ratio1)
+        ratio2 = self.formatter.format_ratio(self.ratio2)
         output.line()
-        output.line(f"Ratio for data set 1 in units of weight is {self.ratio1}")
-        output.line(f"Ratio for data set 2 in units of weight is {self.ratio2}")
+        output.line(f"Ratio for data set 1 in units of weight is {ratio1}")
+        output.line(f"Ratio for data set 2 in units of weight is {ratio2}")
         output.line()
