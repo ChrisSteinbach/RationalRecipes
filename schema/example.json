@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "recipes": [
+    {
+      "id": "swedish-pancakes",
+      "title": "Swedish Pancakes (Pannkakor)",
+      "category": "crepes",
+      "description": "Thin, eggy Scandinavian pancakes with a high milk-to-flour ratio.",
+      "base_ingredient": "flour",
+      "sample_size": 200,
+      "confidence_level": 0.95,
+      "ingredients": [
+        {
+          "name": "flour",
+          "ratio": 1.0,
+          "proportion": 0.1673,
+          "std_deviation": 0.0459,
+          "ci_lower": 0.1609,
+          "ci_upper": 0.1737,
+          "min_sample_size": 116,
+          "density_g_per_ml": 0.528,
+          "whole_unit": null
+        },
+        {
+          "name": "milk",
+          "ratio": 3.5976,
+          "proportion": 0.6019,
+          "std_deviation": 0.0918,
+          "ci_lower": 0.5891,
+          "ci_upper": 0.6146,
+          "min_sample_size": 36,
+          "density_g_per_ml": 1.031,
+          "whole_unit": null
+        },
+        {
+          "name": "water",
+          "ratio": 0.0666,
+          "proportion": 0.0111,
+          "std_deviation": 0.0509,
+          "ci_lower": 0.0041,
+          "ci_upper": 0.0182,
+          "min_sample_size": 32060,
+          "density_g_per_ml": 1.001,
+          "whole_unit": null
+        },
+        {
+          "name": "egg",
+          "ratio": 1.1368,
+          "proportion": 0.1902,
+          "std_deviation": 0.0574,
+          "ci_lower": 0.1822,
+          "ci_upper": 0.1981,
+          "min_sample_size": 140,
+          "density_g_per_ml": 1.027,
+          "whole_unit": null
+        },
+        {
+          "name": "butter",
+          "ratio": 0.1607,
+          "proportion": 0.0269,
+          "std_deviation": 0.0332,
+          "ci_lower": 0.0223,
+          "ci_upper": 0.0315,
+          "min_sample_size": 2348,
+          "density_g_per_ml": 0.959,
+          "whole_unit": null
+        },
+        {
+          "name": "salt",
+          "ratio": 0.0158,
+          "proportion": 0.0026,
+          "std_deviation": 0.0025,
+          "ci_lower": 0.0023,
+          "ci_upper": 0.003,
+          "min_sample_size": 1397,
+          "density_g_per_ml": 1.234,
+          "whole_unit": null
+        }
+      ],
+      "sources": [
+        {
+          "type": "text",
+          "title": "Aggregated web recipes",
+          "ref": "200 Swedish pancake recipes collected from cooking websites"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "curated_recipes.schema.json",
+  "title": "Curated Recipe Catalog",
+  "description": "Contract between the Python analysis pipeline and the TypeScript PWA. Contains pre-computed baker's percentages, statistical metadata, and source attributions for curated recipe collections.",
+  "type": "object",
+  "required": ["version", "recipes"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Schema version for forward compatibility."
+    },
+    "recipes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Recipe" }
+    }
+  },
+  "$defs": {
+    "Recipe": {
+      "type": "object",
+      "required": ["id", "title", "category", "base_ingredient", "sample_size", "ingredients"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "description": "URL-safe slug (e.g. 'swedish-pancakes')."
+        },
+        "title": {
+          "type": "string",
+          "description": "Human-readable recipe name."
+        },
+        "category": {
+          "type": "string",
+          "description": "Grouping key for the catalog (e.g. 'crepes', 'muffins')."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional prose about this recipe style."
+        },
+        "base_ingredient": {
+          "type": "string",
+          "description": "The '100%' reference for baker's percentages (typically 'flour')."
+        },
+        "sample_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of source recipes analyzed."
+        },
+        "confidence_level": {
+          "type": "number",
+          "default": 0.95,
+          "description": "Confidence level for interval computation."
+        },
+        "ingredients": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/IngredientStats" },
+          "description": "Per-ingredient statistics. First element is the base ingredient (ratio = 1.0)."
+        },
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Source" },
+          "description": "Attribution for source recipes that contributed to the analysis."
+        }
+      }
+    },
+    "IngredientStats": {
+      "type": "object",
+      "required": ["name", "ratio", "proportion", "std_deviation", "ci_lower", "ci_upper"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Ingredient name matching the ingredient registry."
+        },
+        "ratio": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Baker's percentage relative to base ingredient (base = 1.0)."
+        },
+        "proportion": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fraction of total recipe weight (all proportions sum to ~1.0)."
+        },
+        "std_deviation": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Standard deviation of proportion across source recipes."
+        },
+        "ci_lower": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Lower bound of 95% confidence interval on proportion."
+        },
+        "ci_upper": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Upper bound of 95% confidence interval on proportion."
+        },
+        "min_sample_size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Minimum samples needed for desired CI precision (5% of mean at 95% confidence)."
+        },
+        "density_g_per_ml": {
+          "type": ["number", "null"],
+          "description": "Density for volume display (g/ml). Null if unknown."
+        },
+        "whole_unit": {
+          "oneOf": [
+            { "$ref": "#/$defs/WholeUnit" },
+            { "type": "null" }
+          ],
+          "description": "Whole-unit conversion for countable ingredients (eggs, etc.). Null if not applicable."
+        }
+      }
+    },
+    "WholeUnit": {
+      "type": "object",
+      "required": ["name", "grams"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unit descriptor (e.g. 'large', 'medium', 'stick')."
+        },
+        "grams": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Weight in grams of one unit."
+        }
+      }
+    },
+    "Source": {
+      "type": "object",
+      "required": ["type", "ref"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": ["url", "book", "text"],
+          "description": "'url' for web links, 'book' for bibliographic citations, 'text' for free-form."
+        },
+        "title": {
+          "type": "string",
+          "description": "Human-readable label for this source."
+        },
+        "ref": {
+          "type": "string",
+          "description": "The reference: a URL, formatted citation, or free text."
+        }
+      }
+    }
+  }
+}
