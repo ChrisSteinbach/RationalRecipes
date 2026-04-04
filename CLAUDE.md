@@ -8,6 +8,10 @@ RationalRecipes is a Python CLI tool for statistical analysis and comparison of 
 
 The codebase targets **Python 3.12+**. Source lives in `src/rational_recipes/` (standard src layout).
 
+## Git Workflow
+
+The `main` branch is protected — direct pushes are blocked. All changes must be merged via pull request. Always create a feature branch and open a PR.
+
 ## Commands
 
 ```bash
