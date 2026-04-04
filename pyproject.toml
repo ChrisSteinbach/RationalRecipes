@@ -18,6 +18,8 @@ dev = [
     "pytest",
     "pytest-cov",
     "pre-commit",
+    "jsonschema",
+    "types-jsonschema",
 ]
 
 [project.scripts]

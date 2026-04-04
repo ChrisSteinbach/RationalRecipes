@@ -1,0 +1,353 @@
+{
+  "version": 1,
+  "recipes": [
+    {
+      "id": "swedish-pancakes",
+      "title": "Swedish Pancakes (Pannkakor)",
+      "category": "crepes",
+      "description": "Thin, eggy Scandinavian pancakes with a high milk-to-flour ratio. Served with jam and whipped cream.",
+      "base_ingredient": "flour",
+      "sample_size": 200,
+      "confidence_level": 0.95,
+      "ingredients": [
+        {
+          "name": "flour",
+          "ratio": 1.0,
+          "proportion": 0.1673,
+          "std_deviation": 0.0459,
+          "ci_lower": 0.1609,
+          "ci_upper": 0.1737,
+          "min_sample_size": 116,
+          "density_g_per_ml": 0.5283,
+          "whole_unit": null
+        },
+        {
+          "name": "milk",
+          "ratio": 3.5976,
+          "proportion": 0.6019,
+          "std_deviation": 0.0918,
+          "ci_lower": 0.5891,
+          "ci_upper": 0.6146,
+          "min_sample_size": 36,
+          "density_g_per_ml": 1.0313,
+          "whole_unit": null
+        },
+        {
+          "name": "water",
+          "ratio": 0.0666,
+          "proportion": 0.0111,
+          "std_deviation": 0.0509,
+          "ci_lower": 0.0041,
+          "ci_upper": 0.0182,
+          "min_sample_size": 32060,
+          "density_g_per_ml": 1.0009,
+          "whole_unit": null
+        },
+        {
+          "name": "egg",
+          "ratio": 1.1368,
+          "proportion": 0.1902,
+          "std_deviation": 0.0574,
+          "ci_lower": 0.1822,
+          "ci_upper": 0.1981,
+          "min_sample_size": 140,
+          "density_g_per_ml": 1.0271,
+          "whole_unit": {
+            "name": "medium",
+            "grams": 44.0
+          }
+        },
+        {
+          "name": "butter",
+          "ratio": 0.1607,
+          "proportion": 0.0269,
+          "std_deviation": 0.0332,
+          "ci_lower": 0.0223,
+          "ci_upper": 0.0315,
+          "min_sample_size": 2348,
+          "density_g_per_ml": 0.9595,
+          "whole_unit": null
+        },
+        {
+          "name": "salt",
+          "ratio": 0.0158,
+          "proportion": 0.0026,
+          "std_deviation": 0.0025,
+          "ci_lower": 0.0023,
+          "ci_upper": 0.003,
+          "min_sample_size": 1397,
+          "density_g_per_ml": 1.2342,
+          "whole_unit": null
+        }
+      ],
+      "sources": [
+        {
+          "type": "text",
+          "title": "Aggregated Swedish recipes",
+          "ref": "Swedish pannkakor recipes collected from Swedish-language cooking websites and cookbooks."
+        }
+      ]
+    },
+    {
+      "id": "english-pannkakor",
+      "title": "Pannkakor (English sources)",
+      "category": "crepes",
+      "description": "Swedish-style thin pancakes as documented in English-language cooking sources.",
+      "base_ingredient": "flour",
+      "sample_size": 200,
+      "confidence_level": 0.95,
+      "ingredients": [
+        {
+          "name": "flour",
+          "ratio": 1.0,
+          "proportion": 0.1754,
+          "std_deviation": 0.0481,
+          "ci_lower": 0.1687,
+          "ci_upper": 0.1821,
+          "min_sample_size": 116,
+          "density_g_per_ml": 0.5283,
+          "whole_unit": null
+        },
+        {
+          "name": "milk",
+          "ratio": 3.3011,
+          "proportion": 0.579,
+          "std_deviation": 0.1071,
+          "ci_lower": 0.5641,
+          "ci_upper": 0.5938,
+          "min_sample_size": 53,
+          "density_g_per_ml": 1.0313,
+          "whole_unit": null
+        },
+        {
+          "name": "water",
+          "ratio": 0.0143,
+          "proportion": 0.0025,
+          "std_deviation": 0.0222,
+          "ci_lower": 0.0,
+          "ci_upper": 0.0056,
+          "min_sample_size": 120573,
+          "density_g_per_ml": 1.0009,
+          "whole_unit": null
+        },
+        {
+          "name": "egg",
+          "ratio": 1.1162,
+          "proportion": 0.1958,
+          "std_deviation": 0.0888,
+          "ci_lower": 0.1835,
+          "ci_upper": 0.2081,
+          "min_sample_size": 317,
+          "density_g_per_ml": 1.0271,
+          "whole_unit": {
+            "name": "medium",
+            "grams": 44.0
+          }
+        },
+        {
+          "name": "butter",
+          "ratio": 0.2538,
+          "proportion": 0.0445,
+          "std_deviation": 0.0442,
+          "ci_lower": 0.0384,
+          "ci_upper": 0.0506,
+          "min_sample_size": 1519,
+          "density_g_per_ml": 0.9595,
+          "whole_unit": null
+        },
+        {
+          "name": "salt",
+          "ratio": 0.0163,
+          "proportion": 0.0029,
+          "std_deviation": 0.0029,
+          "ci_lower": 0.0025,
+          "ci_upper": 0.0033,
+          "min_sample_size": 1565,
+          "density_g_per_ml": 1.2342,
+          "whole_unit": null
+        }
+      ],
+      "sources": [
+        {
+          "type": "text",
+          "title": "Aggregated English-language pannkakor recipes",
+          "ref": "Pannkakor recipes collected from English-language cooking websites and cookbooks."
+        }
+      ]
+    },
+    {
+      "id": "french-crepes",
+      "title": "French Crêpes",
+      "category": "crepes",
+      "description": "Classic French crêpes — thin pancakes made with flour, milk, eggs, and butter.",
+      "base_ingredient": "flour",
+      "sample_size": 119,
+      "confidence_level": 0.95,
+      "ingredients": [
+        {
+          "name": "flour",
+          "ratio": 1.0,
+          "proportion": 0.2473,
+          "std_deviation": 0.0668,
+          "ci_lower": 0.2353,
+          "ci_upper": 0.2594,
+          "min_sample_size": 113,
+          "density_g_per_ml": 0.5283,
+          "whole_unit": null
+        },
+        {
+          "name": "milk",
+          "ratio": 1.9131,
+          "proportion": 0.4732,
+          "std_deviation": 0.1483,
+          "ci_lower": 0.4466,
+          "ci_upper": 0.4999,
+          "min_sample_size": 151,
+          "density_g_per_ml": 1.0313,
+          "whole_unit": null
+        },
+        {
+          "name": "water",
+          "ratio": 0.1219,
+          "proportion": 0.0302,
+          "std_deviation": 0.0848,
+          "ci_lower": 0.0149,
+          "ci_upper": 0.0454,
+          "min_sample_size": 12139,
+          "density_g_per_ml": 1.0009,
+          "whole_unit": null
+        },
+        {
+          "name": "egg",
+          "ratio": 0.8281,
+          "proportion": 0.2048,
+          "std_deviation": 0.0852,
+          "ci_lower": 0.1895,
+          "ci_upper": 0.2201,
+          "min_sample_size": 266,
+          "density_g_per_ml": 1.0271,
+          "whole_unit": {
+            "name": "medium",
+            "grams": 44.0
+          }
+        },
+        {
+          "name": "butter",
+          "ratio": 0.1746,
+          "proportion": 0.0432,
+          "std_deviation": 0.0345,
+          "ci_lower": 0.037,
+          "ci_upper": 0.0494,
+          "min_sample_size": 979,
+          "density_g_per_ml": 0.9595,
+          "whole_unit": null
+        },
+        {
+          "name": "salt",
+          "ratio": 0.0051,
+          "proportion": 0.0013,
+          "std_deviation": 0.0026,
+          "ci_lower": 0.0008,
+          "ci_upper": 0.0017,
+          "min_sample_size": 6459,
+          "density_g_per_ml": 1.2342,
+          "whole_unit": null
+        }
+      ],
+      "sources": [
+        {
+          "type": "text",
+          "title": "Aggregated French recipes",
+          "ref": "Crêpe recipes collected from French-language cooking websites and cookbooks."
+        }
+      ]
+    },
+    {
+      "id": "english-crepes",
+      "title": "English Crepes",
+      "category": "crepes",
+      "description": "Crepes as documented in English-language cooking sources — typically a bit thicker than French crêpes.",
+      "base_ingredient": "flour",
+      "sample_size": 207,
+      "confidence_level": 0.95,
+      "ingredients": [
+        {
+          "name": "flour",
+          "ratio": 1.0,
+          "proportion": 0.2144,
+          "std_deviation": 0.0563,
+          "ci_lower": 0.2067,
+          "ci_upper": 0.2221,
+          "min_sample_size": 106,
+          "density_g_per_ml": 0.5283,
+          "whole_unit": null
+        },
+        {
+          "name": "milk",
+          "ratio": 2.2298,
+          "proportion": 0.4781,
+          "std_deviation": 0.1341,
+          "ci_lower": 0.4598,
+          "ci_upper": 0.4964,
+          "min_sample_size": 121,
+          "density_g_per_ml": 1.0313,
+          "whole_unit": null
+        },
+        {
+          "name": "water",
+          "ratio": 0.222,
+          "proportion": 0.0476,
+          "std_deviation": 0.0972,
+          "ci_lower": 0.0344,
+          "ci_upper": 0.0608,
+          "min_sample_size": 6405,
+          "density_g_per_ml": 1.0009,
+          "whole_unit": null
+        },
+        {
+          "name": "egg",
+          "ratio": 0.9838,
+          "proportion": 0.2109,
+          "std_deviation": 0.1009,
+          "ci_lower": 0.1972,
+          "ci_upper": 0.2247,
+          "min_sample_size": 352,
+          "density_g_per_ml": 1.0271,
+          "whole_unit": {
+            "name": "medium",
+            "grams": 44.0
+          }
+        },
+        {
+          "name": "butter",
+          "ratio": 0.2169,
+          "proportion": 0.0465,
+          "std_deviation": 0.0458,
+          "ci_lower": 0.0403,
+          "ci_upper": 0.0527,
+          "min_sample_size": 1487,
+          "density_g_per_ml": 0.9595,
+          "whole_unit": null
+        },
+        {
+          "name": "salt",
+          "ratio": 0.0113,
+          "proportion": 0.0024,
+          "std_deviation": 0.0027,
+          "ci_lower": 0.0021,
+          "ci_upper": 0.0028,
+          "min_sample_size": 1869,
+          "density_g_per_ml": 1.2342,
+          "whole_unit": null
+        }
+      ],
+      "sources": [
+        {
+          "type": "text",
+          "title": "Aggregated English-language crepe recipes",
+          "ref": "Crepe recipes collected from English-language cooking websites and cookbooks."
+        }
+      ]
+    }
+  ]
+}
