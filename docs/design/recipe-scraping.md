@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Issue:** RationalRecipes-7ns (epic: RationalRecipes-b7t)
-**Last updated:** 2026-04-05
+**Last updated:** 2026-04-08
 
 ## Problem
 
@@ -17,10 +17,14 @@ code in `src/rational_recipes/`.
 
 ## Goals
 
-- **Query-driven, not site-targeted**: given a dish name, discover recipes
-  across arbitrary hosts. Source diversity matters for meaningful averages.
-- **Polite**: respect robots.txt, rate limits, and per-host crawl delays. Low
-  per-site load.
+- **Corpus-first, not query-first**: start from large existing recipe
+  archives (RecipeNLG, Web Data Commons) rather than live web search.
+  Source diversity comes from the breadth of the corpus, not from
+  per-dish query engineering.
+- **Automatic grouping**: discover dish variants from the corpus rather
+  than targeting them one at a time. The pipeline should answer "what
+  coherent dish groups exist and which have enough data to average
+  meaningfully?" — not just "find me 30 pannkakor recipes."
 - **Structured-first**: rely on `schema.org/Recipe` JSON-LD where present (most
   modern recipe sites expose it for Google rich snippets).
 - **LLM-assisted parsing**: use a local LLM to turn natural-language ingredient
@@ -38,104 +42,161 @@ code in `src/rational_recipes/`.
 - Ingredient substitution reasoning (separate concern).
 - Multilingual expansion beyond the existing Swedish/French/English samples.
   The pipeline should not *prevent* this later, but we don't optimize for it.
-- Headless-browser rendering of JS-heavy recipe sites. Start with plain HTTP
-  fetching; revisit if hit rate is too low.
+- Live web crawling. Archive-based data sources are sufficient for
+  exploration. Targeted web search (Google Programmable Search API or
+  similar) can supplement archives later if coverage gaps appear for
+  specific dish variants.
 
-## Approach: query-driven crawling
+## Data sources
+
+Two existing recipe archives provide large, ready-to-use corpora that
+eliminate the need for live web search, HTTP fetching, and JSON-LD
+extraction during exploration.
+
+### RecipeNLG — the quick-start corpus
+
+~2.2 million recipes in a single CSV. Fields: title, ingredients (as a
+stringified Python list), directions, source, originating URL. ~1.6M
+gathered by the RecipeNLG authors from web sources; ~600K from Recipe1M+.
+
+Available at <https://recipenlg.cs.put.poznan.pl/> under non-commercial
+research/educational terms. Also mirrored on Hugging Face and Kaggle.
+
+**Strengths:** trivial to load (`pd.read_csv`), ingredients already
+extracted as lists, large enough for statistical work.
+
+**Weaknesses:** fixed 2020 snapshot, heavily English, biased toward large
+US recipe aggregators (AllRecipes, Food.com, Cookbooks.com). Not a uniform
+sample of the recipe web — it's a sample of sites convenient to crawl.
+
+**Role in the pipeline:** fast iteration target. Use for developing and
+validating the grouping and parsing stages. Ingredient lines are still
+natural language ("1 cup flour") so LLM parsing is still needed.
+
+### Web Data Commons — the broader corpus
+
+WDC extracts `schema.org` data from Common Crawl snapshots annually. The
+Recipe subset contains every `schema:Recipe` entity found in the crawl.
+Most recent confirmed release: late 2023.
+
+Two formats:
+
+1. **N-Quads subsets** — raw RDF extractions, flexible but requires
+   reassembling entities from triples.
+2. **Schema.org Table Corpus 2023** — pre-grouped into per-host relational
+   tables, one table per (class, website). Much friendlier for analysis.
+
+Available at <http://webdatacommons.org/structureddata/schemaorgtables/2023/index.html>.
+
+**Strengths:** processes the *entire* Common Crawl, not a hand-picked set
+of sites. Cleaner corpus for reasoning about sampling bias. Structured
+`recipeIngredient`, `cookingMethod`, `cookTime` fields extracted from
+JSON-LD — no HTML parsing needed. Method metadata is valuable for Level 3
+grouping (see below).
+
+**Weaknesses:** larger download (several GB for Recipe tables), messier
+data (real-world markup has missing fields, bad encodings, creative schema
+interpretations), more setup effort.
+
+**Role in the pipeline:** the serious dataset. Use after the pipeline is
+validated on RecipeNLG. If RecipeNLG and WDC give consistent results, that's
+a strong robustness argument; if they disagree, the disagreement itself is
+informative about corpus bias.
+
+### When live search is still useful
+
+Archive coverage will have gaps — niche dish variants, recent recipes,
+non-English sources. If a variant has too few archive hits to compute
+meaningful statistics, targeted web search (Google Programmable Search API
+free tier, 100 queries/day) can supplement. But this is a gap-filling
+measure, not the primary data path.
+
+## Approach: corpus-driven grouping pipeline
+
+The original design targeted one dish variant at a time: pick a dish,
+search for it, filter results. The archive-based approach inverts this:
+start from the whole corpus, automatically discover dish groups, and
+identify which groups have enough data to average meaningfully.
 
 Pipeline stages:
 
 ```
-dish-variant target (name + reference recipe)
-  → search query generation
-  → web search (Google Programmable Search API)
-  → URL candidates
-  → per-host compliance check (robots.txt, rate limit)
-  → HTTP fetch
-  → structured extraction (JSON-LD) | LLM fallback
+recipe archive (RecipeNLG / WDC)
+  → Level 1: title-based grouping
+  → minimum group size filter
+  → Level 2: ingredient-set grouping (split/merge within title groups)
+  → minimum group size filter
   → ingredient-line parsing (local LLM)
   → unit normalization (existing pipeline)
+  → Level 3: method + proportion grouping (split within L2 groups)
+  → minimum group size filter
   → deduplication
-  → variant-fit filter (category contamination)
-  → outlier flagging (in-category statistics)
-  → quality filter (content-farm / slop signals)
-  → human review (include / exclude / defer)
-  → CSV row (compatible with existing statistics code)
+  → outlier flagging
+  → human review
+  → CSV rows (compatible with existing statistics code)
 ```
 
-### 1. Query generation
+Each grouping level is more expensive than the last but operates on a
+smaller set. The minimum-size filters shed noise early and ensure
+downstream stages only process groups that can yield statistically
+meaningful averages.
 
-**Unit of collection: the dish variant, not the dish name.** "Pancake" is a
-family — American buttermilk, Swedish pannkakor, French crêpe, Dutch baby —
-averaging across them is meaningless. The existing `sample_input/` layout
-already reflects this (separate `swedish_recipe_pannkisar.csv`,
-`french_recipe_crepes.csv`, `english_recipe_crepes.csv`). We keep that model:
-one target = one variant = one CSV.
+### Level 1: title-based grouping
 
-For each variant, generate a handful of query variants to broaden the result
-set (e.g. `"swedish pannkakor recipe"`, `"pannkakor traditional"`,
-`"authentic pannkakor"`, native-language variants). Start simple — a fixed
-list of suffixes per variant — revisit if result diversity is poor.
+Normalize recipe titles (lowercase, strip "recipe", strip possessives,
+collapse whitespace) and group by similarity. This is the cheapest pass
+and handles the common case: recipes titled "Swedish Pancakes",
+"pannkakor", "Pannkakor Recipe" should land in the same bucket.
 
-**Reference-recipe anchoring.** Each variant target carries a canonical
-example (initially the existing hand-curated CSV). This anchor is used
-downstream by the variant-fit filter to reject category contamination.
+**Techniques:** exact match on normalized title is the baseline. Fuzzy
+matching (edit distance, token overlap) catches minor variations. LLM-based
+title canonicalization is an option if fuzzy matching proves insufficient,
+but adds cost.
 
-### 2. Web search — Google Programmable Search API
+**What it can't do:** creative titles ("Grandma's Sunday Delight"),
+cross-language synonyms without explicit mapping, or structural variants
+hiding behind the same name ("pancake" catches American, Swedish, Dutch,
+Japanese).
 
-**Why:** free tier (100 queries/day) is sufficient for exploration. At ~10
-results per query, that's a ceiling of ~1000 candidate URLs/day, well above
-what we can process and hand-verify during exploration.
+**Minimum group size filter:** drop groups below a threshold (TBD — likely
+in the range of 5–20 recipes). Groups too small to average meaningfully are
+noise at this stage.
 
-**Alternatives considered:**
+### Level 2: ingredient-set grouping
 
-- **Brave Search API** — paid but permissive; revisit if/when we outgrow the
-  Google free tier.
-- **SearXNG (self-hosted)** — no quota, but a maintenance burden we don't
-  want during exploration.
-- **Scraping Google directly** — rejected (ToS violation, CAPTCHAs).
+Within each Level 1 title group, represent each recipe as a set of
+ingredient names (no quantities needed — just "flour", "milk", "eggs",
+"butter", "salt"). Compute pairwise Jaccard similarity on ingredient sets
+and cluster.
 
-**Open:** query-per-dish budget. If one dish needs 3–5 query variants × 10
-results to get a good candidate pool, 100/day supports ~5–10 dishes/day.
+This catches the "pancake" problem: American buttermilk pancakes (flour +
+buttermilk + baking powder + egg) have a different ingredient fingerprint
+from Swedish pannkakor (flour + milk + egg + butter) and will split into
+separate sub-groups even if they share a title group.
 
-### 3. Compliance layer
+**What it can't do:** distinguish variants that use the same ingredients
+in different proportions or with different techniques (ugnsmannkaka vs
+stekpannkaka — same batter, oven-baked vs pan-fried).
 
-Before fetching *any* URL:
+**Scaling with a vector database:** pairwise Jaccard is fine within small
+title groups, but at corpus scale (millions of recipes, or Level 2 without
+a prior title filter) it becomes expensive. A vector DB (e.g. ChromaDB,
+Qdrant, or LanceDB) indexes recipe embeddings for approximate
+nearest-neighbor search. For Level 2, embed ingredient sets as sparse
+vectors (one dimension per known ingredient, binary or TF-IDF weighted) —
+this is essentially what Jaccard measures, in a form that supports
+sub-linear lookup. Cluster discovery becomes: pick a seed recipe, query
+for its neighborhood, check coherence. New recipes (e.g. from WDC after
+validating on RecipeNLG) can be added incrementally without recomputing
+the full index.
 
-- Fetch and cache `robots.txt` per host (TTL ~24h).
-- Respect `Disallow` rules for our User-Agent.
-- Honor `Crawl-delay` if specified, otherwise default to a conservative
-  minimum delay per host (≥1s).
-- Send a descriptive User-Agent identifying the scraper and a contact URL.
-- Cap concurrent fetches per host at 1.
+**Minimum group size filter:** drop sub-groups below threshold after
+splitting.
 
-Per-host load is naturally low because the candidate set is spread across
-many hosts by search-engine ranking.
+### Ingredient-line parsing (local LLM)
 
-**Library candidates:** `reppy` or `python-robotexclusionrulesparser` for
-robots.txt; `httpx` for fetching.
-
-### 4. Structured extraction (JSON-LD primary)
-
-Parse the fetched HTML and look for `schema.org/Recipe` JSON-LD blocks.
-Recipe schema is nearly universal on mainstream recipe sites because Google
-rewards it with rich snippets. Extract:
-
-- `name` (for dedup / sanity check)
-- `recipeIngredient` (array of strings — still natural language)
-- `recipeYield` / `recipeServings` (for per-serving normalization)
-- `author`, `datePublished` (for provenance / quality signals)
-
-**Library:** `extruct` (handles JSON-LD, microdata, RDFa).
-
-**Fallback for pages without JSON-LD:** either skip (simplest) or use the
-LLM to extract ingredients from the raw HTML text. Start with **skip**;
-measure hit rate; revisit.
-
-### 5. Ingredient-line parsing (local LLM)
-
-Each `recipeIngredient` entry is a natural-language string. The LLM's job is
-to produce structured fields:
+Each ingredient entry is a natural-language string. The LLM produces
+structured fields:
 
 ```
 "1 heaping cup flour, sifted"
@@ -143,10 +204,11 @@ to produce structured fields:
     ingredient: "flour", preparation: "sifted" }
 ```
 
-**Model for exploration:** Gemma 4 e4b via Ollama locally. This task is
-bounded and template-able — a good fit for a small model. We expect a
-larger model (run on a more powerful machine later) to mostly improve
-edge-case coverage.
+**Model for exploration:** Gemma 4 e4b via Ollama locally. Phase 0 dry run
+showed 10/10 accuracy on straightforward English ingredient lines (unicode
+fractions, mixed fractions, implicit quantities, parenthetical prep notes
+all handled correctly). Speed: ~12s/line effective with thinking enabled;
+batching and thinking-mode tuning needed for scale.
 
 **Prompt strategy:** few-shot, with examples covering:
 
@@ -161,7 +223,7 @@ edge-case coverage.
 through the LLM, eyeball accuracy. Iterate prompt until the failure modes
 are well-understood.
 
-### 6. Normalization
+### Normalization
 
 Feed parsed fields into the existing `normalize.py` / `units.py` /
 `ingredient.py` pipeline. Ingredients not present in the ingredients DB
@@ -171,7 +233,45 @@ need a fallback:
 - Medium-term: accumulate unknown-ingredient frequencies; hand-add the most
   common ones to the supplementary data feeding `build_db.py`.
 
-### 7. Deduplication
+### Level 3: method + proportion grouping
+
+Within each Level 2 ingredient-set group, split by cooking method and/or
+ingredient proportions. This is the finest-grained grouping and targets
+variants that share ingredients but differ in technique or ratios.
+
+**Method signal:** cooking technique (bake vs fry vs steam), temperature,
+and time. Ugnsmannkaka (oven-baked, 200°C, 30 min) and stekpannkaka
+(pan-fried, stovetop, 2 min) have the same batter but are different dishes.
+Method catches this; proportions alone cannot.
+
+**Proportion signal:** ingredient ratios after normalization. Crêpes and
+pannkakor are both pan-fried thin batters, but their flour:milk ratios
+differ. Proportions catch this; method alone cannot.
+
+**Combined** gives the tightest clusters — "same stuff, made the same way"
+is what "meaningfully averageable" actually means.
+
+**Scaling with a vector database:** Level 3 is where a vector DB becomes
+most valuable. The embedding space is richer — ingredient proportions
+(continuous values after normalization) combined with method features
+(cook time, technique category) — and the clusters live in a
+high-dimensional space that's hard to reason about with simple thresholds.
+A vector DB makes "find recipes that are made the same way with similar
+proportions" a single nearest-neighbor query. The same index serves both
+grouping (cluster discovery) and the variant-fit check (is this new recipe
+close to an existing group?).
+
+**Data availability:** WDC provides structured `cookingMethod` and
+`cookTime` fields from schema.org markup. RecipeNLG has free-text
+directions that would need LLM extraction. This is an argument for WDC
+as the primary corpus at this stage.
+
+**Minimum group size filter:** drop sub-groups below threshold. The
+threshold connects to the CI-width criterion already in `statistics.py` —
+"enough recipes to compute a confidence interval below a target width"
+is the principled version of a minimum group size.
+
+### Deduplication
 
 Same recipe reposted across hosts inflates its weight in the average.
 
@@ -181,26 +281,22 @@ rough-proportion-bucket). Hash. Near-duplicates collapse. Keep the earliest
 
 Needs tuning once we have real data to see false-positive/negative rates.
 
-### 8. Quality filtering — open question
+### Quality filtering — open question
 
 Content-farm and LLM-generated recipe pages are a real problem in 2026.
-Averaging smooths noise, but if derivative/slop content dominates the top
-search results we risk an echo chamber. This is distinct from taxonomic
-fit (§ Taxonomic ambiguity below) — a page can be correctly the target
+Averaging smooths noise, but if derivative/slop content dominates the
+corpus we risk an echo chamber. This is distinct from taxonomic fit
+(§ Taxonomic ambiguity below) — a recipe can be correctly the target
 variant and still be derivative slop.
 
 Candidate signals:
 
-- Domain age / domain reputation
-- Presence of author byline + about page
-- Recipe metadata completeness (does it have review count? cook time? photos?)
+- Domain diversity within a group (many sources > one source repeated)
+- Recipe metadata completeness (review count, cook time, photos)
 - LLM-as-judge: have the local model rate plausibility of the recipe
 
 **Defer this decision** until we have a hand-verified sample and can measure
-how badly unfiltered averages drift. The answer may be "a light
-LLM-as-judge pass is enough"; the answer may also be "no automated filter
-needed — human review catches the slop." "Slop" itself is a lazy category
-and needs tightening before we can filter for it.
+how badly unfiltered averages drift.
 
 ## Taxonomic ambiguity & outlier handling
 
@@ -216,18 +312,16 @@ the same underlying population.
 
 **Defenses, in layers:**
 
-- **Upstream (queries):** variant-specific terms, handled in § Query
-  generation.
-- **Reference-recipe anchoring:** each variant target has a canonical
-  example. Compute a fingerprint (ingredient set + rough proportion bucket)
-  and reject candidates whose distance from the reference exceeds a
-  threshold.
-- **Structural signals from schema.org:** cook time, cook method, yield,
-  equipment mentioned in instructions. A 25-minute oven-baked recipe
-  shouldn't enter a pannkakor pool even if titled "pancake."
-- **Bimodality sanity check:** if the collected set shows a clearly
-  bimodal distribution on key ratios, something upstream misfired. Surface
-  the clusters and stop — don't silently average.
+- **Level 1 title grouping** narrows by name, but can't prevent ambiguous
+  names from collecting multiple dish types.
+- **Level 2 ingredient-set grouping** splits groups whose ingredient
+  fingerprints diverge (e.g. baking-powder presence separates American
+  pancakes from pannkakor).
+- **Level 3 method + proportion grouping** catches technique variants
+  hiding behind the same ingredient set.
+- **Bimodality sanity check:** if a group shows a clearly bimodal
+  distribution on key ratios after Level 2/3, something upstream misfired.
+  Surface the clusters and stop — don't silently average.
 
 **Distance metric** is an open question — Jaccard on ingredient sets is
 cheap; weighted by proportion is closer to what we actually care about.
@@ -288,12 +382,15 @@ with the project's existing statistical output.
 
 ## Compliance & ethics
 
-- Respect `robots.txt` and `Crawl-delay`.
-- Identify the scraper in User-Agent with a contact URL.
-- Cache aggressively to avoid re-fetching.
-- Per-host rate limiting (effectively low load since work is spread across
-  hosts by search ranking).
-- No circumvention of paywalls, login walls, or anti-bot measures.
+Archive-based data (RecipeNLG, WDC) shifts most compliance concerns
+upstream — those projects handled crawl ethics when collecting the data.
+Our obligations:
+
+- Respect archive license terms (RecipeNLG: non-commercial research/
+  educational use; WDC: inherits fair-use status of underlying pages).
+- If supplementing with live web search later: respect `robots.txt` and
+  `Crawl-delay`, identify the scraper in User-Agent, cache aggressively,
+  rate-limit per host, no circumvention of paywalls or anti-bot measures.
 - Store only what's needed (ingredient lists + provenance metadata, not
   full page archives long-term).
 - Treat collected data as research-use; if/when the app surfaces averaged
@@ -301,28 +398,31 @@ with the project's existing statistical output.
 
 ## Exploration plan
 
-Phased so we fail fast on the expensive uncertainties (LLM quality, JSON-LD
-coverage) before building infrastructure around them.
+Phased so we fail fast on the expensive uncertainties (LLM quality,
+grouping effectiveness) before building infrastructure around them.
 
-**Phase 0 — end-to-end manual dry run (no code)**
-Pick one dish with an existing CSV (e.g. `pannkakor`). Manually: do a Google
-search, open 5 pages, check JSON-LD presence, hand-run 5–10 ingredient lines
-through Gemma via the CLI, compare to the existing hand-entered CSV.
-**Decision point:** is the LLM output trustworthy enough to keep going?
+**Phase 0 — end-to-end manual dry run (no code)** ✅ DONE
+Manually searched for pannkakor recipes, checked 5 pages for JSON-LD
+presence (4/5 = 80% hit rate), ran 10 ingredient lines through Gemma 4 e4b
+(10/10 correct), compared to existing hand-entered CSV. Decision: proceed.
+Full results in bead RationalRecipes-4lm.
 
-**Phase 1 — minimal automated pipeline**
-Wire stages 2–6 end-to-end for a single dish, no quality filtering, no dedup.
-Hand-verify every output row against the source page. Measure: JSON-LD hit
-rate, LLM parse accuracy, ingredient-DB miss rate.
+**Phase 1 — RecipeNLG load + Level 1/2 grouping + LLM parsing**
+Load RecipeNLG, implement title-based grouping (Level 1) and ingredient-set
+grouping (Level 2) with minimum group size filters. Wire up LLM ingredient
+parsing and normalization for a known test case (pannkakor). Hand-verify
+output rows against the source data. Measure: grouping quality (how clean
+are the pannkakor groups?), LLM parse accuracy at scale, ingredient-DB
+miss rate.
 
-**Phase 2 — dedup + variant-fit filter + review shell**
-Add the dedup heuristic, reference-recipe anchoring, and a minimal review
-shell (probably a notebook or TUI first). Run the full pipeline on a dish
-with a known variant (pannkakor), deliberately include some contamination
-candidates (American pancake URLs) to verify the variant-fit filter catches
-them, and measure how much time review actually takes per dish. Compare
-averaged output against the existing hand-curated CSVs — this is the
-correctness oracle.
+**Phase 2 — WDC corpus + Level 3 grouping + vector DB + dedup + review shell**
+Load WDC Schema.org Table Corpus. Introduce a vector database to index
+recipe embeddings (ingredient proportions + method features) for Level 2/3
+grouping at corpus scale. Add method + proportion grouping (Level 3),
+using WDC's structured `cookingMethod`/`cookTime` fields. Add dedup
+heuristic and a minimal review shell. Validate against the existing
+hand-curated CSVs as correctness oracle. Measure: how well does Level 3
+separate known variants (e.g. ugnsmannkaka vs stekpannkaka)?
 
 **Phase 3 — outlier flagging + quality signals**
 Add outlier flagging on top of the review view. Decide whether an
@@ -330,35 +430,37 @@ automated quality (slop) filter is needed based on what review catches
 "for free" in phase 2. If needed, pick the minimal set of signals that
 shows measurable improvement.
 
-**Phase 4 — scale / model swap**
-Broaden to more dishes. Swap in a larger LLM on a more powerful machine if
-parse-accuracy measurements from earlier phases show it's worth it.
-Revisit the JSON-LD fallback question (LLM on raw HTML) if hit rate is
-low. Productionize the review UI if it's getting heavy use.
+**Phase 4 — scale**
+Broaden beyond the test case to many dish families. Swap in a larger LLM
+if parse-accuracy measurements show it's worth it. Supplement with
+targeted web search for dish variants underrepresented in the archives.
+Productionize the review UI if it's getting heavy use.
 
 ## Open questions (to resolve during exploration)
 
-1. **Variant-fit distance metric** — Jaccard on ingredient sets?
-   Proportion-weighted? Something else? Measure on real data.
-2. **Variant-fit rejection threshold** — too tight rejects legitimate
-   diversity; too loose lets contamination through. Calibrate against
-   hand-labeled examples.
-3. **Review UI shell** — CLI / TUI / notebook / web? Pick by iteration
+1. **Level 1 grouping technique** — is normalized exact-match sufficient,
+   or do we need fuzzy matching / LLM title canonicalization? Measure on
+   RecipeNLG.
+2. **Level 2 clustering method** — Jaccard threshold? Hierarchical
+   clustering? DBSCAN? Measure on real title groups.
+3. **Level 3 method extraction** — WDC gives structured fields; RecipeNLG
+   needs LLM extraction from directions text. How reliable is each?
+4. **Minimum group size thresholds** — likely different at each level.
+   Connect to CI-width requirements from `statistics.py`.
+5. **Review UI shell** — CLI / TUI / notebook / web? Pick by iteration
    speed first; productionize later.
-4. **Quality (slop) filter necessity** — does human review catch content-
+6. **Quality (slop) filter necessity** — does human review catch content-
    farm content "for free", or do we need an automated pass before review?
-5. **Dedup sensitivity** — how fuzzy should the ingredient-proportion
+7. **Dedup sensitivity** — how fuzzy should the ingredient-proportion
    fingerprint be before two entries are considered the same recipe?
-6. **JSON-LD hit rate in practice** — do we need an LLM fallback for
-   raw-HTML extraction, or is skip-and-move-on fine?
-7. **Gemma 4 e4b accuracy ceiling** — where does the small model plateau?
+8. **Gemma 4 e4b accuracy ceiling** — where does the small model plateau?
    What fraction of lines need the bigger model?
-8. **Query-variant strategy** — fixed suffix list vs LLM-generated
-   per-dish queries?
 9. **Non-English recipes** — how does the parsing prompt generalize to
    Swedish/French? Do we need per-language examples?
 10. **Ingredient-DB coverage** — threshold at which we batch-update the DB
     vs skip recipes with unknown ingredients?
+11. **RecipeNLG vs WDC consistency** — do the two corpora give consistent
+    grouping results and averaged ratios? Disagreements reveal corpus bias.
 
 ## Dependencies on existing code
 
