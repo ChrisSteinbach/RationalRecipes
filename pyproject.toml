@@ -53,6 +53,7 @@ select = [
 [tool.ruff.lint.per-file-ignores]
 "tests/test_diff.py" = ["E501"]
 "tests/test_stats.py" = ["E501"]
+"src/rational_recipes/scrape/parse.py" = ["E501"]  # LLM prompt strings
 
 [tool.mypy]
 python_version = "3.12"

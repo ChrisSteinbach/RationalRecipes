@@ -46,4 +46,7 @@ nosetests.xml
 
 # Bulk data downloads (USDA FDC, FAO/INFOODS)
 /data/
+
+# Recipe archive datasets (RecipeNLG, WDC)
+/dataset/
 .dispatch/
