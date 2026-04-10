@@ -90,13 +90,37 @@ Available at <http://webdatacommons.org/structureddata/schemaorgtables/2023/inde
 
 **Strengths:** processes the *entire* Common Crawl, not a hand-picked set
 of sites. Cleaner corpus for reasoning about sampling bias. Structured
-`recipeIngredient`, `cookingMethod`, `cookTime` fields extracted from
-JSON-LD — no HTML parsing needed. Method metadata is valuable for Level 3
-grouping (see below).
+`recipeIngredient` and time fields (`cookTime`, `prepTime`, `totalTime` —
+ISO 8601 durations) extracted from JSON-LD, no HTML parsing needed.
+`recipeInstructions` arrives as a list of step objects rather than a
+single prose blob. Top-100 hosts are surprisingly international (Swedish,
+French, German, Japanese, Russian, Arabic, Indian sources alongside the
+English aggregators).
 
-**Weaknesses:** larger download (several GB for Recipe tables), messier
-data (real-world markup has missing fields, bad encodings, creative schema
-interpretations), more setup effort.
+**Weaknesses:** larger download (top100 = 315 MB, minimum3 = 1.7 GB,
+rest = 9.5 MB), messier data (real-world markup has missing fields, bad
+encodings, creative schema interpretations), more setup effort. Crucially,
+`recipeIngredient` is raw natural-language strings (`"2 teaspoons curry
+powder"`) not pre-extracted names — RecipeNLG's `NER` column gave us
+clean names for free, WDC does not. Field coverage is **per-host bimodal**
+(see § Per-host bimodality below): the global average for any given field
+is misleading.
+
+**Per-host bimodality.** Field coverage averages reported by WDC's
+column statistics hide a strongly bimodal distribution. Schema-good hosts
+publish a field on nearly every recipe; most hosts skip it entirely.
+The headline example: `cookingMethod` is present in only 2.25% of tables
+globally, but ICA.se publishes it on 69% of recipes — and on Swedish
+pannkakor specifically it cleanly discriminates `Stekt` (pan-fried,
+stekpannkaka) from `I ugn` (in oven, ugnspannkaka) with no LLM call. Time
+fields are similarly per-host conventional: ICA publishes only `totalTime`
+and never `cookTime`/`prepTime`; Food Network publishes `cookTime` and
+`totalTime` but not `prepTime`. The loader must tolerate per-host
+conventions and treat the time fields as a normalized duration set.
+Per-dish coverage of "free" structured fields like `cookingMethod` depends
+on which hosts serve that dish family — generalize from the average at
+your peril. See [`docs/wdc_recon.md`](../wdc_recon.md) for the field-by-
+field comparison and the pannkakor case study.
 
 **Role in the pipeline:** the serious dataset. Use after the pipeline is
 validated on RecipeNLG. If RecipeNLG and WDC give consistent results, that's
@@ -261,10 +285,19 @@ proportions" a single nearest-neighbor query. The same index serves both
 grouping (cluster discovery) and the variant-fit check (is this new recipe
 close to an existing group?).
 
-**Data availability:** WDC provides structured `cookingMethod` and
-`cookTime` fields from schema.org markup. RecipeNLG has free-text
-directions that would need LLM extraction. This is an argument for WDC
-as the primary corpus at this stage.
+**Data availability:** WDC provides structured time fields (`cookTime`,
+`prepTime`, `totalTime` as ISO 8601 durations) on most rows, and a
+structured `cookingMethod` field on a minority of hosts — but with strong
+per-host bimodality. Globally `cookingMethod` is present in only ~2.25%
+of tables, but on schema-good hosts (e.g. ICA.se: 69%) it is exactly the
+"bake vs fry" enum the design wants. RecipeNLG, in contrast, has no time
+or method fields at all — only free-text directions. The right framing
+for the loader is **"use `cookingMethod` where present, fall back to LLM
+extraction from `recipeInstructions` prose where not"**, and to expect
+the mix to vary per dish family depending on which hosts serve it. This
+is still an argument for WDC as the primary corpus, but a weaker one than
+"WDC gives us cookingMethod for free everywhere" — see
+[`docs/wdc_recon.md`](../wdc_recon.md).
 
 **Minimum group size filter:** drop sub-groups below threshold. The
 threshold connects to the CI-width criterion already in `statistics.py` —
