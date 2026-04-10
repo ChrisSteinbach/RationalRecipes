@@ -18,7 +18,11 @@ from rational_recipes.scrape.grouping import (
     group_by_ingredients,
     group_by_title,
 )
-from rational_recipes.scrape.parse import ParsedIngredient, parse_ingredient_lines
+from rational_recipes.scrape.parse import (
+    OLLAMA_BASE_URL,
+    ParsedIngredient,
+    parse_ingredient_lines,
+)
 from rational_recipes.scrape.recipenlg import Recipe, RecipeNLGLoader
 from rational_recipes.units import Factory as UnitFactory
 
@@ -156,6 +160,7 @@ def run_pipeline(
     l2_similarity_threshold: float = 0.6,
     l2_min_group_size: int = 3,
     llm_model: str = "gemma4:e4b",
+    ollama_url: str = OLLAMA_BASE_URL,
 ) -> list[PipelineResult]:
     """Run the full pipeline for a title query.
 
@@ -208,7 +213,9 @@ def run_pipeline(
 
             for recipe in l2_group.recipes:
                 raw_parsed = parse_ingredient_lines(
-                    list(recipe.ingredients), model=llm_model
+                    list(recipe.ingredients),
+                    model=llm_model,
+                    base_url=ollama_url,
                 )
                 valid = [p for p in raw_parsed if p is not None]
                 if len(valid) < len(raw_parsed):
