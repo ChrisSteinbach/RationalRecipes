@@ -98,34 +98,73 @@ come from the `cookingMethod` field, not ingredient-set overlap. This
 confirms the recon prediction (cookingMethod is 69% populated on ica.se
 and cleanly discriminates "Stekt" from "I ugn").
 
-## Recommendation: Shape B (regex-only for L2)
+## Multilingual follow-up (Swedish, German, Russian, Japanese)
 
-**Winner**: Regex. Clear margin on every dimension that matters.
+A follow-up spike (`scripts/wdc_multilingual_spike.py`) tested all three
+approaches across four languages and hosts, including a **language-neutral
+LLM prompt** that instructs the model to keep ingredient names in the
+original language.
 
-| Dimension         | Regex           | LLM (e2b)         |
-|-------------------|-----------------|---------------------|
-| Accuracy (F1)     | 0.977           | 0.841               |
-| Latency           | instant         | 1.05s/line          |
-| Failure rate      | 0%              | 0% (but wrong lang) |
-| Infrastructure    | none            | remote Ollama host  |
-| Maintenance       | one regex file  | model + server + prompt tuning |
+### Prompt fix: language-neutral prompt eliminates translation
+
+| Host | Lang | LLM-english (translated) | LLM-neutral (translated) |
+|------|------|--------------------------|--------------------------|
+| ica.se | Swedish | 55/55 (not detected*) | 55/55 (0) |
+| chefkoch.de | German | 53/53 (not detected*) | 53/53 (0) |
+| edimdoma.ru | Russian | 52/52 (**35 translated**) | 52/52 (**0**) |
+| macaro-ni.jp | Japanese | 44/44 (**41 translated**) | 44/44 (**0**) |
+
+\* Translation detection only catches Latin chars in non-Latin scripts.
+Manual inspection confirmed the English prompt translates ägg→egg, Ei→egg
+in Swedish/German too.
+
+### Regex degrades sharply on non-Latin languages
+
+**Russian** (edimdoma.ru): The `{name} - {qty} {unit}` format works for
+dash-separated lines, but fails when the format is `{qty} {unit} {name}`
+with Russian unit words (`стакан`, `зубчик`) not in the regex vocabulary.
+Examples: `"1 стакан кипятка"` → `"1 стакан кипятка"` (unit leaks through),
+`"2-3 ст.л. растительного масла"` → `"2"` (catastrophic truncation).
+
+**Japanese** (macaro-ni.jp): Ingredient names come first, qty+unit at end,
+but `大さじ` (tablespoon) and `小さじ` (teaspoon) are multi-char tokens
+that sit between name and quantity with only a space. Regex leaves them
+glued: `"牛乳 大さじ"` instead of `"牛乳"`. Also leaks fractions:
+`"アボカド 1/"`, `"調製豆乳 180〜"`.
+
+**LLM-neutral handles all four languages cleanly** — correct ingredient
+extraction with no unit leakage, no translations, no garbled text.
+
+## Revised recommendation: Shape D (host-specific policy)
+
+The original Shape B recommendation (regex-only) was based solely on
+Swedish data. The multilingual test shows regex doesn't generalize.
+
+| Dimension | Regex | LLM-neutral (e2b) |
+|-----------|-------|---------------------|
+| Swedish/German accuracy | excellent | excellent |
+| Russian accuracy | poor (unit leakage) | excellent |
+| Japanese accuracy | poor (unit/qty glued) | excellent |
+| Latency | instant | ~1s/line |
+| Infrastructure | none | Ollama host |
 
 **For the WDC loader (RationalRecipes-ayw)**:
-1. Use regex extraction at L2 (fix the ~3% failure modes: plurals, package
-   units, comma-prep patterns).
+1. Use the **language-neutral prompt** (in `scripts/wdc_multilingual_spike.py`)
+   as the default LLM extraction strategy. It works across all tested
+   languages with zero translation artifacts.
 2. Use `cookingMethod` field for variant discrimination (Stekt vs I ugn),
    not Jaccard clustering alone.
-3. Reserve LLM for a future fallback on hosts with truly messy ingredient
-   formatting — not ica.se. If revisited, the prompt must include Swedish
-   examples and an explicit "keep the original language" instruction.
+3. Regex remains viable as a **fast path for known schema-good Latin-script
+   hosts** (ica.se, chefkoch.de) where the `{qty} {unit} {name}` structure
+   is reliable — but it's an optimization, not the primary strategy.
+4. The LLM requires a remote Ollama host (gemma4:e2b doesn't fit in 16GB
+   with desktop apps). Plan for this as infrastructure.
 
-## Open Q9 (non-English parsing): partially resolved
+## Open Q9 (non-English parsing): resolved
 
-Swedish parsing works via regex for structured `recipeingredient` data from
-schema-good hosts like ica.se. The LLM approach fails due to English-prompt
-bias — even Gemma 4 translates ~20% of Swedish ingredient names to English,
-which breaks downstream Jaccard clustering. A Swedish-tuned prompt might
-fix this, but it's unnecessary given regex performance.
+The language-neutral prompt handles Swedish, German, Russian, and Japanese
+correctly. The original failure was prompt engineering (English-only examples
+and no "keep original language" instruction), not a model limitation.
 
-**Status**: Resolved for ica.se/regex. Escalate only if a messy non-English
-host appears where regex can't cope and LLM is the only option.
+**Status**: Resolved. The neutral prompt in `wdc_multilingual_spike.py` is
+the reference implementation.
