@@ -123,6 +123,7 @@ def parse_ingredient_line(
     line: str,
     model: str = "gemma4:e4b",
     base_url: str = OLLAMA_BASE_URL,
+    system_prompt: str | None = None,
 ) -> ParsedIngredient | None:
     """Parse a single ingredient line using Ollama.
 
@@ -130,7 +131,12 @@ def parse_ingredient_line(
     """
     prompt = f'Parse this ingredient line:\nInput: "{line}"\nOutput:'
 
-    raw_output = _ollama_generate(prompt, model=model, base_url=base_url)
+    raw_output = _ollama_generate(
+        prompt,
+        model=model,
+        system=system_prompt or _SYSTEM_PROMPT,
+        base_url=base_url,
+    )
     if raw_output is None:
         return None
 
@@ -175,8 +181,15 @@ def parse_ingredient_lines(
     lines: list[str],
     model: str = "gemma4:e4b",
     base_url: str = OLLAMA_BASE_URL,
+    system_prompt: str | None = None,
 ) -> list[ParsedIngredient | None]:
     """Parse multiple ingredient lines. Returns a list parallel to the input."""
     return [
-        parse_ingredient_line(line, model=model, base_url=base_url) for line in lines
+        parse_ingredient_line(
+            line,
+            model=model,
+            base_url=base_url,
+            system_prompt=system_prompt,
+        )
+        for line in lines
     ]

@@ -7,6 +7,7 @@ import json
 import zipfile
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -15,9 +16,12 @@ from rational_recipes.scrape.grouping import (
     group_by_ingredients,
     group_by_title,
 )
+from rational_recipes.scrape.parse import ParsedIngredient
 from rational_recipes.scrape.wdc import (
     WDCLoader,
     WDCRecipe,
+    extract_batch,
+    extract_ingredient_names,
     parse_iso8601_duration,
 )
 
@@ -253,3 +257,138 @@ class TestProtocolIntegration:
         groups = group_by_ingredients(recipes, min_group_size=3)
         assert len(groups) == 1
         assert groups[0].size == 5
+
+
+# --- Extraction ---
+
+
+class TestExtractIngredientNames:
+    def test_populates_names(self) -> None:
+        recipe = WDCRecipe(
+            row_id=0,
+            host="test.com",
+            title="Test",
+            ingredients=("3 dl vetemjöl", "2 ägg", "5 dl mjölk"),
+            page_url="http://test.com/1",
+            cooking_methods=frozenset(),
+            durations=(),
+            recipe_category="",
+            keywords=(),
+            recipe_yield="",
+        )
+        mock_results = [
+            ParsedIngredient(3.0, "dl", "vetemjöl", "", "3 dl vetemjöl"),
+            ParsedIngredient(2.0, "", "ägg", "", "2 ägg"),
+            ParsedIngredient(5.0, "dl", "mjölk", "", "5 dl mjölk"),
+        ]
+        with patch("rational_recipes.scrape.wdc.parse_ingredient_line") as mock_parse:
+            mock_parse.side_effect = mock_results
+            result = extract_ingredient_names(recipe)
+
+        assert result.ingredient_names == frozenset({"vetemjöl", "ägg", "mjölk"})
+        assert result.title == "Test"
+        assert mock_parse.call_count == 3
+        for call in mock_parse.call_args_list:
+            assert call.kwargs["system_prompt"] is not None
+
+    def test_handles_parse_failure(self) -> None:
+        recipe = WDCRecipe(
+            row_id=0,
+            host="test.com",
+            title="Test",
+            ingredients=("3 dl vetemjöl", "bad line", "5 dl mjölk"),
+            page_url="http://test.com/2",
+            cooking_methods=frozenset(),
+            durations=(),
+            recipe_category="",
+            keywords=(),
+            recipe_yield="",
+        )
+        mock_results = [
+            ParsedIngredient(3.0, "dl", "vetemjöl", "", "3 dl vetemjöl"),
+            None,
+            ParsedIngredient(5.0, "dl", "mjölk", "", "5 dl mjölk"),
+        ]
+        with patch("rational_recipes.scrape.wdc.parse_ingredient_line") as mock_parse:
+            mock_parse.side_effect = mock_results
+            result = extract_ingredient_names(recipe)
+
+        assert result.ingredient_names == frozenset({"vetemjöl", "mjölk"})
+
+
+class TestExtractBatch:
+    def test_uses_cache(self) -> None:
+        recipes = [
+            WDCRecipe(
+                row_id=0,
+                host="test.com",
+                title="Cached",
+                ingredients=("flour",),
+                page_url="http://test.com/cached",
+                cooking_methods=frozenset(),
+                durations=(),
+                recipe_category="",
+                keywords=(),
+                recipe_yield="",
+            ),
+            WDCRecipe(
+                row_id=1,
+                host="test.com",
+                title="Fresh",
+                ingredients=("mjölk",),
+                page_url="http://test.com/fresh",
+                cooking_methods=frozenset(),
+                durations=(),
+                recipe_category="",
+                keywords=(),
+                recipe_yield="",
+            ),
+        ]
+        cache: dict[str, frozenset[str]] = {
+            "http://test.com/cached": frozenset({"flour"}),
+        }
+        with patch("rational_recipes.scrape.wdc.parse_ingredient_line") as mock_parse:
+            mock_parse.return_value = ParsedIngredient(
+                1.0,
+                "dl",
+                "mjölk",
+                "",
+                "mjölk",
+            )
+            result = extract_batch(recipes, cache=cache)
+
+        assert result[0].ingredient_names == frozenset({"flour"})
+        assert result[1].ingredient_names == frozenset({"mjölk"})
+        # Only the non-cached recipe should trigger a parse call
+        assert mock_parse.call_count == 1
+        # Cache should now contain the fresh entry
+        assert "http://test.com/fresh" in cache
+
+
+class TestSystemPromptForwarding:
+    def test_parse_ingredient_line_forwards_system_prompt(self) -> None:
+        with patch("rational_recipes.scrape.parse._ollama_generate") as mock_gen:
+            mock_gen.return_value = (
+                '{"quantity": 1.0, "unit": "dl",'
+                ' "ingredient": "mjöl", "preparation": ""}'
+            )
+            from rational_recipes.scrape.parse import parse_ingredient_line
+
+            parse_ingredient_line("1 dl mjöl", system_prompt="custom prompt")
+            mock_gen.assert_called_once()
+            assert mock_gen.call_args.kwargs["system"] == "custom prompt"
+
+    def test_parse_ingredient_line_uses_default_without_system_prompt(self) -> None:
+        with patch("rational_recipes.scrape.parse._ollama_generate") as mock_gen:
+            mock_gen.return_value = (
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "flour", "preparation": ""}'
+            )
+            from rational_recipes.scrape.parse import (
+                _SYSTEM_PROMPT,
+                parse_ingredient_line,
+            )
+
+            parse_ingredient_line("1 cup flour")
+            mock_gen.assert_called_once()
+            assert mock_gen.call_args.kwargs["system"] == _SYSTEM_PROMPT

@@ -6,6 +6,7 @@ site, with filenames like ``Recipe_{host}_October2023.json.gz``.
 
 from __future__ import annotations
 
+import dataclasses
 import gzip
 import json
 import re
@@ -14,6 +15,12 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from rational_recipes.scrape.parse import (
+    OLLAMA_BASE_URL,
+    ParsedIngredient,  # noqa: F401 — used by callers
+    parse_ingredient_line,
+)
 
 # --- ISO 8601 duration parsing ---
 
@@ -164,3 +171,93 @@ class WDCLoader:
         for recipe in source:
             if q in recipe.title.lower():
                 yield recipe
+
+
+# --- Language-neutral extraction ---
+
+NEUTRAL_PROMPT = """\
+You are an ingredient parser. Given a recipe ingredient line in ANY language,
+extract structured fields.
+
+Return ONLY a JSON object with these fields:
+- "ingredient": the base ingredient name in the ORIGINAL LANGUAGE, lowercase,
+  no preparation notes, no quantities, no units. Keep the original language —
+  do NOT translate to English.
+- "quantity": number (float). For fractions, convert to decimal. If no
+  quantity, use 1.
+- "unit": the unit of measurement in the original language, lowercase.
+  If no unit, use "" (empty string).
+- "preparation": any preparation notes. Empty string if none.
+
+Examples in different languages:
+
+Input: "3 dl vetemjöl"
+Output: {"ingredient": "vetemjöl", "quantity": 3.0, "unit": "dl", "preparation": ""}
+
+Input: "2 große Eier"
+Output: {"ingredient": "eier", "quantity": 2.0, "unit": "große", "preparation": ""}
+
+Input: "卵 3個"
+Output: {"ingredient": "卵", "quantity": 3.0, "unit": "個", "preparation": ""}
+
+Input: "молоко - 500 мл"
+Output: {"ingredient": "молоко", "quantity": 500.0, "unit": "мл", "preparation": ""}
+
+Input: "250 g frysta, halvtinade blåbär"
+Output: {"ingredient": "blåbär", "quantity": 250.0, "unit": "g",\
+ "preparation": "frysta, halvtinade"}
+"""
+
+
+def extract_ingredient_names(
+    recipe: WDCRecipe,
+    *,
+    model: str = "gemma4:e2b",
+    base_url: str = OLLAMA_BASE_URL,
+) -> WDCRecipe:
+    """Extract ingredient names from raw ingredient lines via LLM.
+
+    Returns a new WDCRecipe with ingredient_names populated.
+    """
+    names: set[str] = set()
+    for line in recipe.ingredients:
+        parsed = parse_ingredient_line(
+            line,
+            model=model,
+            base_url=base_url,
+            system_prompt=NEUTRAL_PROMPT,
+        )
+        if parsed and parsed.ingredient:
+            names.add(parsed.ingredient.lower().strip())
+    return dataclasses.replace(recipe, ingredient_names=frozenset(names))
+
+
+def extract_batch(
+    recipes: Sequence[WDCRecipe],
+    *,
+    model: str = "gemma4:e2b",
+    base_url: str = OLLAMA_BASE_URL,
+    cache: dict[str, frozenset[str]] | None = None,
+) -> list[WDCRecipe]:
+    """Extract ingredient names for a batch of recipes.
+
+    Uses an optional page_url-keyed cache to avoid re-extraction.
+    """
+    if cache is None:
+        cache = {}
+    result: list[WDCRecipe] = []
+    for recipe in recipes:
+        if recipe.page_url and recipe.page_url in cache:
+            result.append(
+                dataclasses.replace(recipe, ingredient_names=cache[recipe.page_url])
+            )
+        else:
+            extracted = extract_ingredient_names(
+                recipe,
+                model=model,
+                base_url=base_url,
+            )
+            if recipe.page_url:
+                cache[recipe.page_url] = extracted.ingredient_names
+            result.append(extracted)
+    return result
