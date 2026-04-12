@@ -40,8 +40,11 @@ code in `src/rational_recipes/`.
 - Real-time / on-demand scraping from the PWA frontend. This is a batch
   research tool.
 - Ingredient substitution reasoning (separate concern).
-- Multilingual expansion beyond the existing Swedish/French/English samples.
-  The pipeline should not *prevent* this later, but we don't optimize for it.
+- Multilingual expansion beyond the existing Swedish/French/English samples
+  *was* a non-goal, but the extraction spike (RationalRecipes-a1k) showed a
+  language-neutral LLM prompt handles Swedish, German, Russian, and Japanese
+  with zero translation artifacts — so this is now feasible without extra
+  work. The pipeline should handle any language present in the WDC corpus.
 - Live web crawling. Archive-based data sources are sufficient for
   exploration. Targeted web search (Google Programmable Search API or
   similar) can supplement archives later if coverage gaps appear for
@@ -236,13 +239,26 @@ structured fields:
     ingredient: "flour", preparation: "sifted" }
 ```
 
-**Model for exploration:** Gemma 4 e4b via Ollama locally. Phase 0 dry run
-showed 10/10 accuracy on straightforward English ingredient lines (unicode
-fractions, mixed fractions, implicit quantities, parenthetical prep notes
-all handled correctly). Speed: ~12s/line effective with thinking enabled;
-batching and thinking-mode tuning needed for scale.
+**Model for exploration:** Gemma 4 e4b (or e2b) via Ollama on a remote host.
+The e4b model OOMs on a 16 GB local machine with typical desktop workload;
+a remote Ollama host is required. Phase 0 dry run showed 10/10 accuracy on
+straightforward English ingredient lines. The extraction spike
+(RationalRecipes-a1k) validated the model on Swedish, German, Russian, and
+Japanese — see [`docs/wdc_extraction_spike.md`](../wdc_extraction_spike.md).
 
-**Prompt strategy:** few-shot, with examples covering:
+**Prompt strategy:** a **language-neutral prompt** that instructs the model
+to keep ingredient names in the original language. The spike showed that
+the original English-only prompt causes the model to translate ~20-90% of
+non-English ingredient names to English, breaking downstream Jaccard
+clustering. The neutral prompt (reference implementation in
+`scripts/wdc_multilingual_spike.py`) uses multilingual examples and an
+explicit "keep the original language" instruction, eliminating translation
+artifacts across all four tested languages. This is a **Shape D
+(host-specific policy)** approach: LLM-neutral is the primary extraction
+strategy for all hosts; regex is an optional fast-path for known
+schema-good Latin-script hosts (ica.se, chefkoch.de).
+
+Coverage of the prompt's few-shot examples:
 
 - Numeric + fractional quantities ("1 1/2", "½")
 - Ranges ("1-2 cups") — emit `quantity_min`/`quantity_max`
@@ -250,10 +266,13 @@ batching and thinking-mode tuning needed for scale.
 - Compound items ("salt and pepper to taste") — split or flag
 - Whole-unit items ("2 large eggs")
 - Ambiguous abbreviations ("T" vs "t" vs "tbsp")
+- **Multilingual lines** (Swedish, German, Japanese, Russian examples)
 
-**Validation:** hand-label ~50 ingredient lines from real recipes, run them
-through the LLM, eyeball accuracy. Iterate prompt until the failure modes
-are well-understood.
+**Validation:** the spike hand-labelled 20 ica.se recipes (204 ingredient
+lines) and measured P=0.835, R=0.848, F1=0.841 for the English prompt,
+improving to clean extraction with the neutral prompt. See
+[`docs/wdc_extraction_spike.md`](../wdc_extraction_spike.md) for full
+results.
 
 ### Normalization
 
@@ -496,8 +515,10 @@ Productionize the review UI if it's getting heavy use.
    fingerprint be before two entries are considered the same recipe?
 8. **Gemma 4 e4b accuracy ceiling** — where does the small model plateau?
    What fraction of lines need the bigger model?
-9. **Non-English recipes** — how does the parsing prompt generalize to
-   Swedish/French? Do we need per-language examples?
+9. ~~**Non-English recipes**~~ **RESOLVED** — a language-neutral prompt
+   (multilingual examples + "keep original language" instruction) handles
+   Swedish, German, Russian, and Japanese with zero translation artifacts.
+   No per-language prompt variants needed. See `docs/wdc_extraction_spike.md`.
 10. **Ingredient-DB coverage** — threshold at which we batch-update the DB
     vs skip recipes with unknown ingredients?
 11. **RecipeNLG vs WDC reconciliation** — at what stage of the pipeline
