@@ -7,6 +7,7 @@ from rational_recipes.scrape.grouping import (
     normalize_title,
 )
 from rational_recipes.scrape.recipenlg import Recipe
+from rational_recipes.scrape.wdc import WDCRecipe
 
 
 def _recipe(
@@ -118,3 +119,47 @@ class TestGroupByIngredients:
         groups = group_by_ingredients(recipes, min_group_size=1)
         assert len(groups) == 1
         assert groups[0].size == 1
+
+
+# --- WDCRecipe integration ---
+
+
+def _wdc_recipe(
+    title: str,
+    ingredient_names: frozenset[str] = frozenset(),
+    row_id: int = 0,
+) -> WDCRecipe:
+    return WDCRecipe(
+        row_id=row_id,
+        host="test.com",
+        title=title,
+        ingredients=(),
+        page_url="",
+        cooking_methods=frozenset(),
+        durations=(),
+        recipe_category="",
+        keywords=(),
+        recipe_yield="",
+        ingredient_names=ingredient_names,
+    )
+
+
+class TestGroupByTitleWDC:
+    def test_groups_wdc_recipes(self) -> None:
+        recipes = [
+            _wdc_recipe("Pannkakor", row_id=0),
+            _wdc_recipe("pannkakor", row_id=1),
+            _wdc_recipe("Pannkakor Recipe", row_id=2),
+        ]
+        groups = group_by_title(recipes, min_group_size=2)
+        assert "pannkakor" in groups
+        assert len(groups["pannkakor"]) == 3
+
+
+class TestGroupByIngredientsWDC:
+    def test_clusters_wdc_recipes(self) -> None:
+        ings = frozenset({"flour", "milk", "egg"})
+        recipes = [_wdc_recipe("P", ingredient_names=ings, row_id=i) for i in range(4)]
+        groups = group_by_ingredients(recipes, min_group_size=3)
+        assert len(groups) == 1
+        assert groups[0].size == 4

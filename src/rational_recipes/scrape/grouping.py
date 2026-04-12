@@ -11,8 +11,16 @@ import re
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
-from rational_recipes.scrape.recipenlg import Recipe
+
+@runtime_checkable
+class GroupableRecipe(Protocol):
+    @property
+    def title(self) -> str: ...
+    @property
+    def ingredient_names(self) -> frozenset[str]: ...
+
 
 # --- Level 1: Title normalization and grouping ---
 
@@ -42,15 +50,15 @@ def normalize_title(title: str) -> str:
     return t
 
 
-def group_by_title(
-    recipes: Sequence[Recipe],
+def group_by_title[R: GroupableRecipe](
+    recipes: Sequence[R],
     min_group_size: int = 5,
-) -> dict[str, list[Recipe]]:
+) -> dict[str, list[R]]:
     """Level 1: group recipes by normalized title.
 
     Returns only groups that meet the minimum size threshold.
     """
-    groups: dict[str, list[Recipe]] = defaultdict(list)
+    groups: dict[str, list[R]] = defaultdict(list)
     for recipe in recipes:
         key = normalize_title(recipe.title)
         if key:
@@ -72,22 +80,22 @@ def jaccard_similarity(a: frozenset[str], b: frozenset[str]) -> float:
 
 
 @dataclass
-class IngredientGroup:
+class IngredientGroup[R: GroupableRecipe]:
     """A cluster of recipes sharing a similar ingredient set."""
 
     canonical_ingredients: frozenset[str]
-    recipes: list[Recipe]
+    recipes: list[R]
 
     @property
     def size(self) -> int:
         return len(self.recipes)
 
 
-def group_by_ingredients(
-    recipes: Sequence[Recipe],
+def group_by_ingredients[R: GroupableRecipe](
+    recipes: Sequence[R],
     similarity_threshold: float = 0.6,
     min_group_size: int = 3,
-) -> list[IngredientGroup]:
+) -> list[IngredientGroup[R]]:
     """Level 2: cluster recipes by ingredient-set Jaccard similarity.
 
     Uses a greedy single-pass clustering: iterate recipes, assign each to
@@ -96,7 +104,7 @@ def group_by_ingredients(
 
     Returns groups sorted by size (largest first), filtered by min_group_size.
     """
-    clusters: list[IngredientGroup] = []
+    clusters: list[IngredientGroup[R]] = []
 
     for recipe in recipes:
         names = recipe.ingredient_names
