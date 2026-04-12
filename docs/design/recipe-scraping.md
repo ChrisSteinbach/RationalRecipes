@@ -122,10 +122,18 @@ on which hosts serve that dish family — generalize from the average at
 your peril. See [`docs/wdc_recon.md`](../wdc_recon.md) for the field-by-
 field comparison and the pannkakor case study.
 
-**Role in the pipeline:** the serious dataset. Use after the pipeline is
-validated on RecipeNLG. If RecipeNLG and WDC give consistent results, that's
-a strong robustness argument; if they disagree, the disagreement itself is
-informative about corpus bias.
+**Role in the pipeline:** the serious dataset, and a source of structured
+signals RecipeNLG lacks. Use after the pipeline is validated on RecipeNLG.
+The intent is to **merge** the two corpora, not run them in parallel
+indefinitely — each repairs signals the other is missing. WDC donates
+`totalTime` / `cookTime` / `prepTime`, `recipeYield`, `cookingMethod`, and
+`keywords`; RecipeNLG donates clean NER names and sheer volume. Merging
+happens *after* Level 3 variant-splitting, so that dish-identity mismatches
+between corpora (the pannkakor case: American pancakes in RecipeNLG vs
+Swedish pannkakor on ica.se) get routed to the right variant before their
+ratios are averaged in. Within-variant disagreement after that routing is a
+signal that the variant definition is still too loose, not a reason to keep
+the corpora apart.
 
 ### When live search is still useful
 
@@ -492,8 +500,11 @@ Productionize the review UI if it's getting heavy use.
    Swedish/French? Do we need per-language examples?
 10. **Ingredient-DB coverage** — threshold at which we batch-update the DB
     vs skip recipes with unknown ingredients?
-11. **RecipeNLG vs WDC consistency** — do the two corpora give consistent
-    grouping results and averaged ratios? Disagreements reveal corpus bias.
+11. **RecipeNLG vs WDC reconciliation** — at what stage of the pipeline
+    (Level 1/2 grouping, Level 3 variant-splitting, post-variant averaging)
+    does the cross-corpus merge happen cleanly? Within-variant ratio
+    disagreement after merge is a signal the variant definition is too
+    loose, not a reason to keep the corpora apart.
 
 ## Dependencies on existing code
 
