@@ -122,8 +122,25 @@ and never `cookTime`/`prepTime`; Food Network publishes `cookTime` and
 conventions and treat the time fields as a normalized duration set.
 Per-dish coverage of "free" structured fields like `cookingMethod` depends
 on which hosts serve that dish family — generalize from the average at
-your peril. See [`docs/wdc_recon.md`](../wdc_recon.md) for the field-by-
-field comparison and the pannkakor case study.
+your peril.
+
+Concrete pannkakor example from ICA.se (recon run 2026-04-10):
+
+| Recipe                                      | `cookingMethod` |
+|----------------------------------------------|-----------------|
+| Fluffiga pannkakor med ricotta och citron    | `Stekt`         |
+| Proteinpannkakor                             | `Stekt`         |
+| Bananpannkakor med hasselnötskräm            | `Stekt`         |
+| Ugnspannkaka med zucchini                    | `I ugn`         |
+| Äppelpannkaka med vaniljyoghurt              | `I ugn`         |
+| Saffranspannkaka                             | `I ugn`         |
+| Dutch baby – ugnspannkaka med blåbär         | `I ugn`         |
+| Fläskpannkaka                                | `Stekt,I ugn`   |
+
+About 30% of ICA pannkakor rows have `cookingMethod` null, but where
+present the field cleanly discriminates the variants we care about with
+no LLM call. Multi-method recipes use comma-joined tags and must be
+parsed as a set.
 
 **Role in the pipeline:** the serious dataset, and a source of structured
 signals RecipeNLG lacks. Use after the pipeline is validated on RecipeNLG.
@@ -243,20 +260,23 @@ structured fields:
 The e4b model OOMs on a 16 GB local machine with typical desktop workload;
 a remote Ollama host is required. Phase 0 dry run showed 10/10 accuracy on
 straightforward English ingredient lines. The extraction spike
-(RationalRecipes-a1k) validated the model on Swedish, German, Russian, and
-Japanese — see [`docs/wdc_extraction_spike.md`](../wdc_extraction_spike.md).
+(RationalRecipes-a1k, closed) validated the model on Swedish, German,
+Russian, and Japanese with the language-neutral prompt described below.
 
 **Prompt strategy:** a **language-neutral prompt** that instructs the model
 to keep ingredient names in the original language. The spike showed that
 the original English-only prompt causes the model to translate ~20-90% of
 non-English ingredient names to English, breaking downstream Jaccard
 clustering. The neutral prompt (reference implementation in
-`scripts/wdc_multilingual_spike.py`) uses multilingual examples and an
+`src/rational_recipes/scrape/wdc.py`) uses multilingual examples and an
 explicit "keep the original language" instruction, eliminating translation
-artifacts across all four tested languages. This is a **Shape D
-(host-specific policy)** approach: LLM-neutral is the primary extraction
-strategy for all hosts; regex is an optional fast-path for known
-schema-good Latin-script hosts (ica.se, chefkoch.de).
+artifacts across all four tested languages (Swedish, German, Russian,
+Japanese). This is a **Shape D (host-specific policy)** approach:
+LLM-neutral is the primary extraction strategy for all hosts; regex is an
+optional fast-path for known schema-good Latin-script hosts (ica.se,
+chefkoch.de). Regex breaks on Russian (unit words like `стакан` not in
+the vocabulary, catastrophic truncation on comma-preps) and Japanese
+(multi-char unit tokens `大さじ`/`小さじ` glue to ingredient names).
 
 Coverage of the prompt's few-shot examples:
 
@@ -269,10 +289,15 @@ Coverage of the prompt's few-shot examples:
 - **Multilingual lines** (Swedish, German, Japanese, Russian examples)
 
 **Validation:** the spike hand-labelled 20 ica.se recipes (204 ingredient
-lines) and measured P=0.835, R=0.848, F1=0.841 for the English prompt,
-improving to clean extraction with the neutral prompt. See
-[`docs/wdc_extraction_spike.md`](../wdc_extraction_spike.md) for full
-results.
+lines) and measured P=0.835, R=0.848, F1=0.841 for the LLM with the
+English prompt (dominant failure: Swedish→English translation of common
+ingredients like ägg→egg, smör→butter), improving to clean extraction
+with the neutral prompt. Regex on the same gold standard scored
+P=0.972, R=0.982, F1=0.977 — the reason it remains as a fast-path for
+Latin-script hosts even though it fails on non-Latin ones. Known regex
+failure modes (all fixable): Swedish plurals (`morötter`→`morot`),
+comma-separated prep adjectives (`frysta, halvtinade blåbär`→`frysta`),
+and packaging/container leakage (`1 förp kokta vita bönor`).
 
 ### Normalization
 
@@ -323,8 +348,7 @@ for the loader is **"use `cookingMethod` where present, fall back to LLM
 extraction from `recipeInstructions` prose where not"**, and to expect
 the mix to vary per dish family depending on which hosts serve it. This
 is still an argument for WDC as the primary corpus, but a weaker one than
-"WDC gives us cookingMethod for free everywhere" — see
-[`docs/wdc_recon.md`](../wdc_recon.md).
+"WDC gives us cookingMethod for free everywhere".
 
 **Minimum group size filter:** drop sub-groups below threshold. The
 threshold connects to the CI-width criterion already in `statistics.py` —
@@ -518,7 +542,8 @@ Productionize the review UI if it's getting heavy use.
 9. ~~**Non-English recipes**~~ **RESOLVED** — a language-neutral prompt
    (multilingual examples + "keep original language" instruction) handles
    Swedish, German, Russian, and Japanese with zero translation artifacts.
-   No per-language prompt variants needed. See `docs/wdc_extraction_spike.md`.
+   No per-language prompt variants needed. Reference implementation in
+   `src/rational_recipes/scrape/wdc.py`.
 10. **Ingredient-DB coverage** — threshold at which we batch-update the DB
     vs skip recipes with unknown ingredients?
 11. **RecipeNLG vs WDC reconciliation** — at what stage of the pipeline

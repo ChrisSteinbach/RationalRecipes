@@ -49,4 +49,9 @@ nosetests.xml
 
 # Recipe archive datasets (RecipeNLG, WDC)
 /dataset/
+/dataset.zip
+
+# Regenerable CSV outputs from scrape_to_csv.py / explore_groups.py
+/output/
+
 .dispatch/
