@@ -29,7 +29,16 @@ rr-stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water
 
 # Run the diff tool (after pip install -e .)
 rr-diff sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv
+
+# Explore title/ingredient-set groups in RecipeNLG (fast, no LLM)
+python3 scripts/explore_groups.py pannkak --l1-min=1 --l2-min=1
+
+# Full scrape pipeline → CSV (slow — one LLM call per ingredient line)
+python3 scripts/scrape_to_csv.py pannkak --l1-min=1 --l2-min=1 \
+    --ollama-url http://localhost:11434 --model gemma4:e2b -v
 ```
+
+Scrape scripts need RecipeNLG at `dataset/full_dataset.csv` (2.2 GB, gitignored) and a running Ollama instance.
 
 Dependencies are declared in `pyproject.toml`. Runtime: `numpy`. Dev: `ruff`, `mypy`, `pytest`, `pytest-cov`, `pre-commit`.
 
