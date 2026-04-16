@@ -147,20 +147,25 @@ The intent is to **merge** the two corpora, not run them in parallel
 indefinitely — each repairs signals the other is missing. WDC donates
 `totalTime` / `cookTime` / `prepTime`, `recipeYield`, `cookingMethod`, and
 `keywords`; RecipeNLG donates clean NER names and sheer volume. Merging
-happens *after* Level 3 variant-splitting, so that dish-identity mismatches
-between corpora (the pannkakor case: American pancakes in RecipeNLG vs
-Swedish pannkakor on ica.se) get routed to the right variant before their
-ratios are averaged in. Within-variant disagreement after that routing is a
-signal that the variant definition is still too loose, not a reason to keep
-the corpora apart.
+happens *before* Level 3 variant-splitting: both corpora run L1/L2
+independently, then merge after cross-language ingredient normalization
+(so ingredient-set Jaccard works across languages). Level 3 operates on
+the combined stream, using `cookingMethod` where WDC provides it;
+RecipeNLG rows (no `cookingMethod`) fall into the unknown-method bucket
+and merge back into the largest sub-group per the L3 partition rule.
+Dish-identity mismatches (American pancakes vs Swedish pannkakor) are
+already handled by Level 2 ingredient-set grouping — Phase 1 proved this
+on 114 "swedish pancakes" recipes, which split cleanly at L2 into 49
+American-style and 42 genuine pannkakor. Within-variant disagreement
+after merge is a signal that the variant definition is still too loose,
+not a reason to keep the corpora apart.
 
-### When live search is still useful
+### Archive coverage gaps
 
-Archive coverage will have gaps — niche dish variants, recent recipes,
-non-English sources. If a variant has too few archive hits to compute
-meaningful statistics, targeted web search (Google Programmable Search API
-free tier, 100 queries/day) can supplement. But this is a gap-filling
-measure, not the primary data path.
+Archive coverage will have gaps for niche dish variants, recent recipes,
+and non-English sources. Supplementary collection strategies can be
+explored if specific gaps prove blocking, but no live-search pipeline is
+currently planned.
 
 ## Approach: corpus-driven grouping pipeline
 
@@ -179,12 +184,13 @@ per corpus (RecipeNLG, WDC — run independently):
   → minimum group size filter
   → ingredient-line parsing (local LLM)
   → unit normalization (existing pipeline)
-  → Level 3: method + proportion grouping (split within L2 groups)
-  → minimum group size filter
 
 then across corpora:
-  → cross-corpus merge (route rows to matching variants)
-  → deduplication (URL-level join + near-dup across merged stream)
+  → cross-language ingredient normalization
+  → cross-corpus merge (URL-level join + ingredient-set near-dup)
+  → Level 3: method + proportion grouping (split within L2 groups)
+  → minimum group size filter
+  → deduplication
   → outlier flagging
   → human review
   → CSV rows (compatible with existing statistics code)
@@ -215,6 +221,19 @@ Japanese).
 **Minimum group size filter:** drop groups below a threshold (TBD — likely
 in the range of 5–20 recipes). Groups too small to average meaningfully are
 noise at this stage.
+
+**CLI: `rr-discover`.** Interactive L1 slicer over a RecipeNLG-format
+corpus. Streams every row, normalizes titles through the Level 1
+normalizer, and reports the top-K dish names above a minimum count
+(text/CSV/JSON). Answers "what coherent L1 buckets does this corpus
+actually contain?" without committing to a query up front. With
+`--variants` it makes a second pass that collects full recipes for each
+surviving title and runs `group_by_ingredients` (Level 2) in the same
+invocation — so e.g. the American-pancake vs pannkakor split of a
+"swedish pancakes" bucket, or the rice+cream-of-mushroom vs mayo+egg
+families of "broccoli casserole", surface without a separate step.
+Source: `src/rational_recipes/discover.py` and `discover_cli.py`,
+entry point declared in `pyproject.toml`.
 
 ### Level 2: ingredient-set grouping
 
@@ -305,7 +324,9 @@ tags with strict minimum-size guards. Ugnsmannkaka (oven-baked, 200°C,
 30 min) and stekpannkaka (pan-fried, stovetop, 2 min) share the same
 batter but are different dishes; method catches this, proportions alone
 cannot. This is the finest-grained grouping and targets variants that
-share ingredients but differ in technique.
+share ingredients but differ in technique. Note: on RecipeNLG this is a
+no-op until a second signal exists, because RecipeNLG carries no
+`cookingMethod` field — see § Data availability below.
 
 **Partition rule.** Within each L2 group, split by the distinct
 `cookingMethod` tag sets. Partition **only when every resulting
@@ -475,9 +496,10 @@ grouping effectiveness) before building infrastructure around them.
 **Phase documentation convention:** each closed phase gets a short
 `Results` subsection inline below (distilled measurements, key findings,
 code pointers) and a one-paragraph summary in its bead's close note. No
-standalone `docs/recipe-scraping-phase*.md` files.
+standalone `docs/recipe-scraping-phase*.md` files. Live phase status
+lives in the bead graph — run `bd show <bead-id>` for current state.
 
-**Phase 0 — end-to-end manual dry run (no code)** ✅ DONE
+**Phase 0 — end-to-end manual dry run (no code)**
 Manually searched for pannkakor recipes, checked pages for JSON-LD
 presence, ran ingredient lines through Gemma 4 e4b by hand, compared
 scraped ratios against the existing hand-entered CSV. No code written —
@@ -497,15 +519,18 @@ unicode fractions, mixed fractions, implicit quantities (pinch, dash),
 parenthetical prep notes. Decision: proceed to Phase 1. Full bead:
 `RationalRecipes-4lm`.
 
-**Phase 1 — RecipeNLG load + Level 1/2 grouping + LLM parsing** ✅ DONE
+**Phase 1 — RecipeNLG load + Level 1/2 grouping + LLM parsing**
 Load RecipeNLG, implement title-based grouping (Level 1) and ingredient-set
 grouping (Level 2) with minimum group size filters. Wire up LLM ingredient
 parsing and normalization for a known test case (pannkakor). Hand-verify
 output rows against the source data.
 
 *Code:* `src/rational_recipes/scrape/` (loader, grouping, LLM parse,
-pipeline orchestration). Exploration scripts: `scripts/explore_groups.py`
-(fast, no LLM) and `scripts/scrape_to_csv.py` (full pipeline).
+pipeline orchestration). Exploration entry points:
+`scripts/explore_groups.py` (fast, no LLM),
+`scripts/scrape_to_csv.py` (full pipeline), and the `rr-discover` CLI
+(title discovery over the whole corpus, with `--variants` for a Level 2
+breakdown of each surviving title — see § "Level 1" above).
 
 *Results (on 10 pannkakor title groups, 71 ingredient lines total):*
 
@@ -524,22 +549,16 @@ salt, sugar, cream, water) resolved correctly; misses concentrated in
 specialty items (lingonberry, saffron, margarine). Full bead:
 `RationalRecipes-09f`.
 
-**Phase 2 — WDC corpus + Level 3 grouping + dedup + review shell** 🔶 PARTIAL
+**Phase 2 — WDC corpus + Level 3 grouping + dedup + review shell**
 Load WDC Schema.org Table Corpus. Add method + proportion grouping
 (Level 3), using WDC's structured `cookingMethod`/`cookTime` fields. Add
 dedup heuristic and a minimal review shell. Validate against the existing
 hand-curated CSVs as correctness oracle. Measure: how well does Level 3
 separate known variants (e.g. ugnsmannkaka vs stekpannkaka)?
 
-*Shipped so far:* WDC loader (`RationalRecipes-126`, `-e2o`), cross-corpus
-comparison harness (`RationalRecipes-0fn`), language-neutral extraction
-prompt and validation (`RationalRecipes-a1k`), and the overall
-WDC-loader/L1-L2/cross-corpus umbrella (`RationalRecipes-ayw`).
-
-*Still owed:* dedup heuristic, cross-corpus dedup with cross-language
-normalization (`RationalRecipes-3cu`), review shell, and Level 3
-variant-splitting (deferred to `RationalRecipes-7eo`). Tracked under
-`RationalRecipes-toj`.
+Shipped portions and remaining work are tracked in beads
+`RationalRecipes-ayw` and `RationalRecipes-toj` respectively; run
+`bd show <id>` for the current state of each.
 
 **Phase 3 — outlier flagging + quality signals**
 Add outlier flagging on top of the review view. Decide whether an
@@ -549,36 +568,45 @@ shows measurable improvement.
 
 **Phase 4 — scale**
 Broaden beyond the test case to many dish families. Swap in a larger LLM
-if parse-accuracy measurements show it's worth it. Supplement with
-targeted web search for dish variants underrepresented in the archives.
+if parse-accuracy measurements show it's worth it.
 Productionize the review UI if it's getting heavy use.
 
 ## Open questions (to resolve during exploration)
 
-1. **Level 1 grouping technique** — is normalized exact-match sufficient,
-   or do we need fuzzy matching / LLM title canonicalization? Measure on
-   RecipeNLG.
-2. **Level 2 clustering method** — Jaccard threshold? Hierarchical
-   clustering? DBSCAN? Measure on real title groups.
-3. **Level 3 method extraction** — WDC gives structured fields; RecipeNLG
-   needs LLM extraction from directions text. How reliable is each?
-4. **Minimum group size thresholds** — likely different at each level.
-   Connect to CI-width requirements from `statistics.py`.
-5. **Review UI shell** — CLI / TUI / notebook / web? Pick by iteration
-   speed first; productionize later.
-6. **Quality (slop) filter necessity** — does human review catch content-
-   farm content "for free", or do we need an automated pass before review?
-7. **Dedup sensitivity** — how fuzzy should the ingredient-proportion
-   fingerprint be before two entries are considered the same recipe?
-8. **Gemma 4 e4b accuracy ceiling** — where does the small model plateau?
-   What fraction of lines need the bigger model?
+1. ~~**Level 1 grouping technique**~~ **RESOLVED** — normalized exact-match
+   is sufficient. Shipped in `scrape/grouping.py`; `rr-discover` uses the
+   same normalizer for interactive corpus exploration.
+2. ~~**Level 2 clustering method**~~ **RESOLVED** — greedy single-pass
+   Jaccard at threshold 0.6. Shipped in `group_by_ingredients()`. Phase 1
+   validated on 114 "swedish pancakes" recipes: clean split into 49
+   American-style, 42 genuine pannkakor, 4 lingonberry-sauce variants.
+3. **Level 3 method extraction** — **DEFERRED** to `RationalRecipes-7eo`.
+   Design direction: `cookingMethod`-first partition with strict
+   min-size guards (see § Level 3). WDC provides structured fields on
+   schema-good hosts; RecipeNLG needs a second signal (not yet built).
+4. **Minimum group size thresholds** — **OPEN.** Likely different at each
+   level. Connect to CI-width requirements from `statistics.py` when the
+   pipeline matures.
+5. **Review UI shell** — **OPEN.** Deferred to `RationalRecipes-toj` scope.
+   Pick by iteration speed first; productionize later.
+6. **Quality (slop) filter necessity** — **OPEN.** Deferred to Phase 3
+   (`RationalRecipes-0g3`). Decide based on what review catches "for free."
+7. **Dedup sensitivity** — **OPEN.** Deferred to `RationalRecipes-toj`
+   scope. Tune once the cross-corpus merge produces real merged data.
+8. ~~**Gemma 4 e4b accuracy ceiling**~~ **PARTIALLY ANSWERED** — e4b OOMs
+   on 16 GB; e2b is the de facto local ceiling. Measured on Swedish at
+   F1≈0.84 (spike `RationalRecipes-a1k`). Full English A/B measurement
+   tracked in `RationalRecipes-5i1`.
 9. ~~**Non-English recipes**~~ **RESOLVED** — a language-neutral prompt
    (multilingual examples + "keep original language" instruction) handles
    Swedish, German, Russian, and Japanese with zero translation artifacts.
    No per-language prompt variants needed. Reference implementation in
    `src/rational_recipes/scrape/wdc.py`.
-10. **Ingredient-DB coverage** — threshold at which we batch-update the DB
-    vs skip recipes with unknown ingredients?
+10. ~~**Ingredient-DB coverage**~~ **RESOLVED** — Phase 1 measured ~18%
+    miss rate on 10 pannkakor recipes (71 ingredient lines). Core baking
+    ingredients resolve correctly; misses concentrate in specialty items.
+    Follow-up (larger sample, high-leverage DB additions) tracked in
+    `RationalRecipes-b7t.1`.
 
 ## Dependencies on existing code
 
