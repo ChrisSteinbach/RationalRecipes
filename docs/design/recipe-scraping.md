@@ -462,6 +462,8 @@ decide later.
 **Data labeling byproduct:** review decisions are labeled data. If we
 later add an LLM-as-judge, it can be calibrated against reviewer calls.
 
+## Sample size: CI-width-driven termination
+
 Rather than a fixed target ("30 recipes per dish"), collect until the
 confidence interval on each ingredient proportion is below a target width.
 Concretely: reuse the CI machinery already in `statistics.py`, add a
@@ -470,7 +472,9 @@ ingredients.
 
 This is honest about what we can realistically achieve — some dishes will
 have abundant online sources, others won't — and it integrates naturally
-with the project's existing statistical output.
+with the project's existing statistical output. Not yet implemented in
+the scrape pipeline; today the pipeline still uses a fixed per-dish
+sample.
 
 ## Compliance & ethics
 
@@ -580,10 +584,13 @@ Productionize the review UI if it's getting heavy use.
    Jaccard at threshold 0.6. Shipped in `group_by_ingredients()`. Phase 1
    validated on 114 "swedish pancakes" recipes: clean split into 49
    American-style, 42 genuine pannkakor, 4 lingonberry-sauce variants.
-3. **Level 3 method extraction** — **DEFERRED** to `RationalRecipes-7eo`.
-   Design direction: `cookingMethod`-first partition with strict
-   min-size guards (see § Level 3). WDC provides structured fields on
-   schema-good hosts; RecipeNLG needs a second signal (not yet built).
+3. **Level 3 method extraction** — **PARTIALLY RESOLVED.** Design
+   direction landed in § Level 3: `cookingMethod`-first partition with
+   strict min-size guards, proportion clustering as a follow-on refinement.
+   Implementation deferred to `RationalRecipes-7eo`. WDC provides
+   structured fields on schema-good hosts; RecipeNLG needs a second signal
+   (LLM method extraction from `recipeInstructions`, or proportion
+   clustering) — not yet built.
 4. **Minimum group size thresholds** — **OPEN.** Likely different at each
    level. Connect to CI-width requirements from `statistics.py` when the
    pipeline matures.
