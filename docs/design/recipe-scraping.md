@@ -172,10 +172,9 @@ currently planned.
 
 ## Approach: corpus-driven grouping pipeline
 
-The original design targeted one dish variant at a time: pick a dish,
-search for it, filter results. The archive-based approach inverts this:
-start from the whole corpus, automatically discover dish groups, and
-identify which groups have enough data to average meaningfully.
+Start from the whole corpus, automatically discover dish groups, and
+identify which groups have enough data to average meaningfully — rather
+than targeting one dish variant at a time and scraping the web for it.
 
 Pipeline stages:
 
