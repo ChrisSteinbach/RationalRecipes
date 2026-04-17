@@ -375,23 +375,6 @@ rough-proportion-bucket). Hash. Near-duplicates collapse. Keep the earliest
 
 Needs tuning once we have real data to see false-positive/negative rates.
 
-### Quality filtering — open question
-
-Content-farm and LLM-generated recipe pages are a real problem in 2026.
-Averaging smooths noise, but if derivative/slop content dominates the
-corpus we risk an echo chamber. This is distinct from taxonomic fit
-(§ Taxonomic ambiguity below) — a recipe can be correctly the target
-variant and still be derivative slop.
-
-Candidate signals:
-
-- Domain diversity within a group (many sources > one source repeated)
-- Recipe metadata completeness (review count, cook time, photos)
-- LLM-as-judge: have the local model rate plausibility of the recipe
-
-**Defer this decision** until we have a hand-verified sample and can measure
-how badly unfiltered averages drift.
-
 ## Taxonomic ambiguity & outlier handling
 
 Two distinct failure modes to guard against. They look superficially similar
@@ -461,8 +444,8 @@ fits the project's CLI-first DNA; a notebook is easier to prototype; the
 PWA frontend is the eventual home. Start wherever iteration is fastest;
 decide later.
 
-**Data labeling byproduct:** review decisions are labeled data. If we
-later add an LLM-as-judge, it can be calibrated against reviewer calls.
+**Data labeling byproduct:** review decisions are labeled data, usable
+for training or calibrating any downstream classifier built on top.
 
 ## Sample size
 
@@ -563,11 +546,11 @@ Shipped portions and remaining work are tracked in beads
 `RationalRecipes-ayw` and `RationalRecipes-toj` respectively; run
 `bd show <id>` for the current state of each.
 
-**Phase 3 — outlier flagging + quality signals**
-Add outlier flagging on top of the review view. Decide whether an
-automated quality (slop) filter is needed based on what review catches
-"for free" in phase 2. If needed, pick the minimal set of signals that
-shows measurable improvement.
+**Phase 3 — outlier flagging**
+Add outlier flagging on top of the review view: compute per-recipe
+distance from the group median and surface outliers for the reviewer
+to decide keep/drop, with the reason recorded alongside the recipe
+(see § Failure mode B).
 
 **Phase 4 — scale**
 Broaden beyond the test case to many dish families. Swap in a larger LLM
@@ -596,24 +579,22 @@ Productionize the review UI if it's getting heavy use.
    (the source corpora are fixed).
 5. **Review UI shell** — **OPEN.** Deferred to `RationalRecipes-toj` scope.
    Pick by iteration speed first; productionize later.
-6. **Quality (slop) filter necessity** — **OPEN.** Deferred to Phase 3
-   (`RationalRecipes-0g3`). Decide based on what review catches "for free."
-7. **Dedup sensitivity** — **OPEN.** Deferred to `RationalRecipes-toj`
+6. **Dedup sensitivity** — **OPEN.** Deferred to `RationalRecipes-toj`
    scope. Tune once the cross-corpus merge produces real merged data.
-8. ~~**Gemma 4 e4b accuracy ceiling**~~ **PARTIALLY ANSWERED** — e4b OOMs
+7. ~~**Gemma 4 e4b accuracy ceiling**~~ **PARTIALLY ANSWERED** — e4b OOMs
    on 16 GB; e2b is the de facto local ceiling. Measured on Swedish at
    F1≈0.84 (spike `RationalRecipes-a1k`). Full English A/B measurement
    tracked in `RationalRecipes-5i1`.
-9. ~~**Non-English recipes**~~ **RESOLVED** — a language-neutral prompt
+8. ~~**Non-English recipes**~~ **RESOLVED** — a language-neutral prompt
    (multilingual examples + "keep original language" instruction) handles
    Swedish, German, Russian, and Japanese with zero translation artifacts.
    No per-language prompt variants needed. Reference implementation in
    `src/rational_recipes/scrape/wdc.py`.
-10. ~~**Ingredient-DB coverage**~~ **RESOLVED** — Phase 1 measured ~18%
-    miss rate on 10 pannkakor recipes (71 ingredient lines). Core baking
-    ingredients resolve correctly; misses concentrate in specialty items.
-    Follow-up (larger sample, high-leverage DB additions) tracked in
-    `RationalRecipes-b7t.1`.
+9. ~~**Ingredient-DB coverage**~~ **RESOLVED** — Phase 1 measured ~18%
+   miss rate on 10 pannkakor recipes (71 ingredient lines). Core baking
+   ingredients resolve correctly; misses concentrate in specialty items.
+   Follow-up (larger sample, high-leverage DB additions) tracked in
+   `RationalRecipes-b7t.1`.
 
 ## Dependencies on existing code
 
