@@ -569,10 +569,10 @@ Productionize the review UI if it's getting heavy use.
 3. **Level 3 method extraction** — **PARTIALLY RESOLVED.** Design
    direction landed in § Level 3: `cookingMethod`-first partition with
    strict min-size guards, proportion clustering as a follow-on refinement.
-   Implementation deferred to `RationalRecipes-7eo`. WDC provides
-   structured fields on schema-good hosts; RecipeNLG needs a second signal
-   (LLM method extraction from `recipeInstructions`, or proportion
-   clustering) — not yet built.
+   Implementation tracked in `RationalRecipes-7eo` (runs on the merged
+   stream after `toj`). WDC provides structured fields on schema-good
+   hosts; RecipeNLG needs a second signal (LLM method extraction from
+   `recipeInstructions`, or proportion clustering) — not yet built.
 4. **Minimum group size thresholds** — **OPEN.** Likely different at each
    level. Tune empirically against real variant outputs; variants whose
    surviving group falls below threshold are dropped rather than topped up
