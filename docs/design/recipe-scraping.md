@@ -34,8 +34,11 @@ code in `src/rational_recipes/`.
   the source corpora. A language-neutral LLM prompt with multilingual
   examples extracts cleanly across Swedish, German, Russian, and Japanese
   without per-language specialization.
-- **Statistically framed output**: sample size driven by confidence-interval
-  width, not a fixed per-dish target.
+- **Use the whole corpus**: the source corpora are fixed-size archives
+  (RecipeNLG 2020, WDC 2023), so "sample size" per variant is whatever
+  survives grouping and filtering — there is no crawl-until-enough loop.
+  The minimum-group-size filters decide which variants have enough data
+  to average, and those that don't are dropped rather than topped up.
 - **Feeds the existing pipeline**: output should plug into the normalization
   and statistics code already in `src/rational_recipes/`.
 
@@ -331,7 +334,7 @@ no-op until a second signal exists, because RecipeNLG carries no
 **Partition rule.** Within each L2 group, split by the distinct
 `cookingMethod` tag sets. Partition **only when every resulting
 sub-group would have size ≥ `min_variant_size`** — a threshold tracking
-"enough recipes for a meaningful mean + CI", not "> 1". If partitioning
+"enough recipes for stable aggregate stats", not "> 1". If partitioning
 would strand any sub-group below the threshold, keep the L2 group
 intact. Rows with empty `cookingMethod` form an "unknown-method" bucket
 that merges back into the largest sub-group when it would otherwise be
@@ -358,10 +361,10 @@ clustering on parsed quantities). The loader framing is "use
 instructions prose where not", and the mix is expected to vary per
 dish family depending on which hosts serve it.
 
-**Minimum group size filter:** drop sub-groups below threshold. The
-threshold connects to the CI-width criterion already in `statistics.py` —
-"enough recipes to compute a confidence interval below a target width"
-is the principled version of a minimum group size.
+**Minimum group size filter:** drop sub-groups below threshold. Since
+the source corpora are fixed-size, a variant that falls below threshold
+is simply dropped — there is no back-channel to collect more recipes for
+it.
 
 ### Deduplication
 
@@ -462,19 +465,16 @@ decide later.
 **Data labeling byproduct:** review decisions are labeled data. If we
 later add an LLM-as-judge, it can be calibrated against reviewer calls.
 
-## Sample size: CI-width-driven termination
+## Sample size
 
-Rather than a fixed target ("30 recipes per dish"), collect until the
-confidence interval on each ingredient proportion is below a target width.
-Concretely: reuse the CI machinery already in `statistics.py`, add a
-termination check, stop when CI width is acceptable for the dominant
-ingredients.
-
-This is honest about what we can realistically achieve — some dishes will
-have abundant online sources, others won't — and it integrates naturally
-with the project's existing statistical output. Not yet implemented in
-the scrape pipeline; today the pipeline still uses a fixed per-dish
-sample.
+The source corpora are fixed-size archives, so sample size per variant is
+whatever the grouping + filtering pipeline yields — not a target to hit.
+For each variant, the pipeline averages across every surviving row; the
+minimum-group-size filters decide which variants are viable and which get
+dropped. `statistics.py` continues to report mean + confidence interval
+on the final aggregate, so downstream consumers can see how tight the
+estimate is, but those CIs describe the result — they do not gate
+collection.
 
 ## Compliance & ethics
 
@@ -592,8 +592,9 @@ Productionize the review UI if it's getting heavy use.
    (LLM method extraction from `recipeInstructions`, or proportion
    clustering) — not yet built.
 4. **Minimum group size thresholds** — **OPEN.** Likely different at each
-   level. Connect to CI-width requirements from `statistics.py` when the
-   pipeline matures.
+   level. Tune empirically against real variant outputs; variants whose
+   surviving group falls below threshold are dropped rather than topped up
+   (the source corpora are fixed).
 5. **Review UI shell** — **OPEN.** Deferred to `RationalRecipes-toj` scope.
    Pick by iteration speed first; productionize later.
 6. **Quality (slop) filter necessity** — **OPEN.** Deferred to Phase 3
