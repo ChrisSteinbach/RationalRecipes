@@ -139,6 +139,10 @@ Concrete pannkakor example from ICA.se (recon run 2026-04-10):
 | Dutch baby – ugnspannkaka med blåbär         | `I ugn`         |
 | Fläskpannkaka                                | `Stekt,I ugn`   |
 
+ICA's full `cookingMethod` vocabulary across the host also includes
+`Kokt` (boiled) and others; the pannkakor slice above is a subset of
+the tag space.
+
 About 30% of ICA pannkakor rows have `cookingMethod` null, but where
 present the field cleanly discriminates the variants we care about with
 no LLM call. Multi-method recipes use comma-joined tags and must be
@@ -210,10 +214,10 @@ collapse whitespace) and group by similarity. This is the cheapest pass
 and handles the common case: recipes titled "Swedish Pancakes",
 "pannkakor", "Pannkakor Recipe" should land in the same bucket.
 
-**Techniques:** exact match on normalized title is the baseline. Fuzzy
-matching (edit distance, token overlap) catches minor variations. LLM-based
-title canonicalization is an option if fuzzy matching proves insufficient,
-but adds cost.
+**Technique:** normalized exact-match (Q1 RESOLVED) — shipped in
+`scrape/grouping.py`. Fuzzy matching (edit distance, token overlap) and
+LLM-based canonicalization are documented fallbacks, not currently used;
+revisit only if normalized exact-match proves insufficient at scale.
 
 **What it can't do:** creative titles ("Grandma's Sunday Delight"),
 cross-language synonyms without explicit mapping, or structural variants
@@ -322,7 +326,8 @@ need a fallback:
 ### Level 3: cookingMethod-first variant partition
 
 Within each Level 2 ingredient-set group, partition by `cookingMethod`
-tags with strict minimum-size guards. Ugnsmannkaka (oven-baked, 200°C,
+tags, then drop sub-groups below the minimum-size threshold.
+Ugnsmannkaka (oven-baked, 200°C,
 30 min) and stekpannkaka (pan-fried, stovetop, 2 min) share the same
 batter but are different dishes; method catches this, proportions alone
 cannot. This is the finest-grained grouping and targets variants that
@@ -331,13 +336,12 @@ no-op until a second signal exists, because RecipeNLG carries no
 `cookingMethod` field — see § Data availability below.
 
 **Partition rule.** Within each L2 group, split by the distinct
-`cookingMethod` tag sets. Partition **only when every resulting
-sub-group would have size ≥ `min_variant_size`** — a threshold tracking
-"enough recipes for stable aggregate stats", not "> 1". If partitioning
-would strand any sub-group below the threshold, keep the L2 group
-intact. Rows with empty `cookingMethod` form an "unknown-method" bucket
-that merges back into the largest sub-group when it would otherwise be
-singleton, preserving stats rather than splintering them.
+`cookingMethod` tag sets. Rows with empty `cookingMethod` form an
+"unknown-method" bucket that merges back into the largest sub-group
+when it would otherwise be singleton, preserving stats rather than
+splintering them. Sub-groups below `min_variant_size` are dropped by
+the minimum group size filter below — the partition itself is
+unconditional.
 
 **Proportion signal as a follow-on.** When L3 cookingMethod-partition
 lands two method-identical clusters that nonetheless average to very
@@ -370,8 +374,9 @@ it.
 Same recipe reposted across hosts inflates its weight in the average.
 
 **Heuristic:** canonicalize each recipe as a sorted tuple of (ingredient,
-rough-proportion-bucket). Hash. Near-duplicates collapse. Keep the earliest
-`datePublished` as the canonical.
+rough-proportion-bucket). Hash. Near-duplicates collapse to a single
+representative — any row in the collision group works, since the hash
+already asserts they're interchangeable for ratio averaging.
 
 Needs tuning once we have real data to see false-positive/negative rates.
 
@@ -396,9 +401,9 @@ the same underlying population.
   pancakes from pannkakor).
 - **Level 3 method + proportion grouping** catches technique variants
   hiding behind the same ingredient set.
-- **Bimodality sanity check:** if a group shows a clearly bimodal
-  distribution on key ratios after Level 2/3, something upstream misfired.
-  Surface the clusters and stop — don't silently average.
+- **Human review (Phase 2 / toj)** is the ultimate backstop when L1/L2/L3
+  still leave a heterogeneous group — the reviewer can split variants or
+  drop the group.
 
 **Distance metric** is an open question — Jaccard on ingredient sets is
 cheap; weighted by proportion is closer to what we actually care about.
@@ -466,7 +471,8 @@ Our obligations:
 
 - Respect archive license terms (RecipeNLG: non-commercial research/
   educational use; WDC: inherits fair-use status of underlying pages).
-- If supplementing with live web search later: respect `robots.txt` and
+- Live web search is not currently used (see § Archive coverage gaps);
+  if that changes, the obligations are: respect `robots.txt` and
   `Crawl-delay`, identify the scraper in User-Agent, cache aggressively,
   rate-limit per host, no circumvention of paywalls or anti-bot measures.
 - Store only what's needed (ingredient lists + provenance metadata, not
@@ -538,7 +544,7 @@ specialty items (lingonberry, saffron, margarine). Full bead:
 **Phase 2 — WDC corpus + Level 3 grouping + dedup + review shell**
 Load WDC Schema.org Table Corpus. Add method + proportion grouping
 (Level 3), using WDC's structured `cookingMethod`/`cookTime` fields. Add
-dedup heuristic and a minimal review shell. Validate against the existing
+dedup heuristic and a minimal terminal-based review shell. Validate against the existing
 hand-curated CSVs as correctness oracle. Measure: how well does Level 3
 separate known variants (e.g. ugnsmannkaka vs stekpannkaka)?
 
@@ -577,8 +583,9 @@ Productionize the review UI if it's getting heavy use.
    level. Tune empirically against real variant outputs; variants whose
    surviving group falls below threshold are dropped rather than topped up
    (the source corpora are fixed).
-5. **Review UI shell** — **OPEN.** Deferred to `RationalRecipes-toj` scope.
-   Pick by iteration speed first; productionize later.
+5. **Review UI shell** — **RESOLVED (form) / OPEN (build).** Terminal-based
+   (Python, stdlib + `rich`). Build deferred to `RationalRecipes-toj` scope.
+   Productionize only if heavy use emerges.
 6. **Dedup sensitivity** — **OPEN.** Deferred to `RationalRecipes-toj`
    scope. Tune once the cross-corpus merge produces real merged data.
 7. ~~**Gemma 4 e4b accuracy ceiling**~~ **PARTIALLY ANSWERED** — e4b OOMs
