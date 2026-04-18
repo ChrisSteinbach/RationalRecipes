@@ -177,7 +177,10 @@ class TestUrlOverlap:
         assert len(result.url_matches) == 1
 
     def test_near_dup_detection(self) -> None:
-        # Same title, high ingredient overlap, different URLs
+        # Same title, high ingredient overlap, different URLs.
+        # RecipeNLG NER goes through IngredientFactory canonicalization:
+        # 'eggs' → 'egg', 'cocoa' stays 'cocoa'. WDC.ingredient_names is set
+        # directly here (simulating already-extracted canonicalized output).
         rnlg = [
             _recipe(
                 title="Chocolate Cake",
@@ -188,7 +191,7 @@ class TestUrlOverlap:
         wdc = [
             _wdc_recipe(
                 title="Chocolate Cake",
-                ingredient_names=frozenset({"flour", "sugar", "cocoa", "eggs", "milk"}),
+                ingredient_names=frozenset({"flour", "sugar", "cocoa", "egg", "milk"}),
                 page_url="http://b.com/2",
             ),
         ]
@@ -198,7 +201,8 @@ class TestUrlOverlap:
         assert len(result.url_matches) == 0
         assert len(result.near_dup_matches) == 1
         _, _, sim = result.near_dup_matches[0]
-        # Jaccard: 4 shared / 6 union = 4/6
+        # Jaccard: 4 shared ({flour, sugar, cocoa, egg}) / 6 union
+        # ({flour, sugar, cocoa, egg, butter, milk})
         assert sim == pytest.approx(4 / 6)
 
     def test_no_overlap(self) -> None:

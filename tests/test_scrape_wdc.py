@@ -285,7 +285,9 @@ class TestExtractIngredientNames:
             mock_parse.side_effect = mock_results
             result = extract_ingredient_names(recipe)
 
-        assert result.ingredient_names == frozenset({"vetemjöl", "ägg", "mjölk"})
+        # Swedish names are canonicalized to English via IngredientFactory
+        # so cross-corpus Jaccard compares apples-to-apples with RecipeNLG NER.
+        assert result.ingredient_names == frozenset({"flour", "egg", "milk"})
         assert result.title == "Test"
         assert mock_parse.call_count == 3
         for call in mock_parse.call_args_list:
@@ -313,7 +315,28 @@ class TestExtractIngredientNames:
             mock_parse.side_effect = mock_results
             result = extract_ingredient_names(recipe)
 
-        assert result.ingredient_names == frozenset({"vetemjöl", "mjölk"})
+        assert result.ingredient_names == frozenset({"flour", "milk"})
+
+    def test_unknown_names_preserved(self) -> None:
+        """LLM outputs with no DB match survive as lowercased-stripped originals."""
+        recipe = WDCRecipe(
+            row_id=0,
+            host="test.com",
+            title="Test",
+            ingredients=("1 okänd ingrediens",),
+            page_url="http://test.com/3",
+            cooking_methods=frozenset(),
+            durations=(),
+            recipe_category="",
+            keywords=(),
+            recipe_yield="",
+        )
+        with patch("rational_recipes.scrape.wdc.parse_ingredient_line") as mock_parse:
+            mock_parse.return_value = ParsedIngredient(
+                1.0, "", "UNKNOWN_X", "", "1 okänd ingrediens"
+            )
+            result = extract_ingredient_names(recipe)
+        assert result.ingredient_names == frozenset({"unknown_x"})
 
 
 class TestExtractBatch:
@@ -358,11 +381,12 @@ class TestExtractBatch:
             result = extract_batch(recipes, cache=cache)
 
         assert result[0].ingredient_names == frozenset({"flour"})
-        assert result[1].ingredient_names == frozenset({"mjölk"})
+        # 'mjölk' canonicalizes to 'milk' through IngredientFactory.
+        assert result[1].ingredient_names == frozenset({"milk"})
         # Only the non-cached recipe should trigger a parse call
         assert mock_parse.call_count == 1
-        # Cache should now contain the fresh entry
-        assert "http://test.com/fresh" in cache
+        # Cache should now contain the fresh entry (storing the canonicalized form).
+        assert cache["http://test.com/fresh"] == frozenset({"milk"})
 
 
 class TestSystemPromptForwarding:
@@ -392,3 +416,44 @@ class TestSystemPromptForwarding:
             parse_ingredient_line("1 cup flour")
             mock_gen.assert_called_once()
             assert mock_gen.call_args.kwargs["system"] == _SYSTEM_PROMPT
+
+
+class TestParseKeyTolerance:
+    """Small Ollama models sometimes misspell the "ingredient" JSON key.
+
+    We accept any ``ingr*`` key so occasional typos don't discard a parse.
+    """
+
+    def test_misspelled_ingruedient_accepted(self) -> None:
+        with patch("rational_recipes.scrape.parse._ollama_generate") as mock_gen:
+            mock_gen.return_value = (
+                '{"quantity": 3.0, "unit": "dl",'
+                ' "ingruedient": "vetemjöl", "preparation": ""}'
+            )
+            from rational_recipes.scrape.parse import parse_ingredient_line
+
+            parsed = parse_ingredient_line("3 dl vetemjöl")
+            assert parsed is not None
+            assert parsed.ingredient == "vetemjöl"
+            assert parsed.quantity == 3.0
+            assert parsed.unit == "dl"
+
+    def test_misspelled_ingrredient_accepted(self) -> None:
+        with patch("rational_recipes.scrape.parse._ollama_generate") as mock_gen:
+            mock_gen.return_value = (
+                '{"quantity": 2.0, "unit": "",'
+                ' "ingrredient": "citronskal", "preparation": "fintrivet"}'
+            )
+            from rational_recipes.scrape.parse import parse_ingredient_line
+
+            parsed = parse_ingredient_line("2 citronskal")
+            assert parsed is not None
+            assert parsed.ingredient == "citronskal"
+
+    def test_no_ingredient_key_returns_none(self) -> None:
+        with patch("rational_recipes.scrape.parse._ollama_generate") as mock_gen:
+            mock_gen.return_value = '{"quantity": 1.0, "unit": "g"}'
+            from rational_recipes.scrape.parse import parse_ingredient_line
+
+            parsed = parse_ingredient_line("1 g something")
+            assert parsed is None

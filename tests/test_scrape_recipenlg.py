@@ -75,7 +75,9 @@ class TestRecipeIngredientNames:
             source="test",
             link="",
         )
-        assert recipe.ingredient_names == frozenset({"flour", "eggs", "butter"})
+        # Names are routed through IngredientFactory for cross-language
+        # canonicalization; "Eggs" (plural) resolves to the canonical 'egg'.
+        assert recipe.ingredient_names == frozenset({"flour", "egg", "butter"})
 
     def test_empty_ner_entries_filtered(self) -> None:
         recipe = Recipe(
@@ -87,3 +89,27 @@ class TestRecipeIngredientNames:
             link="",
         )
         assert recipe.ingredient_names == frozenset({"flour"})
+
+    def test_swedish_ner_canonicalized(self) -> None:
+        """Swedish NER names resolve to English canonicals across the corpus."""
+        recipe = Recipe(
+            row_index=0,
+            title="Pannkakor",
+            ingredients=(),
+            ner=("vetemjöl", "mjölk", "ägg", "smör"),
+            source="test",
+            link="",
+        )
+        assert recipe.ingredient_names == frozenset({"flour", "milk", "egg", "butter"})
+
+    def test_unknown_ner_preserved(self) -> None:
+        """Names absent from the DB survive as lowercased-stripped originals."""
+        recipe = Recipe(
+            row_index=0,
+            title="Test",
+            ingredients=(),
+            ner=("flour", "  UNKNOWN_INGREDIENT  "),
+            source="test",
+            link="",
+        )
+        assert recipe.ingredient_names == frozenset({"flour", "unknown_ingredient"})

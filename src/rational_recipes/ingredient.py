@@ -125,7 +125,7 @@ class Factory:
 
         # Find the food via synonym
         row = conn.execute(
-            "SELECT f.id, f.name "
+            "SELECT f.id, f.name, f.canonical_name "
             "FROM synonym s JOIN food f ON f.id = s.food_id "
             "WHERE s.name = ? COLLATE NOCASE",
             (name,),
@@ -136,6 +136,7 @@ class Factory:
 
         food_id: int = row[0]
         food_name: str = row[1]
+        canonical_name: str | None = row[2]
 
         # Get density (prefer fdc_derived, then supplementary, then fao)
         density_rows = conn.execute(
@@ -194,6 +195,7 @@ class Factory:
             density_alternatives=density_alts,
             wholeunits2weight=wholeunits if wholeunits else None,
             default_wholeunit_weight=default_wholeunit,
+            canonical_name=canonical_name,
         )
 
         # Cache all synonyms
@@ -215,12 +217,14 @@ class Ingredient:
         density_alternatives: list[tuple[float, str]] | None = None,
         wholeunits2weight: dict[str, float] | None = None,
         default_wholeunit_weight: str | None = None,
+        canonical_name: str | None = None,
     ) -> None:
         self._conversion = conversion
         self._density_source = density_source
         self._density_alternatives = density_alternatives or []
         self._name = names[0]
         self._names = names
+        self._canonical_name = canonical_name
         self._wholeunits2grams: dict[str, float] = {}
         if wholeunits2weight is not None:
             for unit, weight in wholeunits2weight.items():
@@ -234,6 +238,13 @@ class Ingredient:
     def name(self) -> str:
         """Returns ingredient name"""
         return self._name
+
+    def canonical_name(self) -> str:
+        """Preferred short English form for cross-language comparison.
+
+        Falls back to ``name()`` when no canonical was set for this food.
+        """
+        return self._canonical_name or self._name
 
     def synonyms(self) -> list[str]:
         """Returns a list of ingredient synonyms"""

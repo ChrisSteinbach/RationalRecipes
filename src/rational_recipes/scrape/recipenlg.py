@@ -12,6 +12,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from rational_recipes.scrape.canonical import canonicalize_names
+
 
 @dataclass(frozen=True, slots=True)
 class Recipe:
@@ -26,8 +28,12 @@ class Recipe:
 
     @property
     def ingredient_names(self) -> frozenset[str]:
-        """Lowercased ingredient names from the NER column."""
-        return frozenset(n.lower().strip() for n in self.ner if n.strip())
+        """Canonicalized ingredient names from the NER column.
+
+        Each NER name is routed through IngredientFactory so cross-corpus
+        comparison sees a shared English vocabulary.
+        """
+        return canonicalize_names(self.ner)
 
 
 def _parse_string_list(raw: str) -> tuple[str, ...]:

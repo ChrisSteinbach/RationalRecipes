@@ -45,10 +45,11 @@ US_TSP_ML = 4.929
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS food (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL,
-    source      TEXT NOT NULL,  -- 'fdc', 'fao', 'supplementary'
-    fdc_id      INTEGER,        -- USDA FDC ID (NULL for non-FDC foods)
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    canonical_name  TEXT,            -- short English form; NULL = fall back to name
+    source          TEXT NOT NULL,   -- 'fdc', 'fao', 'supplementary'
+    fdc_id          INTEGER,         -- USDA FDC ID (NULL for non-FDC foods)
     UNIQUE(name, source)
 );
 
@@ -289,8 +290,8 @@ def load_fao_densities(conn: sqlite3.Connection) -> int:
             food_id = existing[0]
         else:
             cur = conn.execute(
-                "INSERT INTO food (name, source) VALUES (?, 'fao')",
-                (name,),
+                "INSERT INTO food (name, canonical_name, source) VALUES (?, ?, 'fao')",
+                (name, name.lower()),
             )
             food_id = cur.lastrowid
             assert food_id is not None
@@ -358,7 +359,15 @@ SUPPLEMENTARY: list[dict[str, str | float | list[str]]] = [
     },
     {
         "name": "Potato starch",
-        "synonyms": ["potato starch"],
+        "synonyms": [
+            "potato starch",
+            # Swedish: "potatismjöl" literally translates to "potato flour" but
+            # in Swedish baking it denotes the starch (thickening agent, used
+            # like cornstarch), not the flour sense in the FDC "Potato flour"
+            # entry. Route to starch, not flour.
+            "potatismjöl",
+            "potatismjol",
+        ],
         "density": 0.72,
         "source_note": "bulk density of potato starch powder",
     },
@@ -367,6 +376,42 @@ SUPPLEMENTARY: list[dict[str, str | float | list[str]]] = [
         "synonyms": ["cardamom seed", "cardamom seeds"],
         "density": 0.65,
         "source_note": "whole cardamom seed bulk density",
+    },
+    {
+        "name": "Vanilla sugar",
+        "synonyms": ["vanilla sugar", "vaniljsocker"],
+        "density": 0.85,
+        "source_note": (
+            "Swedish vaniljsocker: ~95% granulated sugar + ~5% vanillin; "
+            "bulk density close to granulated sugar"
+        ),
+    },
+    {
+        "name": "Lingonberries",
+        "synonyms": ["lingonberry", "lingonberries", "lingon"],
+        "density": 0.60,
+        "source_note": "raw lingonberries, similar to other small red berries",
+    },
+    {
+        "name": "Almond flour",
+        "synonyms": [
+            "almond flour",
+            "almond meal",
+            "ground almond meal",
+            "mandelmjöl",
+            "mandelmjol",
+        ],
+        "density": 0.45,
+        "source_note": "ground blanched almonds bulk density",
+    },
+    {
+        "name": "Swedish syrup",
+        "synonyms": ["sirap", "ljus sirap", "mörk sirap", "mork sirap"],
+        "density": 1.40,
+        "source_note": (
+            "Swedish sirap: inverted-sugar syrup between US corn syrup and "
+            "molasses in character; density typical for heavy food syrups"
+        ),
     },
 ]
 
@@ -381,13 +426,15 @@ FDC_SYNONYM_ALIASES: list[tuple[str, str]] = [
     ("egg yolk", "Egg, yolk, raw, fresh"),
     ("yolk", "Egg, yolk, raw, fresh"),
     ("egg white", "Egg, white, raw, fresh"),
+    # The first synonym listed per food sets its canonical name — put the
+    # preferred English short form first, longer/variant names after.
+    ("flour", "Wheat flour, white, all-purpose, enriched, bleached"),
     ("all purpose flour", "Wheat flour, white, all-purpose, enriched, bleached"),
     ("plain flour", "Wheat flour, white, all-purpose, enriched, bleached"),
-    ("flour", "Wheat flour, white, all-purpose, enriched, bleached"),
     ("salt", "Salt, table"),
     ("butter", "Butter, without salt"),
-    ("granulated sugar", "Sugars, granulated"),
     ("sugar", "Sugars, granulated"),
+    ("granulated sugar", "Sugars, granulated"),
     ("brown sugar", "Sugars, brown"),
     ("icing sugar", "Sugars, powdered"),
     ("powder sugar", "Sugars, powdered"),
@@ -418,12 +465,12 @@ FDC_SYNONYM_ALIASES: list[tuple[str, str]] = [
     ("fresh yeast", "Leavening agents, yeast, baker's, compressed"),
     ("molasses", "Molasses"),
     ("black treacle", "Molasses"),
-    ("ground cinnamon", "Spices, cinnamon, ground"),
     ("cinnamon", "Spices, cinnamon, ground"),
-    ("ground nutmeg", "Spices, nutmeg, ground"),
+    ("ground cinnamon", "Spices, cinnamon, ground"),
     ("nutmeg", "Spices, nutmeg, ground"),
-    ("ground cardamom", "Spices, cardamom"),
+    ("ground nutmeg", "Spices, nutmeg, ground"),
     ("cardamom", "Spices, cardamom"),
+    ("ground cardamom", "Spices, cardamom"),
     ("ground ginger", "Spices, ginger, ground"),
     ("ground cloves", "Spices, cloves, ground"),
     ("cloves", "Spices, cloves, ground"),
@@ -438,6 +485,76 @@ FDC_SYNONYM_ALIASES: list[tuple[str, str]] = [
     ("crisco", "Shortening, vegetable, household, composite"),
     ("malt extract", "Syrups, malt"),
     ("malt syrup", "Syrups, malt"),
+    # English names for FDC foods not registered under a short name yet,
+    # including longer variants observed in the RecipeNLG NER column.
+    ("saffron", "Spices, saffron"),
+    ("saffron threads", "Spices, saffron"),
+    ("bacon", "Pork, cured, bacon, unprepared"),
+    ("salt pork", "Pork, cured, bacon, unprepared"),
+    ("white flour", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("plain wheat flour", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("whipping cream", "Cream, fluid, heavy whipping"),
+    ("heavy cream", "Cream, fluid, heavy whipping"),
+    ("powdered sugar", "Sugars, powdered"),
+    ("confectioners", "Sugars, powdered"),
+    ("confectioners sugar", "Sugars, powdered"),
+    # Short-grain rice is a common pannkakor / rice-pudding ingredient in
+    # the RecipeNLG NER — map to the FDC rice entry.
+    ("short-grain rice", "Rice, white, long-grain, regular, raw, enriched"),
+    ("short grain rice", "Rice, white, long-grain, regular, raw, enriched"),
+    # --- Swedish aliases (pannkakor dish family) ---
+    # Pure language/orthographic variants of FDC foods. Each pair covers
+    # both the accented form (as produced by the LLM on ica.se / tasteline.com
+    # text) and the ASCII-folded form (in case OCR/normalization strips
+    # diacritics upstream).
+    ("vetemjöl", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("vetemjol", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("mjöl", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("mjol", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("mjölk", "Milk, whole, 3.25% milkfat, with added vitamin D"),
+    ("mjolk", "Milk, whole, 3.25% milkfat, with added vitamin D"),
+    ("ägg", "Egg, whole, raw, fresh"),
+    ("agg", "Egg, whole, raw, fresh"),
+    ("socker", "Sugars, granulated"),
+    ("strösocker", "Sugars, granulated"),
+    ("strosocker", "Sugars, granulated"),
+    ("farin", "Sugars, brown"),
+    ("farinsocker", "Sugars, brown"),
+    ("smör", "Butter, without salt"),
+    ("smor", "Butter, without salt"),
+    ("grädde", "Cream, fluid, heavy whipping"),
+    ("gradde", "Cream, fluid, heavy whipping"),
+    ("vispgrädde", "Cream, fluid, heavy whipping"),
+    ("vispgradde", "Cream, fluid, heavy whipping"),
+    ("kardemumma", "Spices, cardamom"),
+    ("kanel", "Spices, cinnamon, ground"),
+    (
+        "bakpulver",
+        "Leavening agents, baking powder, double-acting, sodium aluminum sulfate",
+    ),
+    ("jäst", "Leavening agents, yeast, baker's, compressed"),
+    ("jast", "Leavening agents, yeast, baker's, compressed"),
+    ("havregryn", "Oats"),
+    ("blåbär", "Blueberries, raw"),
+    ("blabar", "Blueberries, raw"),
+    ("vatten", "Beverages, water, tap, drinking"),
+    ("saffran", "Spices, saffron"),
+    ("ris", "Rice, white, long-grain, regular, raw, enriched"),
+    # grötris = Swedish short-grain rice used for rice porridge and
+    # saffranspannkaka; approximated by the FDC rice entry.
+    ("grötris", "Rice, white, long-grain, regular, raw, enriched"),
+    ("mandel", "Almonds"),
+    ("mandlar", "Almonds"),
+    ("sötmandel", "Almonds"),
+    ("honung", "Honey"),
+    # risgrynsgröt = cooked rice porridge used as a base in saffranspannkaka;
+    # map to rice so it merges with RecipeNLG recipes that list rice as the
+    # corresponding raw ingredient.
+    ("risgrynsgröt", "Rice, white, long-grain, regular, raw, enriched"),
+    ("fläsk", "Pork, cured, bacon, unprepared"),
+    ("flask", "Pork, cured, bacon, unprepared"),
+    ("sidfläsk", "Pork, cured, bacon, unprepared"),
+    ("sidflask", "Pork, cured, bacon, unprepared"),
 ]
 
 # Supplementary portion data (whole-unit weights not in FDC)
@@ -460,19 +577,23 @@ SUPPLEMENTARY_PORTIONS: list[tuple[str, str, float, str]] = [
 ]
 
 
-def load_supplementary(conn: sqlite3.Connection) -> None:
-    """Load supplementary ingredients and extra synonyms/portions."""
+def load_supplementary_foods(conn: sqlite3.Connection) -> None:
+    """Insert the SUPPLEMENTARY foods, their synonyms, and their densities.
 
-    # 1. Supplementary ingredients
+    Canonical name for supplementary entries is the first synonym
+    (by convention, put the English form first).
+    """
     for entry in SUPPLEMENTARY:
         name = str(entry["name"])
         synonyms = list(entry["synonyms"])  # type: ignore[arg-type]
         density = float(entry["density"])  # type: ignore[arg-type]
         source_note = str(entry.get("source_note", ""))
+        canonical = synonyms[0].lower() if synonyms else name.lower()
 
         cur = conn.execute(
-            "INSERT INTO food (name, source) VALUES (?, 'supplementary')",
-            (name,),
+            "INSERT INTO food (name, canonical_name, source) "
+            "VALUES (?, ?, 'supplementary')",
+            (name, canonical),
         )
         food_id = cur.lastrowid
         assert food_id is not None
@@ -492,20 +613,28 @@ def load_supplementary(conn: sqlite3.Connection) -> None:
             (food_id, density, source_note),
         )
 
-    # 2. Synonym aliases (map short names to FDC foods)
+
+def load_synonym_aliases(conn: sqlite3.Connection) -> None:
+    """Process FDC_SYNONYM_ALIASES: register short names as synonyms.
+
+    Idempotent — safe to call multiple times. Run once before FAO loading
+    (so FDC-target aliases like 'butter' claim their canonical synonym
+    before FAO's auto-synonym 'Butter' does), and once after FAO loading
+    (to resolve aliases whose target only exists in FAO, e.g.
+    'havregryn' -> 'Oats'). The first alias defined for a food also sets
+    the food's canonical short form — so order matters here.
+    """
     for synonym, fdc_name in FDC_SYNONYM_ALIASES:
         row = conn.execute(
-            "SELECT id FROM food WHERE name = ? AND source = 'fdc'",
+            "SELECT id, canonical_name FROM food WHERE name = ? COLLATE NOCASE "
+            "ORDER BY CASE source WHEN 'fdc' THEN 1 WHEN 'fao' THEN 2 ELSE 3 END "
+            "LIMIT 1",
             (fdc_name,),
         ).fetchone()
         if row is None:
-            print(
-                f"  Warning: FDC food not found for synonym '{synonym}': '{fdc_name}'",
-                file=sys.stderr,
-            )
-            continue
+            continue  # target not loaded yet; will retry in second pass
 
-        food_id = row[0]
+        food_id, canonical_name = row
         try:
             conn.execute(
                 "INSERT INTO synonym (food_id, name) VALUES (?, ?)",
@@ -513,8 +642,15 @@ def load_supplementary(conn: sqlite3.Connection) -> None:
             )
         except sqlite3.IntegrityError:
             pass  # synonym already exists
+        if canonical_name is None:
+            conn.execute(
+                "UPDATE food SET canonical_name = ? WHERE id = ?",
+                (synonym.lower(), food_id),
+            )
 
-    # 3. Supplementary portion data
+
+def load_supplementary_portions(conn: sqlite3.Connection) -> None:
+    """Load the SUPPLEMENTARY_PORTIONS table of whole-unit weights."""
     for fdc_name, unit_name, gram_weight, notes in SUPPLEMENTARY_PORTIONS:
         row = conn.execute(
             "SELECT id FROM food WHERE name = ? AND source = 'fdc'",
@@ -532,6 +668,20 @@ def load_supplementary(conn: sqlite3.Connection) -> None:
             "VALUES (?, ?, ?, 'supplementary', ?)",
             (row[0], unit_name, gram_weight, notes),
         )
+
+
+def report_missing_aliases(conn: sqlite3.Connection) -> None:
+    """After all loading phases, warn about aliases that never resolved."""
+    for synonym, fdc_name in FDC_SYNONYM_ALIASES:
+        row = conn.execute(
+            "SELECT 1 FROM food WHERE name = ? COLLATE NOCASE LIMIT 1",
+            (fdc_name,),
+        ).fetchone()
+        if row is None:
+            print(
+                f"  Warning: food not found for synonym '{synonym}': '{fdc_name}'",
+                file=sys.stderr,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -573,12 +723,29 @@ def main() -> None:
     fdc_density_count = derive_fdc_densities(conn)
     print(f"  {fdc_density_count} densities derived")
 
-    print("Loading supplementary data...")
-    load_supplementary(conn)
+    # Load supplementary foods first, then process aliases once so FDC-target
+    # aliases (e.g. 'butter' -> 'Butter, without salt') claim their canonical
+    # synonym before FAO's auto-synonym insertion shadows them.
+    print("Loading supplementary foods...")
+    load_supplementary_foods(conn)
 
+    print("Registering synonym aliases (FDC/supplementary pass)...")
+    load_synonym_aliases(conn)
+
+    # FAO loading may create new foods (e.g. 'Oats') that aren't in FDC.
     print("Loading FAO/INFOODS density data...")
     fao_count = load_fao_densities(conn)
     print(f"  {fao_count} densities loaded")
+
+    # Second pass picks up aliases pointing at FAO-only foods
+    # (e.g. 'havregryn' -> 'Oats').
+    print("Registering synonym aliases (FAO pass)...")
+    load_synonym_aliases(conn)
+
+    print("Loading supplementary portions...")
+    load_supplementary_portions(conn)
+
+    report_missing_aliases(conn)
 
     conn.commit()
 

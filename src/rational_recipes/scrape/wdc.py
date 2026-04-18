@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from rational_recipes.scrape.canonical import canonicalize_names
 from rational_recipes.scrape.parse import (
     OLLAMA_BASE_URL,
     ParsedIngredient,  # noqa: F401 — used by callers
@@ -217,9 +218,12 @@ def extract_ingredient_names(
 ) -> WDCRecipe:
     """Extract ingredient names from raw ingredient lines via LLM.
 
-    Returns a new WDCRecipe with ingredient_names populated.
+    The LLM returns names in the source language; each is routed through
+    IngredientFactory to canonicalize to English so cross-corpus comparison
+    sees a shared vocabulary. Returns a new WDCRecipe with
+    ingredient_names populated.
     """
-    names: set[str] = set()
+    raw_names: list[str] = []
     for line in recipe.ingredients:
         parsed = parse_ingredient_line(
             line,
@@ -228,8 +232,8 @@ def extract_ingredient_names(
             system_prompt=NEUTRAL_PROMPT,
         )
         if parsed and parsed.ingredient:
-            names.add(parsed.ingredient.lower().strip())
-    return dataclasses.replace(recipe, ingredient_names=frozenset(names))
+            raw_names.append(parsed.ingredient)
+    return dataclasses.replace(recipe, ingredient_names=canonicalize_names(raw_names))
 
 
 def extract_batch(

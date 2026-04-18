@@ -164,11 +164,23 @@ def parse_ingredient_line(
             )
             return None
 
+    # Smaller Ollama models (notably gemma3n:e2b) occasionally misspell the
+    # "ingredient" key as "ingruedient"/"ingrredient"/etc.; accept any key
+    # whose name starts with "ingr" as the ingredient field so we don't
+    # discard an otherwise-usable parse.
+    ingredient_key = next(
+        (k for k in data if isinstance(k, str) and k.lower().startswith("ingr")),
+        None,
+    )
+    if ingredient_key is None:
+        logger.warning("No ingredient key in parsed data for %r: %s", line, data)
+        return None
+
     try:
         return ParsedIngredient(
             quantity=float(data["quantity"]),
             unit=str(data["unit"]),
-            ingredient=str(data["ingredient"]).lower().strip(),
+            ingredient=str(data[ingredient_key]).lower().strip(),
             preparation=str(data.get("preparation", "")),
             raw=line,
         )
