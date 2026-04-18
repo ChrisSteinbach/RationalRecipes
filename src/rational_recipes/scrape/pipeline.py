@@ -13,6 +13,7 @@ from io import StringIO
 from pathlib import Path
 
 from rational_recipes.ingredient import Factory as IngredientFactory
+from rational_recipes.scrape.canonical import canonicalize_name
 from rational_recipes.scrape.grouping import (
     IngredientGroup,
     group_by_ingredients,
@@ -55,7 +56,7 @@ class PipelineResult:
     """Result of running the pipeline on a group of recipes."""
 
     group_title: str
-    ingredient_group: IngredientGroup
+    ingredient_group: IngredientGroup[Recipe]
     normalized_rows: list[NormalizedRow]
     header_ingredients: list[str]
     parse_failures: int
@@ -131,19 +132,21 @@ def normalize_recipe(
     skipped: list[str] = []
 
     for parsed in parsed_ingredients:
-        # Check if ingredient is known to the DB
+        canonical = canonicalize_name(parsed.ingredient)
+        if not canonical:
+            continue
         try:
-            IngredientFactory.get_by_name(parsed.ingredient)
+            IngredientFactory.get_by_name(canonical)
         except KeyError:
-            skipped.append(parsed.ingredient)
+            skipped.append(canonical)
             continue
 
         unit_str = _resolve_unit_string(parsed)
         if unit_str is None:
-            skipped.append(f"{parsed.ingredient} (unknown unit: {parsed.unit})")
+            skipped.append(f"{canonical} (unknown unit: {parsed.unit})")
             continue
 
-        cells[parsed.ingredient] = unit_str
+        cells[canonical] = unit_str
 
     return NormalizedRow(
         source_recipe=recipe,
