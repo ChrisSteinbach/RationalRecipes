@@ -155,8 +155,11 @@ indefinitely — each repairs signals the other is missing. WDC donates
 `totalTime` / `cookTime` / `prepTime`, `recipeYield`, `cookingMethod`, and
 `keywords`; RecipeNLG donates clean NER names and sheer volume. Merging
 happens *before* Level 3 variant-splitting: both corpora run L1/L2
-independently, then merge after cross-language ingredient normalization
-(so ingredient-set Jaccard works across languages). Level 3 operates on
+independently on ingredient names that have already been canonicalized
+to a shared English vocabulary at extraction time (see § Ingredient-line
+parsing below — every name from either corpus is routed through
+`IngredientFactory` before L2 Jaccard sees it, so cross-corpus merge
+doesn't need its own language-normalization step). Level 3 operates on
 the combined stream, using `cookingMethod` where WDC provides it;
 RecipeNLG rows (no `cookingMethod`) fall into the unknown-method bucket
 and merge back into the largest sub-group per the L3 partition rule.
@@ -186,13 +189,14 @@ Pipeline stages:
 per corpus (RecipeNLG, WDC — run independently):
   → Level 1: title-based grouping
   → minimum group size filter
-  → Level 2: ingredient-set grouping (split/merge within title groups)
+  → Level 2: ingredient-set grouping on canonicalized names
+             (IngredientFactory maps each extracted name — RecipeNLG NER
+              or WDC LLM output — to an English canonical before Jaccard)
   → minimum group size filter
-  → ingredient-line parsing (local LLM)
+  → ingredient-line parsing (local LLM, quantities and units)
   → unit normalization (existing pipeline)
 
 then across corpora:
-  → cross-language ingredient normalization
   → cross-corpus merge (URL-level join + ingredient-set near-dup)
   → Level 3: method + proportion grouping (split within L2 groups)
   → minimum group size filter
@@ -538,8 +542,9 @@ style recipes (`buttermilk + baking soda + flour + eggs + salt + sugar`),
 water`), and 4 lingonberry-sauce variants. Averaging the full 114 would
 have been meaningless. Core baking ingredients (flour, milk, egg, butter,
 salt, sugar, cream, water) resolved correctly; misses concentrated in
-specialty items (lingonberry, saffron, margarine). Full bead:
-`RationalRecipes-09f`.
+specialty items. Bead `RationalRecipes-3cu` subsequently folded the
+pannkakor-scope misses (lingonberry, saffron, margarine, plus Swedish
+vocabulary) into the DB. Full Phase 1 bead: `RationalRecipes-09f`.
 
 **Phase 2 — WDC corpus + Level 3 grouping + dedup + review shell**
 Load WDC Schema.org Table Corpus. Add method + proportion grouping
@@ -592,16 +597,37 @@ Productionize the review UI if it's getting heavy use.
    on 16 GB; e2b is the de facto local ceiling. Measured on Swedish at
    F1≈0.84 (spike `RationalRecipes-a1k`). Full English A/B measurement
    tracked in `RationalRecipes-5i1`.
-8. ~~**Non-English recipes**~~ **RESOLVED** — a language-neutral prompt
-   (multilingual examples + "keep original language" instruction) handles
-   Swedish, German, Russian, and Japanese with zero translation artifacts.
-   No per-language prompt variants needed. Reference implementation in
-   `src/rational_recipes/scrape/wdc.py`.
+8. **Non-English recipes** — **PARTIALLY RESOLVED.** The original
+   question ("can the LLM handle non-English lines?") split into two
+   subproblems, solved separately:
+
+   (a) *Extraction keeping source language* — **RESOLVED.** A
+       language-neutral prompt (multilingual examples + "keep the
+       original language" instruction) handles Swedish, German, Russian,
+       and Japanese with zero translation artifacts. No per-language
+       prompt variants needed. Reference implementation in
+       `src/rational_recipes/scrape/wdc.py`.
+
+   (b) *Cross-corpus ingredient-name collision* — **RESOLVED for the
+       pannkakor scope, ONGOING per language.** The neutral prompt
+       deliberately keeps `vetemjöl` / `mjölk` / `ägg` in Swedish, so
+       cross-corpus Jaccard sees 0 matches against RecipeNLG's English
+       NER (`flour` / `milk` / `eggs`) without a further canonicalization
+       step. `src/rational_recipes/scrape/canonical.py` (bead `3cu`)
+       routes every extracted name through `IngredientFactory` at
+       extraction time so downstream L2 Jaccard, cross-corpus dedup, and
+       within-variant comparison all see a shared English vocabulary.
+       Swedish pannkakor-family coverage ships in the synonym table;
+       broader Swedish follow-on is tracked in `RationalRecipes-b7t.20`,
+       and a volume-ranked survey of other WDC languages is tracked in
+       `RationalRecipes-b7t.24`.
 9. ~~**Ingredient-DB coverage**~~ **RESOLVED** — Phase 1 measured ~18%
    miss rate on 10 pannkakor recipes (71 ingredient lines). Core baking
    ingredients resolve correctly; misses concentrate in specialty items.
-   Follow-up (larger sample, high-leverage DB additions) tracked in
-   `RationalRecipes-b7t.1`.
+   Bead `3cu` folded the pannkakor-scope misses (saffron, lingonberry,
+   margarine, vanilla sugar, almond flour, Swedish syrup, plus Swedish
+   core vocabulary) into the DB. Broader frequency-ranked additions
+   tracked in `RationalRecipes-b7t.1`.
 
 ## Dependencies on existing code
 

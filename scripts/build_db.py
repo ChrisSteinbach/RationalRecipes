@@ -491,6 +491,17 @@ FDC_SYNONYM_ALIASES: list[tuple[str, str]] = [
     ("saffron threads", "Spices, saffron"),
     ("bacon", "Pork, cured, bacon, unprepared"),
     ("salt pork", "Pork, cured, bacon, unprepared"),
+    # Margarine is a distinct fat (plant oils, not dairy) — kept separate
+    # from butter rather than aliased to it. Parallel to 'butter' ->
+    # 'Butter, without salt': point at the 'stick' variant for a
+    # representative density.
+    (
+        "margarine",
+        (
+            "Margarine, 80% fat, stick, includes regular and hydrogenated"
+            " corn and soybean oils"
+        ),
+    ),
     ("white flour", "Wheat flour, white, all-purpose, enriched, bleached"),
     ("plain wheat flour", "Wheat flour, white, all-purpose, enriched, bleached"),
     ("whipping cream", "Cream, fluid, heavy whipping"),
