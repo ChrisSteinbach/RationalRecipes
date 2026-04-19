@@ -197,13 +197,14 @@ per corpus (RecipeNLG, WDC — run independently):
   → unit normalization (existing pipeline)
 
 then across corpora:
-  → cross-corpus merge (URL-level join + ingredient-set near-dup)
+  → cross-corpus merge (URL-level join + ingredient-set near-dup @ 0.5)
   → Level 3: method + proportion grouping (split within L2 groups)
   → minimum group size filter
-  → deduplication
+  → proportion-bucket hash deduplication (within-variant)
   → outlier flagging
-  → human review
+  → human review (terminal shell over manifest.json)
   → CSV rows (compatible with existing statistics code)
+                   + manifest.json (variant id, counts, provenance)
 ```
 
 Each grouping level is more expensive than the last but operates on a
@@ -382,6 +383,12 @@ rough-proportion-bucket). Hash. Near-duplicates collapse to a single
 representative — any row in the collision group works, since the hash
 already asserts they're interchangeable for ratio averaging.
 
+Runs *within* a variant after normalization and after cross-corpus merge
+(different problem than the URL + ingredient-set near-dup step, which
+runs at merge time and is corpus-agnostic). Tracked in the same bead as
+the merge (`RationalRecipes-toj`) because it's small and shares the
+merged-stream context; may split later if scope grows.
+
 Needs tuning once we have real data to see false-positive/negative rates.
 
 ## Taxonomic ambiguity & outlier handling
@@ -448,10 +455,32 @@ or a quick pass.
 - **Split suggestion:** if the reviewer repeatedly rejects a coherent
   cluster, suggest splitting into two variant targets.
 
-**Shell:** CLI, notebook, or small web UI — open question. A terminal UI
-fits the project's CLI-first DNA; a notebook is easier to prototype; the
-PWA frontend is the eventual home. Start wherever iteration is fastest;
-decide later.
+**Shell:** terminal UI (Python, stdlib + `rich`). Iteration shape for the
+initial build is intentionally narrow — variant-level only, no per-row
+interaction:
+
+- **Input:** a `manifest.json` emitted by the merged pipeline alongside
+  the per-variant CSVs. Each manifest entry carries
+  `{variant_id, title, canonical_ingredients, cooking_methods,
+  n_recipes, csv_path, source_urls}`.
+- **Variant id:** `sha1(normalized_l1_title || "|" ||
+  sorted(canonical_ingredient_set) || "|" ||
+  sorted(cookingMethod_tag_set))` truncated to 12 hex chars. Stable
+  across re-runs because canonicalization (3cu) maps names to a shared
+  English vocabulary before the hash sees them. Method set is empty on
+  the RecipeNLG side and on WDC hosts without `cookingMethod`; stays
+  stable either way.
+- **List view:** title | short ingredient list | N | status
+  (pending / accept / drop / annotated).
+- **Drill-in:** full ratio table (ingredient × recipe), source URLs,
+  mean + stddev per ingredient.
+- **Actions:** `a` accept, `d` drop, `n` annotate (free-text note),
+  `?` defer. Decisions persisted to a JSON sidecar keyed by variant id;
+  re-runs skip already-decided variants.
+- **Deferred:** per-row keep/drop, live recomputation as rows toggle,
+  fingerprint-distance sort, ratio deltas vs group center, split-action
+  on L3-suggested clusters (all require signals not yet produced at this
+  stage in the pipeline).
 
 **Data labeling byproduct:** review decisions are labeled data, usable
 for training or calibrating any downstream classifier built on top.
@@ -588,11 +617,22 @@ Productionize the review UI if it's getting heavy use.
    level. Tune empirically against real variant outputs; variants whose
    surviving group falls below threshold are dropped rather than topped up
    (the source corpora are fixed).
-5. **Review UI shell** — **RESOLVED (form) / OPEN (build).** Terminal-based
-   (Python, stdlib + `rich`). Build deferred to `RationalRecipes-toj` scope.
+5. **Review UI shell** — **RESOLVED (form + minimum scope) / OPEN (build).**
+   Terminal-based (Python, stdlib + `rich`). Minimum scope specified in
+   § Human review as a first-class stage (variant-level only, no per-row
+   interaction, JSON-sidecar decision persistence keyed by variant id).
+   Build tracked in a dedicated bead that depends on `RationalRecipes-toj`
+   (the merge must emit the `manifest.json` the shell consumes).
    Productionize only if heavy use emerges.
-6. **Dedup sensitivity** — **OPEN.** Deferred to `RationalRecipes-toj`
-   scope. Tune once the cross-corpus merge produces real merged data.
+6. **Dedup sensitivity** — **PARTIALLY RESOLVED.** Cross-corpus near-dup
+   Jaccard threshold picked at **0.5** for the initial merge (midpoint of
+   the 0.4–0.6 range measured by bead 3cu on real saffranspannkaka /
+   fläskpannkaka pairs). Set as a source-level default on the merge
+   function, not yet a CLI flag — tune empirically once the merged stream
+   produces false-positive/negative evidence. Proportion-bucket hash
+   dedup (§ Deduplication) runs within-variant after normalization; its
+   fingerprint coarseness is still open and tuned in the same bead
+   (`RationalRecipes-toj`).
 7. ~~**Gemma 4 e4b accuracy ceiling**~~ **PARTIALLY ANSWERED** — e4b OOMs
    on 16 GB; e2b is the de facto local ceiling. Measured on Swedish at
    F1≈0.84 (spike `RationalRecipes-a1k`). Full English A/B measurement
