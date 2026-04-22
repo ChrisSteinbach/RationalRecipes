@@ -1,0 +1,221 @@
+{"row_id": 0, "line": "3 dl vetemjöl", "category": "volume", "expected": {"quantity": 3.0, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 0, "line": "2 dl ricottaost", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "ricottaost", "preparation": ""}}
+{"row_id": 0, "line": "smör", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": ""}}
+{"row_id": 0, "line": "1 msk finrivet citronskal", "category": "spoon", "expected": {"quantity": 1.0, "unit": "msk", "ingredient": "citronskal", "preparation": "finrivet"}}
+{"row_id": 0, "line": "smör (till stekning)", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": "till stekning"}}
+{"row_id": 0, "line": "2 tsk bakpulver", "category": "spoon", "expected": {"quantity": 2.0, "unit": "tsk", "ingredient": "bakpulver", "preparation": ""}}
+{"row_id": 0, "line": "2 stora ägg (à ca 70 g)", "category": "count", "expected": {"quantity": 2.0, "unit": "stora", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 0, "line": "1 msk vallmofrön", "category": "spoon", "expected": {"quantity": 1.0, "unit": "msk", "ingredient": "vallmofrön", "preparation": ""}}
+{"row_id": 0, "line": "1 tsk vaniljpulver", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "vaniljpulver", "preparation": ""}}
+{"row_id": 0, "line": "2 msk strösocker", "category": "spoon", "expected": {"quantity": 2.0, "unit": "msk", "ingredient": "strösocker", "preparation": ""}}
+{"row_id": 0, "line": "2 dl mjölk", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
+{"row_id": 0, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 0, "line": "lönnsirap", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "lönnsirap", "preparation": ""}}
+{"row_id": 13, "line": "1 dl hackade soltorkade tomater i olja (avrunna)", "category": "volume", "expected": {"quantity": 1.0, "unit": "dl", "ingredient": "tomater", "preparation": "hackade, soltorkade, i olja, avrunna"}}
+{"row_id": 13, "line": "1 zucchini (à ca 300 g)", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "zucchini", "preparation": ""}}
+{"row_id": 13, "line": "3/4 tsk salt", "category": "spoon", "expected": {"quantity": 0.75, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 13, "line": "blandsallad", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "blandsallad", "preparation": ""}}
+{"row_id": 13, "line": "150 g fetaost", "category": "weight", "expected": {"quantity": 150.0, "unit": "g", "ingredient": "fetaost", "preparation": ""}}
+{"row_id": 13, "line": "3 ägg", "category": "count", "expected": {"quantity": 3.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 13, "line": "2 1/2 dl vetemjöl", "category": "volume", "expected": {"quantity": 2.5, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 13, "line": "6 dl mjölk", "category": "volume", "expected": {"quantity": 6.0, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
+{"row_id": 13, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 111, "line": "225 g broccoli", "category": "weight", "expected": {"quantity": 225.0, "unit": "g", "ingredient": "broccoli", "preparation": ""}}
+{"row_id": 111, "line": "8 dl mjölk (gärna 3 %)", "category": "volume", "expected": {"quantity": 8.0, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
+{"row_id": 111, "line": "1 tsk honung", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "honung", "preparation": ""}}
+{"row_id": 111, "line": "4 dl siktat dinkelmjöl", "category": "volume", "expected": {"quantity": 4.0, "unit": "dl", "ingredient": "dinkelmjöl", "preparation": "siktat"}}
+{"row_id": 111, "line": "1 krm salt till dressingen", "category": "spoon", "expected": {"quantity": 1.0, "unit": "krm", "ingredient": "salt", "preparation": "till dressingen"}}
+{"row_id": 111, "line": "2 tsk vitvinsvinäger", "category": "spoon", "expected": {"quantity": 2.0, "unit": "tsk", "ingredient": "vitvinsvinäger", "preparation": ""}}
+{"row_id": 111, "line": "1 tsk dijonsenap", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "dijonsenap", "preparation": ""}}
+{"row_id": 111, "line": "4 ägg", "category": "count", "expected": {"quantity": 4.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 111, "line": "1 msk dijonsenap", "category": "spoon", "expected": {"quantity": 1.0, "unit": "msk", "ingredient": "dijonsenap", "preparation": ""}}
+{"row_id": 111, "line": "salt och peppar", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "salt", "preparation": ""}}
+{"row_id": 111, "line": "1 påse färdigskuren sallad", "category": "package", "expected": {"quantity": 1.0, "unit": "påse", "ingredient": "sallad", "preparation": "färdigskuren"}}
+{"row_id": 111, "line": "250 g cottage cheese (cottage cheese)", "category": "weight", "expected": {"quantity": 250.0, "unit": "g", "ingredient": "cottage cheese", "preparation": ""}}
+{"row_id": 111, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 111, "line": "1/2 krm peppar till dressingen", "category": "spoon", "expected": {"quantity": 0.5, "unit": "krm", "ingredient": "peppar", "preparation": "till dressingen"}}
+{"row_id": 111, "line": "180 g strimlad, rökt skinka", "category": "weight", "expected": {"quantity": 180.0, "unit": "g", "ingredient": "skinka", "preparation": "strimlad, rökt"}}
+{"row_id": 111, "line": "1 msk olivolja", "category": "spoon", "expected": {"quantity": 1.0, "unit": "msk", "ingredient": "olivolja", "preparation": ""}}
+{"row_id": 111, "line": "1 tsk torkad timjan", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "timjan", "preparation": "torkad"}}
+{"row_id": 136, "line": "2 dl vetemjöl", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 136, "line": "1 tsk kanel", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "kanel", "preparation": ""}}
+{"row_id": 136, "line": "1 krm salt", "category": "spoon", "expected": {"quantity": 1.0, "unit": "krm", "ingredient": "salt", "preparation": ""}}
+{"row_id": 136, "line": "5 dl mjölk", "category": "volume", "expected": {"quantity": 5.0, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
+{"row_id": 136, "line": "1 msk socker", "category": "spoon", "expected": {"quantity": 1.0, "unit": "msk", "ingredient": "socker", "preparation": ""}}
+{"row_id": 136, "line": "vaniljyoghurt", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "vaniljyoghurt", "preparation": ""}}
+{"row_id": 136, "line": "2 äpplen", "category": "count", "expected": {"quantity": 2.0, "unit": "", "ingredient": "äpplen", "preparation": ""}}
+{"row_id": 136, "line": "2 ägg", "category": "count", "expected": {"quantity": 2.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 267, "line": "smör (till muffinplåtsformarna)", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": "till muffinplåtsformarna"}}
+{"row_id": 267, "line": "6 ägg", "category": "count", "expected": {"quantity": 6.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 267, "line": "sylt", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "sylt", "preparation": ""}}
+{"row_id": 267, "line": "ca 4 1/2 dl vetemjöl (4,5 dl motsvarar ca 270 g)", "category": "volume", "expected": {"quantity": 4.5, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 267, "line": "1 tsk bakpulver", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "bakpulver", "preparation": ""}}
+{"row_id": 267, "line": "färskost", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "färskost", "preparation": ""}}
+{"row_id": 267, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 267, "line": "4 dl mjölk", "category": "volume", "expected": {"quantity": 4.0, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
+{"row_id": 272, "line": "200 g mandelpotatis", "category": "weight", "expected": {"quantity": 200.0, "unit": "g", "ingredient": "mandelpotatis", "preparation": ""}}
+{"row_id": 272, "line": "1 dl grahamsmjöl", "category": "volume", "expected": {"quantity": 1.0, "unit": "dl", "ingredient": "grahamsmjöl", "preparation": ""}}
+{"row_id": 272, "line": "1 liten burk cottage cheese (à 250 g)", "category": "package", "expected": {"quantity": 1.0, "unit": "burk", "ingredient": "cottage cheese", "preparation": "liten"}}
+{"row_id": 272, "line": "smör till stekning", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": "till stekning"}}
+{"row_id": 272, "line": "250 g frysta, halvtinade blåbär", "category": "weight", "expected": {"quantity": 250.0, "unit": "g", "ingredient": "blåbär", "preparation": "frysta, halvtinade"}}
+{"row_id": 272, "line": "6 dl havredryck (eller mjölk)", "category": "volume", "expected": {"quantity": 6.0, "unit": "dl", "ingredient": "havredryck", "preparation": ""}}
+{"row_id": 272, "line": "flytande honung", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "honung", "preparation": "flytande"}}
+{"row_id": 272, "line": "4 ägg", "category": "count", "expected": {"quantity": 4.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 272, "line": "2 dl siktat dinkelmjöl", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "dinkelmjöl", "preparation": "siktat"}}
+{"row_id": 280, "line": "1 krm salt", "category": "spoon", "expected": {"quantity": 1.0, "unit": "krm", "ingredient": "salt", "preparation": ""}}
+{"row_id": 280, "line": "nötter eller frön", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "nötter", "preparation": ""}}
+{"row_id": 280, "line": "3/4 dl växtbaserad dryck (gärna ärtdryck)", "category": "volume", "expected": {"quantity": 0.75, "unit": "dl", "ingredient": "dryck", "preparation": "växtbaserad"}}
+{"row_id": 280, "line": "smör eller kokosfett (till stekning)", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": "till stekning"}}
+{"row_id": 280, "line": "cottage cheese eller kvarg", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "cottage cheese", "preparation": ""}}
+{"row_id": 280, "line": "3 ägg", "category": "count", "expected": {"quantity": 3.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 280, "line": "1 1/2 tsk bakpulver", "category": "spoon", "expected": {"quantity": 1.5, "unit": "tsk", "ingredient": "bakpulver", "preparation": ""}}
+{"row_id": 280, "line": "färska blåbär, jordgubbar, hallon eller kiwi", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "blåbär", "preparation": "färska"}}
+{"row_id": 280, "line": "1 krm vaniljpulver", "category": "spoon", "expected": {"quantity": 1.0, "unit": "krm", "ingredient": "vaniljpulver", "preparation": ""}}
+{"row_id": 280, "line": "citronmeliss (till dekoration)", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "citronmeliss", "preparation": "till dekoration"}}
+{"row_id": 280, "line": "2 dl havregryn", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "havregryn", "preparation": ""}}
+{"row_id": 337, "line": "250 g cottage cheese", "category": "weight", "expected": {"quantity": 250.0, "unit": "g", "ingredient": "cottage cheese", "preparation": ""}}
+{"row_id": 337, "line": "honung", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "honung", "preparation": ""}}
+{"row_id": 337, "line": "250 g frysta eller färska blåbär", "category": "weight", "expected": {"quantity": 250.0, "unit": "g", "ingredient": "blåbär", "preparation": "frysta, färska"}}
+{"row_id": 337, "line": "3/4 tsk salt", "category": "spoon", "expected": {"quantity": 0.75, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 337, "line": "grekisk eller turkisk yoghurt", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "yoghurt", "preparation": "grekisk, turkisk"}}
+{"row_id": 337, "line": "3 ägg", "category": "count", "expected": {"quantity": 3.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 337, "line": "2 1/2 dl vetemjöl", "category": "volume", "expected": {"quantity": 2.5, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 337, "line": "6 dl mjölk", "category": "volume", "expected": {"quantity": 6.0, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
+{"row_id": 399, "line": "1 1/2 dl kikärtsmjöl", "category": "volume", "expected": {"quantity": 1.5, "unit": "dl", "ingredient": "kikärtsmjöl", "preparation": ""}}
+{"row_id": 399, "line": "1 aubergine (à ca 300 g)", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "aubergine", "preparation": ""}}
+{"row_id": 399, "line": "1/2 citron", "category": "count", "expected": {"quantity": 0.5, "unit": "", "ingredient": "citron", "preparation": ""}}
+{"row_id": 399, "line": "1 1/2 msk matolja (+ extra till stekning)", "category": "spoon", "expected": {"quantity": 1.5, "unit": "msk", "ingredient": "matolja", "preparation": ""}}
+{"row_id": 399, "line": "1/2 tsk bakpulver", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "bakpulver", "preparation": ""}}
+{"row_id": 399, "line": "150 g fetaost", "category": "weight", "expected": {"quantity": 150.0, "unit": "g", "ingredient": "fetaost", "preparation": ""}}
+{"row_id": 399, "line": "2 msk olivolja", "category": "spoon", "expected": {"quantity": 2.0, "unit": "msk", "ingredient": "olivolja", "preparation": ""}}
+{"row_id": 399, "line": "1 gurka", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "gurka", "preparation": ""}}
+{"row_id": 399, "line": "1/2 msk olivolja", "category": "spoon", "expected": {"quantity": 0.5, "unit": "msk", "ingredient": "olivolja", "preparation": ""}}
+{"row_id": 399, "line": "2 krm spiskummin", "category": "spoon", "expected": {"quantity": 2.0, "unit": "krm", "ingredient": "spiskummin", "preparation": ""}}
+{"row_id": 399, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 399, "line": "1 kruka mynta", "category": "package", "expected": {"quantity": 1.0, "unit": "kruka", "ingredient": "mynta", "preparation": ""}}
+{"row_id": 399, "line": "1 1/2 dl vatten", "category": "volume", "expected": {"quantity": 1.5, "unit": "dl", "ingredient": "vatten", "preparation": ""}}
+{"row_id": 517, "line": "3 dl vetemjöl", "category": "volume", "expected": {"quantity": 3.0, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 517, "line": "blåbär", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "blåbär", "preparation": ""}}
+{"row_id": 517, "line": "smör", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": ""}}
+{"row_id": 517, "line": "2 msk flytande honung", "category": "spoon", "expected": {"quantity": 2.0, "unit": "msk", "ingredient": "honung", "preparation": "flytande"}}
+{"row_id": 517, "line": "mandelspån", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "mandelspån", "preparation": ""}}
+{"row_id": 517, "line": "1 tsk salt", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 517, "line": "3 ägg", "category": "count", "expected": {"quantity": 3.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 517, "line": "6 dl mjölk", "category": "volume", "expected": {"quantity": 6.0, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
+{"row_id": 517, "line": "250 g ricottaost", "category": "weight", "expected": {"quantity": 250.0, "unit": "g", "ingredient": "ricottaost", "preparation": ""}}
+{"row_id": 517, "line": "1 dl torkade röda linser", "category": "volume", "expected": {"quantity": 1.0, "unit": "dl", "ingredient": "linser", "preparation": "torkade, röda"}}
+{"row_id": 517, "line": "flytande honung", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "honung", "preparation": "flytande"}}
+{"row_id": 517, "line": "1 1/2 dl fet yoghurt (10%)", "category": "volume", "expected": {"quantity": 1.5, "unit": "dl", "ingredient": "yoghurt", "preparation": "fet"}}
+{"row_id": 528, "line": "120 g naturell färskost", "category": "weight", "expected": {"quantity": 120.0, "unit": "g", "ingredient": "färskost", "preparation": "naturell"}}
+{"row_id": 528, "line": "1 stort ägg", "category": "count", "expected": {"quantity": 1.0, "unit": "stort", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 528, "line": "2 tsk strösocker", "category": "spoon", "expected": {"quantity": 2.0, "unit": "tsk", "ingredient": "strösocker", "preparation": ""}}
+{"row_id": 528, "line": "4 msk lönnsirap", "category": "spoon", "expected": {"quantity": 4.0, "unit": "msk", "ingredient": "lönnsirap", "preparation": ""}}
+{"row_id": 528, "line": "10 ml solrosolja", "category": "volume", "expected": {"quantity": 10.0, "unit": "ml", "ingredient": "solrosolja", "preparation": ""}}
+{"row_id": 528, "line": "1 tsk bakpulver", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "bakpulver", "preparation": ""}}
+{"row_id": 528, "line": "20 g smält och kylt smör", "category": "weight", "expected": {"quantity": 20.0, "unit": "g", "ingredient": "smör", "preparation": "smält, kylt"}}
+{"row_id": 528, "line": "3 dl mellanmjölk", "category": "volume", "expected": {"quantity": 3.0, "unit": "dl", "ingredient": "mellanmjölk", "preparation": ""}}
+{"row_id": 528, "line": "120 g blåbär eller hallon", "category": "weight", "expected": {"quantity": 120.0, "unit": "g", "ingredient": "blåbär", "preparation": ""}}
+{"row_id": 528, "line": "200 g självjäsande mjöl", "category": "weight", "expected": {"quantity": 200.0, "unit": "g", "ingredient": "mjöl", "preparation": "självjäsande"}}
+{"row_id": 607, "line": "1 tsk basilika", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "basilika", "preparation": ""}}
+{"row_id": 607, "line": "500 g krossade tomater", "category": "weight", "expected": {"quantity": 500.0, "unit": "g", "ingredient": "tomater", "preparation": "krossade"}}
+{"row_id": 607, "line": "400 g köttfärs", "category": "weight", "expected": {"quantity": 400.0, "unit": "g", "ingredient": "köttfärs", "preparation": ""}}
+{"row_id": 607, "line": "1 tsk oregano", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "oregano", "preparation": ""}}
+{"row_id": 607, "line": "1 sats pannkakor", "category": "package", "expected": {"quantity": 1.0, "unit": "sats", "ingredient": "pannkakor", "preparation": ""}}
+{"row_id": 607, "line": "1 tsk salt", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 607, "line": "1 krm svartpeppar", "category": "spoon", "expected": {"quantity": 1.0, "unit": "krm", "ingredient": "svartpeppar", "preparation": ""}}
+{"row_id": 607, "line": "1/2 dl chilisås", "category": "volume", "expected": {"quantity": 0.5, "unit": "dl", "ingredient": "chilisås", "preparation": ""}}
+{"row_id": 607, "line": "2 morötter", "category": "count", "expected": {"quantity": 2.0, "unit": "", "ingredient": "morötter", "preparation": ""}}
+{"row_id": 607, "line": "1 gul lök", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "lök", "preparation": "gul"}}
+{"row_id": 761, "line": "3 dl vetemjöl", "category": "volume", "expected": {"quantity": 3.0, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 761, "line": "50 g rumsvarmt smör", "category": "weight", "expected": {"quantity": 50.0, "unit": "g", "ingredient": "smör", "preparation": "rumsvarmt"}}
+{"row_id": 761, "line": "1 1/2 msk strösocker", "category": "spoon", "expected": {"quantity": 1.5, "unit": "msk", "ingredient": "strösocker", "preparation": ""}}
+{"row_id": 761, "line": "smör (till stekning)", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": "till stekning"}}
+{"row_id": 761, "line": "spritspåse", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "", "preparation": ""}}
+{"row_id": 761, "line": "2 1/2 dl mjölk", "category": "volume", "expected": {"quantity": 2.5, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
+{"row_id": 761, "line": "1 dl farinsocker", "category": "volume", "expected": {"quantity": 1.0, "unit": "dl", "ingredient": "farinsocker", "preparation": ""}}
+{"row_id": 761, "line": "1 1/2 tsk bakpulver", "category": "spoon", "expected": {"quantity": 1.5, "unit": "tsk", "ingredient": "bakpulver", "preparation": ""}}
+{"row_id": 761, "line": "1 ägg", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 761, "line": "1 1/2 tsk malen kanel", "category": "spoon", "expected": {"quantity": 1.5, "unit": "tsk", "ingredient": "kanel", "preparation": "malen"}}
+{"row_id": 761, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 761, "line": "malen kanel", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "kanel", "preparation": "malen"}}
+{"row_id": 761, "line": "lönnsirap", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "lönnsirap", "preparation": ""}}
+{"row_id": 820, "line": "hackade salta jordnötter", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "jordnötter", "preparation": "hackade, salta"}}
+{"row_id": 820, "line": "2 dl vetemjöl", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 820, "line": "1 banan", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "banan", "preparation": ""}}
+{"row_id": 820, "line": "50 g finhackad mörk choklad (70%)", "category": "weight", "expected": {"quantity": 50.0, "unit": "g", "ingredient": "choklad", "preparation": "finhackad, mörk"}}
+{"row_id": 820, "line": "vaniljglass", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "vaniljglass", "preparation": ""}}
+{"row_id": 820, "line": "3 dl mjölk (3%)", "category": "volume", "expected": {"quantity": 3.0, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
+{"row_id": 820, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 820, "line": "1/2 msk smör", "category": "spoon", "expected": {"quantity": 0.5, "unit": "msk", "ingredient": "smör", "preparation": ""}}
+{"row_id": 820, "line": "lönnsirap", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "lönnsirap", "preparation": ""}}
+{"row_id": 820, "line": "2 ägg", "category": "count", "expected": {"quantity": 2.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 1157, "line": "1 kg räkor med skal", "category": "weight", "expected": {"quantity": 1.0, "unit": "kg", "ingredient": "räkor", "preparation": "med skal"}}
+{"row_id": 1157, "line": "2 msk majsstärkelse", "category": "spoon", "expected": {"quantity": 2.0, "unit": "msk", "ingredient": "majsstärkelse", "preparation": ""}}
+{"row_id": 1157, "line": "1/2 purjolök", "category": "count", "expected": {"quantity": 0.5, "unit": "", "ingredient": "purjolök", "preparation": ""}}
+{"row_id": 1157, "line": "2 1/2 dl havrebaserad grädde", "category": "volume", "expected": {"quantity": 2.5, "unit": "dl", "ingredient": "grädde", "preparation": "havrebaserad"}}
+{"row_id": 1157, "line": "1 knippe dill", "category": "package", "expected": {"quantity": 1.0, "unit": "knippe", "ingredient": "dill", "preparation": ""}}
+{"row_id": 1157, "line": "1 krm vitpeppar", "category": "spoon", "expected": {"quantity": 1.0, "unit": "krm", "ingredient": "vitpeppar", "preparation": ""}}
+{"row_id": 1270, "line": "3 dl sylt", "category": "volume", "expected": {"quantity": 3.0, "unit": "dl", "ingredient": "sylt", "preparation": ""}}
+{"row_id": 1270, "line": "2 msk strösocker", "category": "spoon", "expected": {"quantity": 2.0, "unit": "msk", "ingredient": "strösocker", "preparation": ""}}
+{"row_id": 1270, "line": "5 dl mjölk", "category": "volume", "expected": {"quantity": 5.0, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
+{"row_id": 1270, "line": "ca 2 msk smör (till stekning)", "category": "spoon", "expected": {"quantity": 2.0, "unit": "msk", "ingredient": "smör", "preparation": "till stekning"}}
+{"row_id": 1270, "line": "2 1/2 dl vetemjöl", "category": "volume", "expected": {"quantity": 2.5, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 1270, "line": "5 dl vispgrädde", "category": "volume", "expected": {"quantity": 5.0, "unit": "dl", "ingredient": "vispgrädde", "preparation": ""}}
+{"row_id": 1270, "line": "300 g färska bär (t ex jordgubbar och blåbär)", "category": "weight", "expected": {"quantity": 300.0, "unit": "g", "ingredient": "bär", "preparation": "färska"}}
+{"row_id": 1270, "line": "1 tsk florsocker", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "florsocker", "preparation": ""}}
+{"row_id": 1270, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 1270, "line": "2 kvistar citronmeliss", "category": "package", "expected": {"quantity": 2.0, "unit": "kvistar", "ingredient": "citronmeliss", "preparation": ""}}
+{"row_id": 1270, "line": "2 ägg", "category": "count", "expected": {"quantity": 2.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 1489, "line": "2 - 3 morötter", "category": "count", "expected": {"quantity": 2.5, "unit": "", "ingredient": "morötter", "preparation": ""}}
+{"row_id": 1489, "line": "1 påse salladsmix (vintermix)", "category": "package", "expected": {"quantity": 1.0, "unit": "påse", "ingredient": "salladsmix", "preparation": "vintermix"}}
+{"row_id": 1489, "line": "1 msk smör eller margarin", "category": "spoon", "expected": {"quantity": 1.0, "unit": "msk", "ingredient": "smör", "preparation": ""}}
+{"row_id": 1489, "line": "1 krm salt", "category": "spoon", "expected": {"quantity": 1.0, "unit": "krm", "ingredient": "salt", "preparation": ""}}
+{"row_id": 1489, "line": "finrivet skal och juice av 1/2 tvättad citron", "category": "count", "expected": {"quantity": 0.5, "unit": "", "ingredient": "citron", "preparation": "finrivet skal, juice, tvättad"}}
+{"row_id": 1489, "line": "1/2 tsk rosmarin", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "rosmarin", "preparation": ""}}
+{"row_id": 1489, "line": "2 msk olja", "category": "spoon", "expected": {"quantity": 2.0, "unit": "msk", "ingredient": "olja", "preparation": ""}}
+{"row_id": 1489, "line": "1 1/2 tsk salt", "category": "spoon", "expected": {"quantity": 1.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 1489, "line": "2 krm peppar", "category": "spoon", "expected": {"quantity": 2.0, "unit": "krm", "ingredient": "peppar", "preparation": ""}}
+{"row_id": 1489, "line": "8 dl mjölk (3 %)", "category": "volume", "expected": {"quantity": 8.0, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
+{"row_id": 1489, "line": "4 dl vetemjöl", "category": "volume", "expected": {"quantity": 4.0, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 1489, "line": "1/2 påse salladslök", "category": "package", "expected": {"quantity": 0.5, "unit": "påse", "ingredient": "salladslök", "preparation": ""}}
+{"row_id": 1489, "line": "1 paket bacon (kalkonbacon à 140 g)", "category": "package", "expected": {"quantity": 1.0, "unit": "paket", "ingredient": "bacon", "preparation": ""}}
+{"row_id": 1489, "line": "2 äpplen", "category": "count", "expected": {"quantity": 2.0, "unit": "", "ingredient": "äpplen", "preparation": ""}}
+{"row_id": 1489, "line": "1 krm peppar", "category": "spoon", "expected": {"quantity": 1.0, "unit": "krm", "ingredient": "peppar", "preparation": ""}}
+{"row_id": 1489, "line": "4 ägg", "category": "count", "expected": {"quantity": 4.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 1700, "line": "2 msk rapsolja", "category": "spoon", "expected": {"quantity": 2.0, "unit": "msk", "ingredient": "rapsolja", "preparation": ""}}
+{"row_id": 1700, "line": "1 förp kokta stora vita bönor (à 380 g)", "category": "package", "expected": {"quantity": 1.0, "unit": "förp", "ingredient": "bönor", "preparation": "kokta, stora, vita"}}
+{"row_id": 1700, "line": "1/2 msk curry", "category": "spoon", "expected": {"quantity": 0.5, "unit": "msk", "ingredient": "curry", "preparation": ""}}
+{"row_id": 1700, "line": "1 krispsallad", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "krispsallad", "preparation": ""}}
+{"row_id": 1700, "line": "salt", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "salt", "preparation": ""}}
+{"row_id": 1700, "line": "3 ägg", "category": "count", "expected": {"quantity": 3.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 1700, "line": "2 1/2 dl vetemjöl", "category": "volume", "expected": {"quantity": 2.5, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 1700, "line": "350 g kallrökt lax", "category": "weight", "expected": {"quantity": 350.0, "unit": "g", "ingredient": "lax", "preparation": "kallrökt"}}
+{"row_id": 1700, "line": "peppar", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "peppar", "preparation": ""}}
+{"row_id": 1700, "line": "2 dl växtbaserad mjölkdryck", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "mjölkdryck", "preparation": "växtbaserad"}}
+{"row_id": 1700, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 1700, "line": "2 dl lätt crème fraiche", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "crème fraiche", "preparation": "lätt"}}
+{"row_id": 1700, "line": "1/2 förp haricots verts (bönor) (à 450 g)", "category": "package", "expected": {"quantity": 0.5, "unit": "förp", "ingredient": "haricots verts", "preparation": ""}}
+{"row_id": 1700, "line": "1 rödlök", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "rödlök", "preparation": ""}}
+{"row_id": 2019, "line": "smör till formen", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": "till formen"}}
+{"row_id": 2019, "line": "2 dl crème fraiche", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "crème fraiche", "preparation": ""}}
+{"row_id": 2019, "line": "1 1/2 dl vispgrädde", "category": "volume", "expected": {"quantity": 1.5, "unit": "dl", "ingredient": "vispgrädde", "preparation": ""}}
+{"row_id": 2019, "line": "1 glasburk körsbär i portvin (à 305 g)", "category": "package", "expected": {"quantity": 1.0, "unit": "glasburk", "ingredient": "körsbär", "preparation": "i portvin"}}
+{"row_id": 2019, "line": "1/2 tsk vaniljsocker", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "vaniljsocker", "preparation": ""}}
+{"row_id": 2019, "line": "2 dl sötmandel", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "sötmandel", "preparation": ""}}
+{"row_id": 2019, "line": "1 - 1 1/2 msk råsocker", "category": "spoon", "expected": {"quantity": 1.25, "unit": "msk", "ingredient": "råsocker", "preparation": ""}}
+{"row_id": 2019, "line": "1 msk socker", "category": "spoon", "expected": {"quantity": 1.0, "unit": "msk", "ingredient": "socker", "preparation": ""}}
+{"row_id": 2019, "line": "3 ägg", "category": "count", "expected": {"quantity": 3.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
+{"row_id": 2019, "line": "2 paket saffran (à 1/2 g)", "category": "package", "expected": {"quantity": 2.0, "unit": "paket", "ingredient": "saffran", "preparation": ""}}
+{"row_id": 2019, "line": "1 liter färdigkokt risgrynsgröt (1 liter gröt motsvarar ca 1 kg)", "category": "volume", "expected": {"quantity": 1.0, "unit": "liter", "ingredient": "risgrynsgröt", "preparation": "färdigkokt"}}
+{"row_id": 2172, "line": "1 kruka basilika", "category": "package", "expected": {"quantity": 1.0, "unit": "kruka", "ingredient": "basilika", "preparation": ""}}
+{"row_id": 2172, "line": "3 dl kikärtsmjöl", "category": "volume", "expected": {"quantity": 3.0, "unit": "dl", "ingredient": "kikärtsmjöl", "preparation": ""}}
+{"row_id": 2172, "line": "2 dl crème fraiche", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "crème fraiche", "preparation": ""}}
+{"row_id": 2172, "line": "200 g chèvre", "category": "weight", "expected": {"quantity": 200.0, "unit": "g", "ingredient": "chèvre", "preparation": ""}}
+{"row_id": 2172, "line": "3 dl vatten", "category": "volume", "expected": {"quantity": 3.0, "unit": "dl", "ingredient": "vatten", "preparation": ""}}
+{"row_id": 2172, "line": "1 ask smörgåskrasse", "category": "package", "expected": {"quantity": 1.0, "unit": "ask", "ingredient": "smörgåskrasse", "preparation": ""}}
+{"row_id": 2172, "line": "svartpeppar", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "svartpeppar", "preparation": ""}}
+{"row_id": 2172, "line": "1 dl valnötter", "category": "volume", "expected": {"quantity": 1.0, "unit": "dl", "ingredient": "valnötter", "preparation": ""}}
+{"row_id": 2172, "line": "2 msk honung", "category": "spoon", "expected": {"quantity": 2.0, "unit": "msk", "ingredient": "honung", "preparation": ""}}
+{"row_id": 2172, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
+{"row_id": 2172, "line": "10 rädisor", "category": "count", "expected": {"quantity": 10.0, "unit": "", "ingredient": "rädisor", "preparation": ""}}
+{"row_id": 2172, "line": "3 msk olivolja", "category": "spoon", "expected": {"quantity": 3.0, "unit": "msk", "ingredient": "olivolja", "preparation": ""}}
