@@ -1,0 +1,42 @@
+{"line": "4 large eggs", "category": "plural", "expected": {"quantity": 4.0, "unit": "LARGE", "ingredient": "egg", "preparation": ""}}
+{"line": "2 eggs", "category": "plural", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "egg", "preparation": ""}}
+{"line": "3 eggs", "category": "plural", "expected": {"quantity": 3.0, "unit": "MEDIUM", "ingredient": "egg", "preparation": ""}}
+{"line": "4 hamburger buns", "category": "plural", "expected": {"quantity": 4.0, "unit": "MEDIUM", "ingredient": "bun", "preparation": ""}}
+{"line": "4 yellow onions", "category": "plural", "expected": {"quantity": 4.0, "unit": "MEDIUM", "ingredient": "onion", "preparation": ""}}
+{"line": "2 cloves garlic", "category": "plural", "expected": {"quantity": 2.0, "unit": "clove", "ingredient": "garlic", "preparation": ""}}
+{"line": "2 sticks margarine", "category": "plural", "expected": {"quantity": 2.0, "unit": "stick", "ingredient": "margarine", "preparation": ""}}
+{"line": "12 slices bread", "category": "plural", "expected": {"quantity": 12.0, "unit": "slice", "ingredient": "bread", "preparation": ""}}
+{"line": "3 sliced carrots", "category": "plural", "expected": {"quantity": 3.0, "unit": "MEDIUM", "ingredient": "carrot", "preparation": "sliced"}}
+{"line": "6 chicken bouillon cubes", "category": "plural", "expected": {"quantity": 6.0, "unit": "cube", "ingredient": "chicken bouillon", "preparation": ""}}
+{"line": "2 buttons garlic", "category": "plural", "expected": {"quantity": 2.0, "unit": "clove", "ingredient": "garlic", "preparation": ""}}
+{"line": "2 stalks celery", "category": "plural", "expected": {"quantity": 2.0, "unit": "stalk", "ingredient": "celery", "preparation": ""}}
+{"line": "4 medium tomatoes", "category": "plural", "expected": {"quantity": 4.0, "unit": "MEDIUM", "ingredient": "tomato", "preparation": ""}}
+{"line": "3 small potatoes", "category": "plural", "expected": {"quantity": 3.0, "unit": "SMALL", "ingredient": "potato", "preparation": ""}}
+{"line": "1 onion, chopped", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "MEDIUM", "ingredient": "onion", "preparation": "chopped"}}
+{"line": "2 eggs, beaten", "category": "comma_prep", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "egg", "preparation": "beaten"}}
+{"line": "1 large onion, chopped", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "LARGE", "ingredient": "onion", "preparation": "chopped"}}
+{"line": "1 medium onion, chopped", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "MEDIUM", "ingredient": "onion", "preparation": "chopped"}}
+{"line": "1 small onion, thinly sliced", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "SMALL", "ingredient": "onion", "preparation": "thinly sliced"}}
+{"line": "1/2 c. onion, chopped", "category": "comma_prep", "expected": {"quantity": 0.5, "unit": "cup", "ingredient": "onion", "preparation": "chopped"}}
+{"line": "1/4 c. confectioners sugar, sifted", "category": "comma_prep", "expected": {"quantity": 0.25, "unit": "cup", "ingredient": "sugar", "preparation": "sifted"}}
+{"line": "2 sticks margarine, melted", "category": "comma_prep", "expected": {"quantity": 2.0, "unit": "stick", "ingredient": "margarine", "preparation": "melted"}}
+{"line": "1 tsp. basil, crushed", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "tsp", "ingredient": "basil", "preparation": "crushed"}}
+{"line": "1 bay leaf, crushed", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "MEDIUM", "ingredient": "bay leaf", "preparation": "crushed"}}
+{"line": "1 medium clove garlic, minced", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "clove", "ingredient": "garlic", "preparation": "minced"}}
+{"line": "3 lb. butternut squash, peeled, seeded and cubed", "category": "comma_prep", "expected": {"quantity": 3.0, "unit": "lb", "ingredient": "squash", "preparation": "peeled, seeded and cubed"}}
+{"line": "2 c. banana, chopped", "category": "comma_prep", "expected": {"quantity": 2.0, "unit": "cup", "ingredient": "banana", "preparation": "chopped"}}
+{"line": "2 stalks celery, finely chopped", "category": "comma_prep", "expected": {"quantity": 2.0, "unit": "stalk", "ingredient": "celery", "preparation": "finely chopped"}}
+{"line": "1 can cream of chicken soup", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "cream of chicken soup", "preparation": ""}}
+{"line": "1 can cream of mushroom soup", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "cream of mushroom soup", "preparation": ""}}
+{"line": "1 (16 oz.) can Ro-Tel tomatoes", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "tomato", "preparation": ""}}
+{"line": "1 (8 oz.) can tomato sauce", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "tomato sauce", "preparation": ""}}
+{"line": "1 (7 oz.) can whole kernel corn", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "corn", "preparation": ""}}
+{"line": "2 cans shrimp", "category": "packaging", "expected": {"quantity": 2.0, "unit": "can", "ingredient": "shrimp", "preparation": ""}}
+{"line": "1 pkg. active dry yeast", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "yeast", "preparation": ""}}
+{"line": "1 pkg. frozen peas", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "pea", "preparation": "frozen"}}
+{"line": "1 pkg. fresh cranberries", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "cranberry", "preparation": "fresh"}}
+{"line": "1 (12 oz.) box macaroni", "category": "packaging", "expected": {"quantity": 1.0, "unit": "box", "ingredient": "macaroni", "preparation": ""}}
+{"line": "1 (14 oz.) bottle ketchup", "category": "packaging", "expected": {"quantity": 1.0, "unit": "bottle", "ingredient": "ketchup", "preparation": ""}}
+{"line": "1 jar pickled watermelon rind", "category": "packaging", "expected": {"quantity": 1.0, "unit": "jar", "ingredient": "watermelon rind", "preparation": "pickled"}}
+{"line": "1/2 jar mushrooms", "category": "packaging", "expected": {"quantity": 0.5, "unit": "jar", "ingredient": "mushroom", "preparation": ""}}
+{"line": "1 (6 oz.) can mushrooms, drained", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "mushroom", "preparation": "drained"}}
