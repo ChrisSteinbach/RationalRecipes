@@ -614,3 +614,47 @@ class TestPersistence:
         path.write_text('{"runs": []}')  # no schema key → defaults to "v1"
         with pytest.raises(ValueError, match="schema"):
             load_runs(path)
+
+
+class TestScoreRunWithLimits:
+    """Scoring a ModelRun whose corpora were limited at run-time.
+
+    This covers the --rescore path against a run that used
+    --english-limit 30 (or similar). The gold corpus is larger than the
+    stored LineRuns; callers are expected to clip the gold list to the
+    LineRun count before calling score_run, and score_run itself uses
+    zip(..., strict=True) so a mismatch surfaces as ValueError rather
+    than silently aligning rows wrong.
+    """
+
+    def test_mismatched_lengths_raise(self) -> None:
+        english = [
+            GoldItem(line="1 cup flour", expected=_expected(), language="en"),
+            GoldItem(line="2 eggs", expected=_expected(quantity=2.0), language="en"),
+        ]
+        run = ModelRun(
+            model="m1",
+            ollama_url="http://x",
+            retry_idx=0,
+            english=[_run()],  # only one LineRun, gold has two
+        )
+        with pytest.raises(ValueError, match="shorter"):
+            score_run(run, english, [], [])
+
+    def test_clipped_gold_scores_cleanly(self) -> None:
+        english_full = [
+            GoldItem(line="1 cup flour", expected=_expected(), language="en"),
+            GoldItem(line="2 eggs", expected=_expected(quantity=2.0), language="en"),
+        ]
+        run = ModelRun(
+            model="m1",
+            ollama_url="http://x",
+            retry_idx=0,
+            english=[_run()],
+        )
+        # Caller clips gold to match run length — this is the pattern
+        # main() applies on the rescore path.
+        english = english_full[: len(run.english)]
+        score = score_run(run, english, [], [])
+        assert score.per_language["en"].n == 1
+        assert score.per_language["en"].line_f1 == 1.0

@@ -952,6 +952,13 @@ def main() -> None:
 
     if args.rescore is not None:
         runs = load_runs(args.rescore)
+        # A rescore targets whatever subset the original run used; clip the
+        # gold corpora to match each run's LineRun count so zip(..., strict=True)
+        # in scoring doesn't blow up on limited runs (e.g. --english-limit 30).
+        if runs:
+            english = english[: len(runs[0].english)]
+            swedish = swedish[: len(runs[0].swedish)]
+            multilingual = multilingual[: len(runs[0].multilingual)]
     else:
         runs = []
         for retry in range(args.retries):
@@ -980,7 +987,8 @@ def main() -> None:
     print(format_summary_table(bands))
     print()
     print(format_per_field_breakdown(bands))
-    print(f"\n(saved raw runs to {args.out})")
+    if args.rescore is None:
+        print(f"\n(saved raw runs to {args.out})")
 
 
 if __name__ == "__main__":
