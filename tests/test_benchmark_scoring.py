@@ -93,13 +93,19 @@ class TestNormIngredientEn:
             ("eggs", "egg"),
             ("Eggs ", "egg"),
             ("onions", "onion"),
-            ("mushroom", "mushroom"),
-            ("cream cheese", "cream cheese"),
-            # 's' after vowel: do not strip ("bananas" → "banana" still stripped
-            # per rule because 'a' is vowel → stop)
-            ("bananas", "bananas"),
-            ("passes", "passes"),  # ends in 'ss' → don't strip
-            ("bus", "bus"),  # len <= 3 → don't strip
+            ("peas", "pea"),  # vowel+s: regular plural, strip
+            ("bananas", "banana"),  # regular plural via -s
+            ("mushroom", "mushroom"),  # already singular
+            ("cream cheese", "cream cheese"),  # compound, no stripping
+            ("tomatoes", "tomato"),  # -oes → -o
+            ("dishes", "dish"),  # -shes → -sh
+            ("boxes", "box"),  # -xes → -x
+            ("cherries", "cherry"),  # -ies → -y
+            ("classes", "class"),  # -sses → -ss (via -ses match)
+            ("bass", "bass"),  # -ss → keep (not plural)
+            ("bus", "bus"),  # len 3 → keep
+            ("asparagus", "asparagus"),  # -us → keep
+            ("analysis", "analysis"),  # -is → keep
             (None, ""),
             ("", ""),
         ],

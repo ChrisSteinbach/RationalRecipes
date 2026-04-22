@@ -187,19 +187,34 @@ def _norm_unit_generic(u: str | None) -> str:
     return u.strip().lower()
 
 
+_PLURAL_ES_ENDINGS = ("oes", "ses", "shes", "ches", "xes", "zes")
+
+
 def _norm_ingredient_en(ing: str | None) -> str:
-    """Lowercase + crude de-plural: strip trailing 's' if the base looks countable.
-    Mirrors the rule the v1 harness used so comparisons stay compatible."""
+    """Lowercase + conservative de-plural for English countables.
+
+    Handles -s, -es, and -ies plurals without stripping the short
+    intrinsic-s words that show up as ingredients: -ss (bass, pass),
+    -us (asparagus, couscous), -is (analysis, basis). -as is a more
+    common ingredient plural (peas, bananas, tortillas) so we strip
+    it; the cost is that non-ingredient -as words (bias, atlas) would
+    get stripped too, but those don't appear in recipe text.
+
+    Compared to the v1 rule, this correctly reduces "peas"→"pea",
+    "tomatoes"→"tomato", "cherries"→"cherry", "bananas"→"banana"
+    which the v1 vowel-before-s exception blocked.
+    """
     if ing is None:
         return ""
     ing = ing.strip().lower()
-    if (
-        len(ing) > 3
-        and ing.endswith("s")
-        and not ing.endswith(("ss", "us", "is", "as"))
-        and ing[-2] not in "aeiou"
-    ):
-        ing = ing[:-1]
+    if len(ing) <= 3 or ing.endswith(("ss", "us", "is")):
+        return ing
+    if ing.endswith("ies"):
+        return ing[:-3] + "y"
+    if ing.endswith(_PLURAL_ES_ENDINGS):
+        return ing[:-2]
+    if ing.endswith("s"):
+        return ing[:-1]
     return ing
 
 

@@ -40,3 +40,131 @@
 {"line": "1 jar pickled watermelon rind", "category": "packaging", "expected": {"quantity": 1.0, "unit": "jar", "ingredient": "watermelon rind", "preparation": "pickled"}}
 {"line": "1/2 jar mushrooms", "category": "packaging", "expected": {"quantity": 0.5, "unit": "jar", "ingredient": "mushroom", "preparation": ""}}
 {"line": "1 (6 oz.) can mushrooms, drained", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "mushroom", "preparation": "drained"}}
+{"line": "2 jalapeno peppers, seeded", "category": "plural", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "pepper", "preparation": "seeded"}}
+{"line": "3 slices bread, cut into 1/4-inch cubes", "category": "plural", "expected": {"quantity": 3.0, "unit": "slice", "ingredient": "bread", "preparation": "cut into 1/4-inch cubes"}}
+{"line": "4 large green onions", "category": "plural", "expected": {"quantity": 4.0, "unit": "LARGE", "ingredient": "onion", "preparation": ""}}
+{"line": "6 medium size sweet potatoes, boiled", "category": "plural", "expected": {"quantity": 6.0, "unit": "MEDIUM", "ingredient": "potato", "preparation": "boiled"}}
+{"line": "3 red apples, cut fine (with skins)", "category": "plural", "expected": {"quantity": 3.0, "unit": "MEDIUM", "ingredient": "apple", "preparation": "cut fine, with skins"}}
+{"line": "10 slices day old bread, quartered and crusts removed", "category": "plural", "expected": {"quantity": 10.0, "unit": "slice", "ingredient": "bread", "preparation": "day old, quartered and crusts removed"}}
+{"line": "1 bunch Radishes", "category": "plural", "expected": {"quantity": 1.0, "unit": "bunch", "ingredient": "radish", "preparation": ""}}
+{"line": "2 small red peppers", "category": "plural", "expected": {"quantity": 2.0, "unit": "SMALL", "ingredient": "pepper", "preparation": ""}}
+{"line": "3 good size onions, cut up fine", "category": "plural", "expected": {"quantity": 3.0, "unit": "MEDIUM", "ingredient": "onion", "preparation": "cut up fine"}}
+{"line": "2 bananas, cut into thin slices", "category": "plural", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "banana", "preparation": "cut into thin slices"}}
+{"line": "2 green apples, cored and cut into thin wedges", "category": "plural", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "apple", "preparation": "cored and cut into thin wedges"}}
+{"line": "12 frankfurter rolls, split", "category": "plural", "expected": {"quantity": 12.0, "unit": "MEDIUM", "ingredient": "roll", "preparation": "split"}}
+{"line": "2 bunches broccoli (bite size pieces)", "category": "plural", "expected": {"quantity": 2.0, "unit": "bunch", "ingredient": "broccoli", "preparation": "bite size pieces"}}
+{"line": "8 eggs (warm)", "category": "plural", "expected": {"quantity": 8.0, "unit": "MEDIUM", "ingredient": "egg", "preparation": "warm"}}
+{"line": "4 good-size potatoes", "category": "plural", "expected": {"quantity": 4.0, "unit": "MEDIUM", "ingredient": "potato", "preparation": ""}}
+{"line": "2 Milky Way candy bars", "category": "plural", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "candy bar", "preparation": ""}}
+{"line": "1 tube biscuits", "category": "plural", "expected": {"quantity": 1.0, "unit": "tube", "ingredient": "biscuit", "preparation": ""}}
+{"line": "17 Ritz crackers", "category": "plural", "expected": {"quantity": 17.0, "unit": "MEDIUM", "ingredient": "cracker", "preparation": ""}}
+{"line": "3 medium carrots, cut strips", "category": "plural", "expected": {"quantity": 3.0, "unit": "MEDIUM", "ingredient": "carrot", "preparation": "cut strips"}}
+{"line": "2 bay leaves, torn very small", "category": "plural", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "bay leaf", "preparation": "torn very small"}}
+{"line": "2 diced hard boiled eggs", "category": "plural", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "egg", "preparation": "diced, hard boiled"}}
+{"line": "3 large ripe bananas, cut in chunks", "category": "plural", "expected": {"quantity": 3.0, "unit": "LARGE", "ingredient": "banana", "preparation": "ripe, cut in chunks"}}
+{"line": "2 raw eggs", "category": "plural", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "egg", "preparation": "raw"}}
+{"line": "7 medium Potatoes", "category": "plural", "expected": {"quantity": 7.0, "unit": "MEDIUM", "ingredient": "potato", "preparation": ""}}
+{"line": "2 stalks celery, cut in pieces", "category": "plural", "expected": {"quantity": 2.0, "unit": "stalk", "ingredient": "celery", "preparation": "cut in pieces"}}
+{"line": "4 whole wheat burger buns", "category": "plural", "expected": {"quantity": 4.0, "unit": "MEDIUM", "ingredient": "bun", "preparation": "whole wheat"}}
+{"line": "2 containers Cool Whip, thawed", "category": "plural", "expected": {"quantity": 2.0, "unit": "container", "ingredient": "cool whip", "preparation": "thawed"}}
+{"line": "2 small cloves garlic (unpeeled)", "category": "plural", "expected": {"quantity": 2.0, "unit": "clove", "ingredient": "garlic", "preparation": "small, unpeeled"}}
+{"line": "12 slices ham", "category": "plural", "expected": {"quantity": 12.0, "unit": "slice", "ingredient": "ham", "preparation": ""}}
+{"line": "8 skinless chicken breasts", "category": "plural", "expected": {"quantity": 8.0, "unit": "MEDIUM", "ingredient": "chicken breast", "preparation": "skinless"}}
+{"line": "5 cups Rice Krispies cereal", "category": "plural", "expected": {"quantity": 5.0, "unit": "cup", "ingredient": "cereal", "preparation": ""}}
+{"line": "2 small bags plain potato chips", "category": "plural", "expected": {"quantity": 2.0, "unit": "bag", "ingredient": "potato chip", "preparation": "small, plain"}}
+{"line": "3 medium onions, cut fine", "category": "plural", "expected": {"quantity": 3.0, "unit": "MEDIUM", "ingredient": "onion", "preparation": "cut fine"}}
+{"line": "4 small salmon steaks", "category": "plural", "expected": {"quantity": 4.0, "unit": "SMALL", "ingredient": "salmon steak", "preparation": ""}}
+{"line": "6 boneless chicken breasts, cut into thin strips", "category": "plural", "expected": {"quantity": 6.0, "unit": "MEDIUM", "ingredient": "chicken breast", "preparation": "boneless, cut into thin strips"}}
+{"line": "2 packs sugar substitute", "category": "plural", "expected": {"quantity": 2.0, "unit": "pack", "ingredient": "sugar substitute", "preparation": ""}}
+{"line": "1/3 c. green onion tops, chopped", "category": "comma_prep", "expected": {"quantity": 0.3333333333333333, "unit": "cup", "ingredient": "onion", "preparation": "tops, chopped"}}
+{"line": "1 medium clove fresh garlic, chopped", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "clove", "ingredient": "garlic", "preparation": "fresh, chopped"}}
+{"line": "2 1/2 c. cornflake crumbs, crushed but not pulverized", "category": "comma_prep", "expected": {"quantity": 2.5, "unit": "cup", "ingredient": "cornflake crumb", "preparation": "crushed but not pulverized"}}
+{"line": "1/2 c. (1 medium) ripe banana, mashed", "category": "comma_prep", "expected": {"quantity": 0.5, "unit": "cup", "ingredient": "banana", "preparation": "ripe, mashed"}}
+{"line": "1/2 c. onion and pepper, chopped", "category": "comma_prep", "expected": {"quantity": 0.5, "unit": "cup", "ingredient": "onion", "preparation": "chopped"}}
+{"line": "1 lb. Velveeta cheese, grated", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "lb", "ingredient": "cheese", "preparation": "grated"}}
+{"line": "2 c. peanuts, chopped", "category": "comma_prep", "expected": {"quantity": 2.0, "unit": "cup", "ingredient": "peanut", "preparation": "chopped"}}
+{"line": "1 small red, yellow, or green bell pepper, seeded and cubed", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "SMALL", "ingredient": "pepper", "preparation": "bell, seeded and cubed"}}
+{"line": "1/2 c. uncooked bacon, chopped", "category": "comma_prep", "expected": {"quantity": 0.5, "unit": "cup", "ingredient": "bacon", "preparation": "uncooked, chopped"}}
+{"line": "3 Tbsp. sherry, divided", "category": "comma_prep", "expected": {"quantity": 3.0, "unit": "tbsp", "ingredient": "sherry", "preparation": "divided"}}
+{"line": "1/2 c. apples, peeled, cored and diced", "category": "comma_prep", "expected": {"quantity": 0.5, "unit": "cup", "ingredient": "apple", "preparation": "peeled, cored and diced"}}
+{"line": "1 1/2 c. plus 2 Tbsp. Bisquick baking mix, divided", "category": "comma_prep", "expected": {"quantity": 1.5, "unit": "cup", "ingredient": "baking mix", "preparation": "divided"}}
+{"line": "3/4 lb. cheese, cubed", "category": "comma_prep", "expected": {"quantity": 0.75, "unit": "lb", "ingredient": "cheese", "preparation": "cubed"}}
+{"line": "1 small yellow squash, halved lengthwise and sliced", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "SMALL", "ingredient": "squash", "preparation": "halved lengthwise and sliced"}}
+{"line": "1/4 c. pepper, chopped", "category": "comma_prep", "expected": {"quantity": 0.25, "unit": "cup", "ingredient": "pepper", "preparation": "chopped"}}
+{"line": "1 small red or green bell pepper, chopped", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "SMALL", "ingredient": "pepper", "preparation": "bell, chopped"}}
+{"line": "1/2 c. bell pepper, chopped", "category": "comma_prep", "expected": {"quantity": 0.5, "unit": "cup", "ingredient": "pepper", "preparation": "bell, chopped"}}
+{"line": "2 Tbsp. Parmesan cheese, freshly grated", "category": "comma_prep", "expected": {"quantity": 2.0, "unit": "tbsp", "ingredient": "cheese", "preparation": "freshly grated"}}
+{"line": "1/2 medium onion, chopped (optional)", "category": "comma_prep", "expected": {"quantity": 0.5, "unit": "MEDIUM", "ingredient": "onion", "preparation": "chopped, optional"}}
+{"line": "1 large leek, washed and chopped or sliced", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "LARGE", "ingredient": "leek", "preparation": "washed and chopped or sliced"}}
+{"line": "1 bunch fresh broccoli, chopped in small pieces", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "bunch", "ingredient": "broccoli", "preparation": "fresh, chopped in small pieces"}}
+{"line": "1 medium size yellow onion, peeled and chopped", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "MEDIUM", "ingredient": "onion", "preparation": "peeled and chopped"}}
+{"line": "1/2 green pepper (medium), chopped", "category": "comma_prep", "expected": {"quantity": 0.5, "unit": "MEDIUM", "ingredient": "pepper", "preparation": "chopped"}}
+{"line": "2 c. cooked chicken, diced", "category": "comma_prep", "expected": {"quantity": 2.0, "unit": "cup", "ingredient": "chicken", "preparation": "cooked, diced"}}
+{"line": "1 hot pepper, seeded and chopped", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "MEDIUM", "ingredient": "pepper", "preparation": "hot, seeded and chopped"}}
+{"line": "1 1/2 (2-inch) onion, chopped", "category": "comma_prep", "expected": {"quantity": 1.5, "unit": "MEDIUM", "ingredient": "onion", "preparation": "chopped"}}
+{"line": "1/4 lb. salami, sliced thin", "category": "comma_prep", "expected": {"quantity": 0.25, "unit": "lb", "ingredient": "salami", "preparation": "sliced thin"}}
+{"line": "3/4 c. maraschino cherries, halved", "category": "comma_prep", "expected": {"quantity": 0.75, "unit": "cup", "ingredient": "cherry", "preparation": "maraschino, halved"}}
+{"line": "5 c. unsweetened peaches, peeled, diced and drained (can use fresh or frozen)", "category": "comma_prep", "expected": {"quantity": 5.0, "unit": "cup", "ingredient": "peach", "preparation": "unsweetened, peeled, diced and drained"}}
+{"line": "8 c. cucumbers, sliced", "category": "comma_prep", "expected": {"quantity": 8.0, "unit": "cup", "ingredient": "cucumber", "preparation": "sliced"}}
+{"line": "1/2 c. mushrooms, finely chopped", "category": "comma_prep", "expected": {"quantity": 0.5, "unit": "cup", "ingredient": "mushroom", "preparation": "finely chopped"}}
+{"line": "1 c. cooked ham, diced", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "cup", "ingredient": "ham", "preparation": "cooked, diced"}}
+{"line": "1 ripe tomato, chopped into small pieces", "category": "comma_prep", "expected": {"quantity": 1.0, "unit": "MEDIUM", "ingredient": "tomato", "preparation": "ripe, chopped into small pieces"}}
+{"line": "5 Tbsp. shortening, melted", "category": "comma_prep", "expected": {"quantity": 5.0, "unit": "tbsp", "ingredient": "shortening", "preparation": "melted"}}
+{"line": "1/2 gal. pineapple or lemon sherbet, softened", "category": "comma_prep", "expected": {"quantity": 0.5, "unit": "gal", "ingredient": "sherbet", "preparation": "pineapple, softened"}}
+{"line": "1 1/2 c. apples, thinly sliced", "category": "comma_prep", "expected": {"quantity": 1.5, "unit": "cup", "ingredient": "apple", "preparation": "thinly sliced"}}
+{"line": "1/4 stick melted margarine", "category": "packaging", "expected": {"quantity": 0.25, "unit": "stick", "ingredient": "margarine", "preparation": "melted"}}
+{"line": "1 (10 oz.) can pineapple chunks", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "pineapple", "preparation": "chunks"}}
+{"line": "1/2 lb. (2 sticks) unsalted butter, at room temperature", "category": "packaging", "expected": {"quantity": 0.5, "unit": "lb", "ingredient": "butter", "preparation": "unsalted, at room temperature"}}
+{"line": "1 (10 oz.) can fat-free cream of chicken soup", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "cream of chicken soup", "preparation": "fat-free"}}
+{"line": "1 jar small pimento", "category": "packaging", "expected": {"quantity": 1.0, "unit": "jar", "ingredient": "pimento", "preparation": "small"}}
+{"line": "1 (2 lb.) bag frozen hash brown potatoes", "category": "packaging", "expected": {"quantity": 1.0, "unit": "bag", "ingredient": "potato", "preparation": "frozen, hash brown"}}
+{"line": "1 (8 oz.) pkg. sharp Cheddar cheese", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "cheese", "preparation": "sharp"}}
+{"line": "1 pkg. Good Seasons mix", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "mix", "preparation": ""}}
+{"line": "1 (16 oz.) bottle picante or salsa sauce", "category": "packaging", "expected": {"quantity": 1.0, "unit": "bottle", "ingredient": "sauce", "preparation": "picante"}}
+{"line": "1 (1 lb. 14 oz.) can pumpkin pie mix", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "pumpkin pie mix", "preparation": ""}}
+{"line": "2 pkg. frozen tamales", "category": "packaging", "expected": {"quantity": 2.0, "unit": "pkg", "ingredient": "tamale", "preparation": "frozen"}}
+{"line": "1 bag mild shredded cheese", "category": "packaging", "expected": {"quantity": 1.0, "unit": "bag", "ingredient": "cheese", "preparation": "mild, shredded"}}
+{"line": "1 box vanilla sauce", "category": "packaging", "expected": {"quantity": 1.0, "unit": "box", "ingredient": "sauce", "preparation": "vanilla"}}
+{"line": "1 (6 oz.) can crushed pineapple and juice", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "pineapple", "preparation": "crushed, and juice"}}
+{"line": "2 c. pecans (8 oz.)", "category": "packaging", "expected": {"quantity": 2.0, "unit": "cup", "ingredient": "pecan", "preparation": ""}}
+{"line": "1 (8 oz.) can sliced pears", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "pear", "preparation": "sliced"}}
+{"line": "1 (9 oz.) pkg. frozen artichokes", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "artichoke", "preparation": "frozen"}}
+{"line": "1 box pastine", "category": "packaging", "expected": {"quantity": 1.0, "unit": "box", "ingredient": "pastine", "preparation": ""}}
+{"line": "1 (16 oz.) can peach halves", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "peach", "preparation": "halves"}}
+{"line": "2 (8 oz.) cans tomato sauce, seasoned", "category": "packaging", "expected": {"quantity": 2.0, "unit": "can", "ingredient": "tomato sauce", "preparation": "seasoned"}}
+{"line": "1 (8 oz.) pkg. cooked ham slices", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "ham", "preparation": "cooked, slices"}}
+{"line": "3 (10 oz.) cans buttermilk biscuits", "category": "packaging", "expected": {"quantity": 3.0, "unit": "can", "ingredient": "biscuit", "preparation": "buttermilk"}}
+{"line": "1 envelope Hidden Valley Ranch original party mix", "category": "packaging", "expected": {"quantity": 1.0, "unit": "envelope", "ingredient": "mix", "preparation": "original party"}}
+{"line": "1 (7 oz.) jar Marshmallow Creme", "category": "packaging", "expected": {"quantity": 1.0, "unit": "jar", "ingredient": "marshmallow creme", "preparation": ""}}
+{"line": "1 pkg. flour tortillas (18 count)", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "tortilla", "preparation": "flour"}}
+{"line": "1 pkg. fresh chopped broccoli", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "broccoli", "preparation": "fresh, chopped"}}
+{"line": "1 (11 oz.) can mandarin oranges with juice (reserve 3 slices to place on top of cake)", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "mandarin orange", "preparation": "with juice"}}
+{"line": "1 box orange supreme cake mix", "category": "packaging", "expected": {"quantity": 1.0, "unit": "box", "ingredient": "cake mix", "preparation": "orange supreme"}}
+{"line": "1 (0.4 oz.) pkg. buttermilk salad dressing mix", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "salad dressing mix", "preparation": "buttermilk"}}
+{"line": "1 (3 oz.) pkg. raspberry flavor Jell-O", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "jell-o", "preparation": "raspberry flavor"}}
+{"line": "1 can Campbell's Healthy Request cream of mushroom soup", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "cream of mushroom soup", "preparation": ""}}
+{"line": "1 pkg. chocolate fudge or chocolate cake mix (without pudding)", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "cake mix", "preparation": "chocolate fudge"}}
+{"line": "2 pkg. crescent rolls (uncooked)", "category": "packaging", "expected": {"quantity": 2.0, "unit": "pkg", "ingredient": "roll", "preparation": "crescent, uncooked"}}
+{"line": "1 (6 oz.) can pork and beans", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "pork and beans", "preparation": ""}}
+{"line": "1 (8 oz.) bottle Kraft House Italian dressing", "category": "packaging", "expected": {"quantity": 1.0, "unit": "bottle", "ingredient": "italian dressing", "preparation": ""}}
+{"line": "2 cans crushed pineapple (15 1/2 oz.)", "category": "packaging", "expected": {"quantity": 2.0, "unit": "can", "ingredient": "pineapple", "preparation": "crushed"}}
+{"line": "2 eggs, boiled, sliced or chopped", "category": "mixed_adversarial", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "egg", "preparation": "boiled, sliced or chopped"}}
+{"line": "3 cans sliced potatoes", "category": "mixed_adversarial", "expected": {"quantity": 3.0, "unit": "can", "ingredient": "potato", "preparation": "sliced"}}
+{"line": "4 medium potatoes, peeled and cut in chunks", "category": "mixed_adversarial", "expected": {"quantity": 4.0, "unit": "MEDIUM", "ingredient": "potato", "preparation": "peeled and cut in chunks"}}
+{"line": "2 sticks butter or oleo, softened", "category": "mixed_adversarial", "expected": {"quantity": 2.0, "unit": "stick", "ingredient": "butter", "preparation": "softened"}}
+{"line": "1 (17 oz.) can sliced peaches, drained (may substitute apricots)", "category": "mixed_adversarial", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "peach", "preparation": "sliced, drained"}}
+{"line": "4 green onions, chopped (including some green)", "category": "mixed_adversarial", "expected": {"quantity": 4.0, "unit": "MEDIUM", "ingredient": "onion", "preparation": "chopped, including some green"}}
+{"line": "1 can of diced tomatoes with green chilies and peppers", "category": "mixed_adversarial", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "tomato", "preparation": "diced, with green chilies and peppers"}}
+{"line": "2 sleeves graham crackers", "category": "mixed_adversarial", "expected": {"quantity": 2.0, "unit": "sleeve", "ingredient": "cracker", "preparation": "graham"}}
+{"line": "1 (10 oz.) can diced tomatoes with chilies, undrained", "category": "mixed_adversarial", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "tomato", "preparation": "diced, with chilies, undrained"}}
+{"line": "1 stick margarine, melted but not hot", "category": "mixed_adversarial", "expected": {"quantity": 1.0, "unit": "stick", "ingredient": "margarine", "preparation": "melted but not hot"}}
+{"line": "2 cans diced Ro-Tel", "category": "mixed_adversarial", "expected": {"quantity": 2.0, "unit": "can", "ingredient": "tomato", "preparation": "diced"}}
+{"line": "6 large potatoes, peeled and halved", "category": "mixed_adversarial", "expected": {"quantity": 6.0, "unit": "LARGE", "ingredient": "potato", "preparation": "peeled and halved"}}
+{"line": "2 large cans crushed pineapple, drained", "category": "mixed_adversarial", "expected": {"quantity": 2.0, "unit": "can", "ingredient": "pineapple", "preparation": "large, crushed, drained"}}
+{"line": "1 can peas (do not drain)", "category": "mixed_adversarial", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "pea", "preparation": "do not drain"}}
+{"line": "4 medium fresh tomatoes, peeled and chopped", "category": "mixed_adversarial", "expected": {"quantity": 4.0, "unit": "MEDIUM", "ingredient": "tomato", "preparation": "fresh, peeled and chopped"}}
+{"line": "1 (9 oz.) can crushed pineapple, not drained", "category": "mixed_adversarial", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "pineapple", "preparation": "crushed, not drained"}}
+{"line": "2 whole boneless, skinless chicken breasts, sliced thin", "category": "mixed_adversarial", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "chicken breast", "preparation": "whole, boneless, skinless, sliced thin"}}
+{"line": "2 cans LeSueur peas, drained", "category": "mixed_adversarial", "expected": {"quantity": 2.0, "unit": "can", "ingredient": "pea", "preparation": "drained"}}
+{"line": "6 shallots or 1 small onion, finely chopped", "category": "mixed_adversarial", "expected": {"quantity": 6.0, "unit": "MEDIUM", "ingredient": "shallot", "preparation": "finely chopped"}}
+{"line": "2 medium Granny Smith apples, peeled and cored", "category": "mixed_adversarial", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "apple", "preparation": "peeled and cored"}}
