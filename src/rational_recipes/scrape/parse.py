@@ -90,6 +90,7 @@ def _ollama_generate(
     model: str,
     system: str = _SYSTEM_PROMPT,
     base_url: str = OLLAMA_BASE_URL,
+    timeout: float = 120.0,
 ) -> str | None:
     """Call Ollama REST API /api/generate, return the response text."""
     payload = json.dumps(
@@ -110,10 +111,16 @@ def _ollama_generate(
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = json.loads(resp.read())
-            result: str = body.get("response", "")
-            return result
+            # "response" is the visible output for non-thinking models; some
+            # thinking models (e.g. qwen3.5) place the JSON in "thinking"
+            # and leave "response" empty. Prefer response when non-empty.
+            visible = body.get("response") or ""
+            if visible.strip():
+                return visible
+            thinking = body.get("thinking") or ""
+            return thinking or visible
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
         logger.warning("Ollama API call failed: %s", e)
         return None
@@ -124,6 +131,7 @@ def parse_ingredient_line(
     model: str = "gemma4:e4b",
     base_url: str = OLLAMA_BASE_URL,
     system_prompt: str | None = None,
+    timeout: float = 120.0,
 ) -> ParsedIngredient | None:
     """Parse a single ingredient line using Ollama.
 
@@ -136,6 +144,7 @@ def parse_ingredient_line(
         model=model,
         system=system_prompt or _SYSTEM_PROMPT,
         base_url=base_url,
+        timeout=timeout,
     )
     if raw_output is None:
         return None
@@ -194,6 +203,7 @@ def parse_ingredient_lines(
     model: str = "gemma4:e4b",
     base_url: str = OLLAMA_BASE_URL,
     system_prompt: str | None = None,
+    timeout: float = 120.0,
 ) -> list[ParsedIngredient | None]:
     """Parse multiple ingredient lines. Returns a list parallel to the input."""
     return [
@@ -202,6 +212,7 @@ def parse_ingredient_lines(
             model=model,
             base_url=base_url,
             system_prompt=system_prompt,
+            timeout=timeout,
         )
         for line in lines
     ]
