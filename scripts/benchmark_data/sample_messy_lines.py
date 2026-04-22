@@ -1,27 +1,47 @@
 #!/usr/bin/env python3
-"""One-shot sampler: pull messy English ingredient lines from RecipeNLG.
+"""Sample messy English ingredient lines from RecipeNLG for benchmark gold curation.
 
-Filters each line into one of three categories defined by RationalRecipes-5i1:
-- plurals (no unit, bare count like "3 eggs")
-- comma-preps ("1 cup flour, sifted")
-- packaging units ("1 can (14 oz) tomatoes", "1 (6 oz) pkg lemon gelatin")
+Produces candidate lines grouped into four categories:
 
-Prints candidates to stdout. Not a production pipeline — use to curate
-benchmark_data/english_messy_gold.jsonl by hand.
+- ``plural``: bare count of items (no standard unit), e.g. "3 eggs", "2 onions".
+- ``comma_prep``: comma followed by a preparation word, e.g. "1 onion, chopped".
+- ``packaging``: packaging-unit quantities, e.g. "1 can soup", "1 (8 oz.) box".
+- ``mixed_adversarial``: lines hitting at least two of the above — the tricky
+  edge cases that broke v1 gold judgment calls (hamburger buns, butternut
+  squash).
+
+The candidates are deduplicated against an existing gold file so the sampler
+doesn't re-propose already-labeled lines.
+
+Two modes:
+
+- **Default**: print candidates to stdout, grouped by category. Useful for
+  a quick eyeball pass.
+- **``--out PATH``**: write candidates as JSONL with
+  ``{"line": ..., "category": ...}`` records for an editor-based labeling
+  pass. The labeler fills in an ``expected`` key and promotes validated
+  entries into ``english_messy_gold.jsonl``.
 """
 
 from __future__ import annotations
 
+import argparse
 import ast
 import csv
+import json
 import random
 import re
 import sys
 from pathlib import Path
 
 DATASET = Path("dataset/full_dataset.csv")
+GOLD = Path("scripts/benchmark_data/english_messy_gold.jsonl")
+
+# Larger than v1's 50k so the new buckets get enough material to diversify
+# without hunting through the entire 2.2 GB file.
+ROWS_TO_SCAN = 200_000
 RANDOM_SEED = 42
-ROWS_TO_SCAN = 50000  # first N rows is fine; RecipeNLG is well-mixed
+PER_CATEGORY = 60  # candidates per bucket, oversampled so the labeler can cull
 
 PREP_WORDS = (
     "chopped",
@@ -42,6 +62,10 @@ PREP_WORDS = (
     "halved",
     "separated",
     "juiced",
+    "divided",
+    "packed",
+    "cooled",
+    "mashed",
 )
 PACKAGING = (
     "can",
@@ -58,6 +82,12 @@ PACKAGING = (
     "bags",
     "bottle",
     "bottles",
+    "envelope",
+    "envelopes",
+    "sleeve",
+    "sleeves",
+    "stick",
+    "sticks",
 )
 
 BARE_UNIT_RE = re.compile(
@@ -66,29 +96,71 @@ BARE_UNIT_RE = re.compile(
 PAREN_OZ_RE = re.compile(r"\(\s*\d[\d./]*\s*(oz|lb|ml|g|pound)", re.I)
 
 
-def categorize(line: str) -> str | None:
+def _packaging_hit(line: str) -> bool:
     low = line.lower()
-    # packaging units: an actual package word, with or without parenthetical size
-    if any(re.search(rf"\b\d[\d./]*\s*{p}\b", low) for p in PACKAGING):
-        return "packaging"
-    if PAREN_OZ_RE.search(low) and any(p in low for p in PACKAGING):
-        return "packaging"
-    # comma-prep: contains comma followed by prep word within ~20 chars
-    if "," in line and any(re.search(rf",\s*[^,]{{0,25}}{w}", low) for w in PREP_WORDS):
-        return "comma_prep"
-    # plural: bare count of items (no standard unit) like "3 eggs" or "2 onions"
+    return any(re.search(rf"\b\d[\d./]*\s*{p}\b", low) for p in PACKAGING) or (
+        PAREN_OZ_RE.search(low) is not None and any(p in low for p in PACKAGING)
+    )
+
+
+def _comma_prep_hit(line: str) -> bool:
+    low = line.lower()
+    return "," in line and any(
+        re.search(rf",\s*[^,]{{0,25}}{w}", low) for w in PREP_WORDS
+    )
+
+
+def _plural_hit(line: str) -> bool:
+    low = line.lower()
     m = re.match(r"^\s*\d+\s+([a-z][a-z\s-]*s)\b", low)
-    if m and not BARE_UNIT_RE.search(line):
+    return m is not None and not BARE_UNIT_RE.search(line)
+
+
+def categorize(line: str) -> str | None:
+    """Assign a line to exactly one bucket. Mixed wins over singletons."""
+    hits = [
+        _packaging_hit(line),
+        _comma_prep_hit(line),
+        _plural_hit(line),
+    ]
+    if sum(hits) >= 2:
+        return "mixed_adversarial"
+    if hits[0]:
+        return "packaging"
+    if hits[1]:
+        return "comma_prep"
+    if hits[2]:
         return "plural"
     return None
 
 
-def main() -> None:
+def _load_existing_gold_lines() -> set[str]:
+    """Normalized set of already-labeled lines so samples don't overlap."""
+    if not GOLD.exists():
+        return set()
+    lines: set[str] = set()
+    with GOLD.open() as f:
+        for raw in f:
+            raw = raw.strip()
+            if not raw:
+                continue
+            lines.add(json.loads(raw)["line"].strip())
+    return lines
+
+
+def sample() -> dict[str, list[str]]:
+    """Return a dict of bucket -> list of candidate lines."""
     if not DATASET.exists():
         sys.exit(f"dataset missing: {DATASET}")
 
     random.seed(RANDOM_SEED)
-    buckets: dict[str, list[str]] = {"plural": [], "comma_prep": [], "packaging": []}
+    already_labeled = _load_existing_gold_lines()
+    buckets: dict[str, list[str]] = {
+        "plural": [],
+        "comma_prep": [],
+        "packaging": [],
+        "mixed_adversarial": [],
+    }
 
     with DATASET.open() as f:
         reader = csv.reader(f)
@@ -102,17 +174,73 @@ def main() -> None:
                 ings = ast.literal_eval(row[2])
             except (ValueError, SyntaxError):
                 continue
-            for line in ings:
+            for raw_line in ings:
+                line = raw_line.strip()
+                if not line or line in already_labeled:
+                    continue
                 cat = categorize(line)
                 if cat is None:
                     continue
-                buckets[cat].append(line.strip())
+                buckets[cat].append(line)
 
+    # Deduplicate within each bucket (RecipeNLG has many near-duplicates).
     for cat, lines in buckets.items():
-        random.shuffle(lines)
-        print(f"\n=== {cat} ({len(lines)} total, showing 25) ===")
-        for line in lines[:25]:
-            print(f"  {line!r}")
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for line in lines:
+            if line in seen:
+                continue
+            seen.add(line)
+            deduped.append(line)
+        random.shuffle(deduped)
+        buckets[cat] = deduped
+    return buckets
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help=(
+            "Write JSONL candidates to this path (per_category entries per "
+            "bucket). Default: print buckets to stdout."
+        ),
+    )
+    parser.add_argument(
+        "--per-category",
+        type=int,
+        default=PER_CATEGORY,
+        help="Candidates per bucket (default %(default)d)",
+    )
+    args = parser.parse_args()
+
+    buckets = sample()
+
+    if args.out is None:
+        for cat in ("plural", "comma_prep", "packaging", "mixed_adversarial"):
+            lines = buckets[cat]
+            print(f"\n=== {cat} ({len(lines)} total, showing 25) ===")
+            for line in lines[:25]:
+                print(f"  {line!r}")
+        return
+
+    # Write JSONL candidates — labeler fills `expected` in an editor.
+    n_written = 0
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    with args.out.open("w") as out:
+        for cat in ("plural", "comma_prep", "packaging", "mixed_adversarial"):
+            for line in buckets[cat][: args.per_category]:
+                out.write(
+                    json.dumps(
+                        {"line": line, "category": cat, "expected": None},
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+                n_written += 1
+    print(f"wrote {n_written} candidates to {args.out}", file=sys.stderr)
 
 
 if __name__ == "__main__":
