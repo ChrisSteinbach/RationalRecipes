@@ -11,7 +11,7 @@
 {"row_id": 0, "line": "2 dl mjölk", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "mjölk", "preparation": ""}}
 {"row_id": 0, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
 {"row_id": 0, "line": "lönnsirap", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "lönnsirap", "preparation": ""}}
-{"row_id": 13, "line": "1 dl hackade soltorkade tomater i olja (avrunna)", "category": "volume", "expected": {"quantity": 1.0, "unit": "dl", "ingredient": "soltorkade tomater", "preparation": "hackade, i olja, avrunna"}}
+{"row_id": 13, "line": "1 dl hackade soltorkade tomater i olja (avrunna)", "category": "volume", "expected": {"quantity": 1.0, "unit": "dl", "ingredient": "soltorkade tomater i olja", "preparation": "hackade, olja avrunna"}}
 {"row_id": 13, "line": "1 zucchini (à ca 300 g)", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "zucchini", "preparation": ""}}
 {"row_id": 13, "line": "3/4 tsk salt", "category": "spoon", "expected": {"quantity": 0.75, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
 {"row_id": 13, "line": "blandsallad", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "blandsallad", "preparation": ""}}
