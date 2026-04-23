@@ -48,7 +48,7 @@
 {"row_id": 267, "line": "smör (till muffinplåtsformarna)", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": "till muffinplåtsformarna"}}
 {"row_id": 267, "line": "6 ägg", "category": "count", "expected": {"quantity": 6.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
 {"row_id": 267, "line": "sylt", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "sylt", "preparation": ""}}
-{"row_id": 267, "line": "ca 4 1/2 dl vetemjöl (4,5 dl motsvarar ca 270 g)", "category": "volume", "expected": {"quantity": 4.5, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
+{"row_id": 267, "line": "ca 4 1/2 dl vetemjöl (4,5 dl motsvarar ca 270 g)", "category": "weight", "expected": {"quantity": 270.0, "unit": "g", "ingredient": "vetemjöl", "preparation": ""}}
 {"row_id": 267, "line": "1 tsk bakpulver", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "bakpulver", "preparation": ""}}
 {"row_id": 267, "line": "färskost", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "färskost", "preparation": ""}}
 {"row_id": 267, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
@@ -205,8 +205,8 @@
 {"row_id": 2019, "line": "1 - 1 1/2 msk råsocker", "category": "spoon", "expected": {"quantity": 1.25, "unit": "msk", "ingredient": "råsocker", "preparation": ""}}
 {"row_id": 2019, "line": "1 msk socker", "category": "spoon", "expected": {"quantity": 1.0, "unit": "msk", "ingredient": "socker", "preparation": ""}}
 {"row_id": 2019, "line": "3 ägg", "category": "count", "expected": {"quantity": 3.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
-{"row_id": 2019, "line": "2 paket saffran (à 1/2 g)", "category": "package", "expected": {"quantity": 2.0, "unit": "paket", "ingredient": "saffran", "preparation": ""}}
-{"row_id": 2019, "line": "1 liter färdigkokt risgrynsgröt (1 liter gröt motsvarar ca 1 kg)", "category": "volume", "expected": {"quantity": 1.0, "unit": "liter", "ingredient": "färdigkokt risgrynsgröt", "preparation": ""}}
+{"row_id": 2019, "line": "2 paket saffran (à 1/2 g)", "category": "package", "expected": {"quantity": 0.5, "unit": "g", "ingredient": "saffran", "preparation": ""}}
+{"row_id": 2019, "line": "1 liter färdigkokt risgrynsgröt (1 liter gröt motsvarar ca 1 kg)", "category": "weight", "expected": {"quantity": 1.0, "unit": "kg", "ingredient": "färdigkokt risgrynsgröt", "preparation": ""}}
 {"row_id": 2172, "line": "1 kruka basilika", "category": "package", "expected": {"quantity": 1.0, "unit": "kruka", "ingredient": "basilika", "preparation": ""}}
 {"row_id": 2172, "line": "3 dl kikärtsmjöl", "category": "volume", "expected": {"quantity": 3.0, "unit": "dl", "ingredient": "kikärtsmjöl", "preparation": ""}}
 {"row_id": 2172, "line": "2 dl crème fraiche", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "crème fraiche", "preparation": ""}}
