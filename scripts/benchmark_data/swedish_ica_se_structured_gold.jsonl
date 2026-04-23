@@ -193,7 +193,7 @@
 {"row_id": 1700, "line": "peppar", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "peppar", "preparation": ""}}
 {"row_id": 1700, "line": "2 dl växtbaserad mjölkdryck", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "växtbaserad mjölkdryck", "preparation": ""}}
 {"row_id": 1700, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
-{"row_id": 1700, "line": "2 dl lätt crème fraiche", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "crème fraiche", "preparation": "lätt"}}
+{"row_id": 1700, "line": "2 dl lätt crème fraiche", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "lätt crème fraiche", "preparation": ""}}
 {"row_id": 1700, "line": "1/2 förp haricots verts (bönor) (à 450 g)", "category": "package", "expected": {"quantity": 225.0, "unit": "g", "ingredient": "haricots verts", "preparation": ""}}
 {"row_id": 1700, "line": "1 rödlök", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "rödlök", "preparation": ""}}
 {"row_id": 2019, "line": "smör till formen", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": "till formen"}}
