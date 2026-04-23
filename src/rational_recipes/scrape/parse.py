@@ -91,8 +91,15 @@ def _ollama_generate(
     system: str = _SYSTEM_PROMPT,
     base_url: str = OLLAMA_BASE_URL,
     timeout: float = 120.0,
+    num_predict: int = 256,
 ) -> str | None:
-    """Call Ollama REST API /api/generate, return the response text."""
+    """Call Ollama REST API /api/generate, return the response text.
+
+    ``num_predict`` caps the generated-token count. Ingredient JSONs are
+    well under 100 tokens, so a small cap turns degenerate token-loop
+    responses (seen on larger models like gemma4:26b) into bounded-length
+    failures rather than 300s timeouts.
+    """
     payload = json.dumps(
         {
             "model": model,
@@ -100,6 +107,7 @@ def _ollama_generate(
             "prompt": prompt,
             "format": "json",
             "stream": False,
+            "options": {"num_predict": num_predict},
         }
     ).encode()
 
@@ -132,6 +140,7 @@ def parse_ingredient_line(
     base_url: str = OLLAMA_BASE_URL,
     system_prompt: str | None = None,
     timeout: float = 120.0,
+    num_predict: int = 256,
 ) -> ParsedIngredient | None:
     """Parse a single ingredient line using Ollama.
 
@@ -145,6 +154,7 @@ def parse_ingredient_line(
         system=system_prompt or _SYSTEM_PROMPT,
         base_url=base_url,
         timeout=timeout,
+        num_predict=num_predict,
     )
     if raw_output is None:
         return None
@@ -204,6 +214,7 @@ def parse_ingredient_lines(
     base_url: str = OLLAMA_BASE_URL,
     system_prompt: str | None = None,
     timeout: float = 120.0,
+    num_predict: int = 256,
 ) -> list[ParsedIngredient | None]:
     """Parse multiple ingredient lines. Returns a list parallel to the input."""
     return [
@@ -213,6 +224,7 @@ def parse_ingredient_lines(
             base_url=base_url,
             system_prompt=system_prompt,
             timeout=timeout,
+            num_predict=num_predict,
         )
         for line in lines
     ]

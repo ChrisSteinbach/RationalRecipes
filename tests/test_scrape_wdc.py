@@ -457,3 +457,58 @@ class TestParseKeyTolerance:
 
             parsed = parse_ingredient_line("1 g something")
             assert parsed is None
+
+
+class TestNumPredictCap:
+    """The ``num_predict`` cap bounds degenerate token-loop responses so
+    they fail fast instead of waiting out the HTTP timeout.
+    """
+
+    def test_default_num_predict_sent_in_payload(self) -> None:
+        from rational_recipes.scrape.parse import parse_ingredient_line
+
+        with patch("rational_recipes.scrape.parse.urllib.request.urlopen") as mock_open:
+            resp = mock_open.return_value.__enter__.return_value
+            resp.read.return_value = json.dumps(
+                {
+                    "response": '{"quantity": 1.0, "unit": "cup",'
+                    ' "ingredient": "flour", "preparation": ""}'
+                }
+            ).encode()
+
+            parse_ingredient_line("1 cup flour")
+
+            req = mock_open.call_args.args[0]
+            body = json.loads(req.data.decode())
+            assert body["options"] == {"num_predict": 256}
+
+    def test_num_predict_override_forwarded(self) -> None:
+        from rational_recipes.scrape.parse import parse_ingredient_line
+
+        with patch("rational_recipes.scrape.parse.urllib.request.urlopen") as mock_open:
+            resp = mock_open.return_value.__enter__.return_value
+            resp.read.return_value = json.dumps(
+                {
+                    "response": '{"quantity": 1.0, "unit": "cup",'
+                    ' "ingredient": "flour", "preparation": ""}'
+                }
+            ).encode()
+
+            parse_ingredient_line("1 cup flour", num_predict=64)
+
+            req = mock_open.call_args.args[0]
+            body = json.loads(req.data.decode())
+            assert body["options"] == {"num_predict": 64}
+
+    def test_parse_ingredient_lines_forwards_num_predict(self) -> None:
+        from rational_recipes.scrape.parse import parse_ingredient_lines
+
+        with patch("rational_recipes.scrape.parse._ollama_generate") as mock_gen:
+            mock_gen.return_value = (
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "flour", "preparation": ""}'
+            )
+            parse_ingredient_lines(["1 cup flour", "2 eggs"], num_predict=128)
+            assert mock_gen.call_count == 2
+            for call in mock_gen.call_args_list:
+                assert call.kwargs["num_predict"] == 128
