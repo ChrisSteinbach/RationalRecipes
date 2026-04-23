@@ -199,7 +199,7 @@
 {"row_id": 2019, "line": "smör till formen", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": "till formen"}}
 {"row_id": 2019, "line": "2 dl crème fraiche", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "crème fraiche", "preparation": ""}}
 {"row_id": 2019, "line": "1 1/2 dl vispgrädde", "category": "volume", "expected": {"quantity": 1.5, "unit": "dl", "ingredient": "vispgrädde", "preparation": ""}}
-{"row_id": 2019, "line": "1 glasburk körsbär i portvin (à 305 g)", "category": "package", "expected": {"quantity": 1.0, "unit": "glasburk", "ingredient": "körsbär", "preparation": "i portvin"}}
+{"row_id": 2019, "line": "1 glasburk körsbär i portvin (à 305 g)", "category": "package", "expected": {"quantity": 1.0, "unit": "glasburk", "ingredient": "körsbär i portvin", "preparation": ""}}
 {"row_id": 2019, "line": "1/2 tsk vaniljsocker", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "vaniljsocker", "preparation": ""}}
 {"row_id": 2019, "line": "2 dl sötmandel", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "sötmandel", "preparation": ""}}
 {"row_id": 2019, "line": "1 - 1 1/2 msk råsocker", "category": "spoon", "expected": {"quantity": 1.25, "unit": "msk", "ingredient": "råsocker", "preparation": ""}}
