@@ -27,6 +27,23 @@ Retries
 metric as ``mean ± stdev``. Needed for variance-aware ranking when
 cross-model gaps are small (<= 0.10 F1).
 
+Cross-language unit asymmetry (known; not a bug)
+------------------------------------------------
+Countable items with no explicit unit parse differently across
+languages because the prompts say different things:
+
+- English ``_SYSTEM_PROMPT`` (parse.py) teaches MEDIUM/LARGE/SMALL
+  sentinels: ``'3 eggs'`` → ``unit='MEDIUM'``,
+  ``'2 large eggs'`` → ``unit='LARGE'``.
+- ``NEUTRAL_PROMPT`` (wdc.py) says "if no unit, use empty string":
+  ``'3 ägg'`` → ``unit=''``, ``'1 stort ägg'`` → ``unit='stort'``.
+
+Both golds match their respective prompt contracts. Downstream
+canonicalization has to treat ``MEDIUM`` and ``''`` as equivalent
+"countable with default size" when comparing ratios across languages.
+Fixing this properly means aligning the two prompts — out of scope for
+the v2 gold, flagged for jpp's close-note as an open question.
+
 Results file schema
 -------------------
 ``results.json`` is a ``v2`` payload: a list of ``ModelRun`` records

@@ -7,6 +7,12 @@ and writes ``swedish_ica_se_structured_gold.jsonl``.
 Conventions (consistent with the NEUTRAL_PROMPT examples):
 - Keep ingredient + unit + prep in Swedish, lowercased.
 - No quantity → 1.0, unit "".
+- Countable with no explicit unit (``3 ägg``) → unit="". This is
+  intentionally different from the English _SYSTEM_PROMPT convention
+  where ``3 eggs`` → unit="MEDIUM". See benchmark_models.py docstring
+  ("Cross-language unit asymmetry") for why. Both golds match their
+  prompt contracts; fixing the asymmetry requires aligning the two
+  prompts, which is out of scope for y6g.
 - Ranges "2 - 3" use the midpoint.
 - "1 1/2" and "3/4" become 1.5 and 0.75.
 - Parentheticals: ``(till X)`` / ``(à X)`` / ``(NN%)`` / ``(gärna X)`` /
