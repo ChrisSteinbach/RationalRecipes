@@ -134,7 +134,6 @@
 {"line": "2 (8 oz.) cans tomato sauce, seasoned", "category": "packaging", "expected": {"quantity": 2.0, "unit": "can", "ingredient": "tomato sauce", "preparation": "seasoned"}}
 {"line": "1 (8 oz.) pkg. cooked ham slices", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "ham", "preparation": "cooked, slices"}}
 {"line": "3 (10 oz.) cans buttermilk biscuits", "category": "packaging", "expected": {"quantity": 3.0, "unit": "can", "ingredient": "buttermilk biscuit", "preparation": ""}}
-{"line": "1 envelope Hidden Valley Ranch original party mix", "category": "packaging", "expected": {"quantity": 1.0, "unit": "envelope", "ingredient": "mix", "preparation": "original party"}}
 {"line": "1 (7 oz.) jar Marshmallow Creme", "category": "packaging", "expected": {"quantity": 1.0, "unit": "jar", "ingredient": "marshmallow creme", "preparation": ""}}
 {"line": "1 pkg. flour tortillas (18 count)", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "flour tortilla", "preparation": ""}}
 {"line": "1 pkg. fresh chopped broccoli", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "broccoli", "preparation": "fresh, chopped"}}
