@@ -57,7 +57,7 @@
 {"row_id": 272, "line": "1 dl grahamsmjöl", "category": "volume", "expected": {"quantity": 1.0, "unit": "dl", "ingredient": "grahamsmjöl", "preparation": ""}}
 {"row_id": 272, "line": "1 liten burk cottage cheese (à 250 g)", "category": "package", "expected": {"quantity": 250.0, "unit": "g", "ingredient": "cottage cheese", "preparation": ""}}
 {"row_id": 272, "line": "smör till stekning", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "smör", "preparation": "till stekning"}}
-{"row_id": 272, "line": "250 g frysta, halvtinade blåbär", "category": "weight", "expected": {"quantity": 250.0, "unit": "g", "ingredient": "blåbär", "preparation": "frysta, halvtinade"}}
+{"row_id": 272, "line": "250 g frysta, halvtinade blåbär", "category": "weight", "expected": {"quantity": 250.0, "unit": "g", "ingredient": "frysta blåbär", "preparation": "halvtinade"}}
 {"row_id": 272, "line": "6 dl havredryck (eller mjölk)", "category": "volume", "expected": {"quantity": 6.0, "unit": "dl", "ingredient": "havredryck", "preparation": ""}}
 {"row_id": 272, "line": "flytande honung", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "honung", "preparation": "flytande"}}
 {"row_id": 272, "line": "4 ägg", "category": "count", "expected": {"quantity": 4.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
@@ -69,13 +69,13 @@
 {"row_id": 280, "line": "cottage cheese eller kvarg", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "cottage cheese", "preparation": ""}}
 {"row_id": 280, "line": "3 ägg", "category": "count", "expected": {"quantity": 3.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
 {"row_id": 280, "line": "1 1/2 tsk bakpulver", "category": "spoon", "expected": {"quantity": 1.5, "unit": "tsk", "ingredient": "bakpulver", "preparation": ""}}
-{"row_id": 280, "line": "färska blåbär, jordgubbar, hallon eller kiwi", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "blåbär", "preparation": "färska"}}
+{"row_id": 280, "line": "färska blåbär, jordgubbar, hallon eller kiwi", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "färska blåbär", "preparation": ""}}
 {"row_id": 280, "line": "1 krm vaniljpulver", "category": "spoon", "expected": {"quantity": 1.0, "unit": "krm", "ingredient": "vaniljpulver", "preparation": ""}}
 {"row_id": 280, "line": "citronmeliss (till dekoration)", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "citronmeliss", "preparation": "till dekoration"}}
 {"row_id": 280, "line": "2 dl havregryn", "category": "volume", "expected": {"quantity": 2.0, "unit": "dl", "ingredient": "havregryn", "preparation": ""}}
 {"row_id": 337, "line": "250 g cottage cheese", "category": "weight", "expected": {"quantity": 250.0, "unit": "g", "ingredient": "cottage cheese", "preparation": ""}}
 {"row_id": 337, "line": "honung", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "honung", "preparation": ""}}
-{"row_id": 337, "line": "250 g frysta eller färska blåbär", "category": "weight", "expected": {"quantity": 250.0, "unit": "g", "ingredient": "blåbär", "preparation": "frysta, färska"}}
+{"row_id": 337, "line": "250 g frysta eller färska blåbär", "category": "weight", "expected": {"quantity": 250.0, "unit": "g", "ingredient": "frysta blåbär", "preparation": ""}}
 {"row_id": 337, "line": "3/4 tsk salt", "category": "spoon", "expected": {"quantity": 0.75, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
 {"row_id": 337, "line": "grekisk eller turkisk yoghurt", "category": "count", "expected": {"quantity": 1.0, "unit": "", "ingredient": "yoghurt", "preparation": "grekisk, turkisk"}}
 {"row_id": 337, "line": "3 ägg", "category": "count", "expected": {"quantity": 3.0, "unit": "", "ingredient": "ägg", "preparation": ""}}
@@ -161,7 +161,7 @@
 {"row_id": 1270, "line": "ca 2 msk smör (till stekning)", "category": "spoon", "expected": {"quantity": 2.0, "unit": "msk", "ingredient": "smör", "preparation": "till stekning"}}
 {"row_id": 1270, "line": "2 1/2 dl vetemjöl", "category": "volume", "expected": {"quantity": 2.5, "unit": "dl", "ingredient": "vetemjöl", "preparation": ""}}
 {"row_id": 1270, "line": "5 dl vispgrädde", "category": "volume", "expected": {"quantity": 5.0, "unit": "dl", "ingredient": "vispgrädde", "preparation": ""}}
-{"row_id": 1270, "line": "300 g färska bär (t ex jordgubbar och blåbär)", "category": "weight", "expected": {"quantity": 300.0, "unit": "g", "ingredient": "bär", "preparation": "färska"}}
+{"row_id": 1270, "line": "300 g färska bär (t ex jordgubbar och blåbär)", "category": "weight", "expected": {"quantity": 300.0, "unit": "g", "ingredient": "färska bär", "preparation": ""}}
 {"row_id": 1270, "line": "1 tsk florsocker", "category": "spoon", "expected": {"quantity": 1.0, "unit": "tsk", "ingredient": "florsocker", "preparation": ""}}
 {"row_id": 1270, "line": "1/2 tsk salt", "category": "spoon", "expected": {"quantity": 0.5, "unit": "tsk", "ingredient": "salt", "preparation": ""}}
 {"row_id": 1270, "line": "2 kvistar citronmeliss", "category": "package", "expected": {"quantity": 2.0, "unit": "kvistar", "ingredient": "citronmeliss", "preparation": ""}}
