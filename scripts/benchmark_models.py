@@ -27,22 +27,18 @@ Retries
 metric as ``mean ± stdev``. Needed for variance-aware ranking when
 cross-model gaps are small (<= 0.10 F1).
 
-Cross-language unit asymmetry (known; not a bug)
-------------------------------------------------
-Countable items with no explicit unit parse differently across
-languages because the prompts say different things:
+Cross-language unit sentinel
+----------------------------
+All prompts (English ``_SYSTEM_PROMPT`` and the language-neutral
+``NEUTRAL_PROMPT``) emit the same MEDIUM/LARGE/SMALL sentinels for
+countable items without an explicit measurement unit:
 
-- English ``_SYSTEM_PROMPT`` (parse.py) teaches MEDIUM/LARGE/SMALL
-  sentinels: ``'3 eggs'`` → ``unit='MEDIUM'``,
-  ``'2 large eggs'`` → ``unit='LARGE'``.
-- ``NEUTRAL_PROMPT`` (wdc.py) says "if no unit, use empty string":
-  ``'3 ägg'`` → ``unit=''``, ``'1 stort ägg'`` → ``unit='stort'``.
+- ``'3 eggs'``, ``'3 ägg'``, ``'3 Forellenfilet'`` → ``unit='MEDIUM'``
+- ``'2 large eggs'``, ``'1 stort ägg'``, ``'2 große Eier'`` → ``unit='LARGE'``
+- ``'3 kleine Zucchini'`` → ``unit='SMALL'``
 
-Both golds match their respective prompt contracts. Downstream
-canonicalization has to treat ``MEDIUM`` and ``''`` as equivalent
-"countable with default size" when comparing ratios across languages.
-Fixing this properly means aligning the two prompts — out of scope for
-the v2 gold, flagged for jpp's close-note as an open question.
+``_norm_unit_generic`` normalizes these sentinels to uppercase so a
+model that returns ``'medium'`` still matches ``'MEDIUM'`` in the gold.
 
 Results file schema
 -------------------
@@ -198,10 +194,14 @@ def _norm_unit_en(u: str | None) -> str:
 
 def _norm_unit_generic(u: str | None) -> str:
     """Strip + lowercase. Used for non-English units where the neutral prompt
-    preserves source-language spelling."""
+    preserves source-language spelling. MEDIUM/LARGE/SMALL size sentinels
+    are canonicalized to uppercase to match the prompt contract."""
     if u is None:
         return ""
-    return u.strip().lower()
+    u = u.strip()
+    if u.upper() in ("MEDIUM", "LARGE", "SMALL"):
+        return u.upper()
+    return u.lower()
 
 
 _PLURAL_ES_ENDINGS = ("oes", "ses", "shes", "ches", "xes", "zes")

@@ -5,14 +5,13 @@ Reads ``swedish_ica_se_candidates.jsonl``, applies a rule-based labeler,
 and writes ``swedish_ica_se_structured_gold.jsonl``.
 
 Conventions (consistent with the NEUTRAL_PROMPT examples):
-- Keep ingredient + unit + prep in Swedish, lowercased.
+- Keep ingredient + prep in Swedish, lowercased.
 - No quantity → 1.0, unit "".
-- Countable with no explicit unit (``3 ägg``) → unit="". This is
-  intentionally different from the English _SYSTEM_PROMPT convention
-  where ``3 eggs`` → unit="MEDIUM". See benchmark_models.py docstring
-  ("Cross-language unit asymmetry") for why. Both golds match their
-  prompt contracts; fixing the asymmetry requires aligning the two
-  prompts, which is out of scope for y6g.
+- Countable with no explicit unit (``3 ägg``, ``1 gurka``) → unit="MEDIUM",
+  mirroring the English ``_SYSTEM_PROMPT`` sentinel. Size adjectives as
+  the only modifier (``1 stort ägg``, ``2 stora ägg``) → unit="LARGE";
+  ``1 liten burk`` style (adj + known unit) still leaves ``burk`` as the
+  unit and peels the adjective into preparation.
 - Ranges "2 - 3" use the midpoint.
 - "1 1/2" and "3/4" become 1.5 and 0.75.
 - Parentheticals: ``(till X)`` / ``(à X)`` / ``(NN%)`` / ``(gärna X)`` /
@@ -164,10 +163,22 @@ PREP_ADJECTIVES = {
     "naturligt",  # natural
 }  # noqa: E501
 
-# Size adjectives that can stand in as a unit (mirrors English
-# MEDIUM/LARGE/SMALL convention; neutral prompt ex: "2 große Eier"
-# → unit "große")
-SIZE_ADJ_AS_UNIT = {"stor", "stort", "stora", "liten", "litet", "små"}
+# Size adjectives that map to LARGE/SMALL sentinels, mirroring the
+# English _SYSTEM_PROMPT convention (and the aligned NEUTRAL_PROMPT).
+SIZE_ADJ_LARGE = {"stor", "stort", "stora"}
+SIZE_ADJ_SMALL = {"liten", "litet", "små"}
+SIZE_ADJ_AS_UNIT = SIZE_ADJ_LARGE | SIZE_ADJ_SMALL
+
+
+def _size_sentinel(adj: str) -> str:
+    """Map a Swedish size adjective to its MEDIUM/LARGE/SMALL sentinel."""
+    a = adj.lower()
+    if a in SIZE_ADJ_LARGE:
+        return "LARGE"
+    if a in SIZE_ADJ_SMALL:
+        return "SMALL"
+    return "MEDIUM"
+
 
 # Trailing qualifier phrases to lift into preparation
 TRAILING_QUALIFIER_RE = re.compile(
@@ -246,8 +257,9 @@ def _extract_unit_with_adj(rest: str) -> tuple[str, str, str]:
     """Peel leading unit, optionally preceded by a size adjective.
 
     Returns (unit, leading_prep, remainder). A bare size adjective
-    (stor/stort/stora/liten/små) becomes the unit when no known unit
-    follows — mirrors the NEUTRAL_PROMPT "2 große Eier" convention.
+    (stor/stort/stora/liten/små) becomes a LARGE/SMALL sentinel when no
+    known unit follows — mirrors the English _SYSTEM_PROMPT and aligned
+    NEUTRAL_PROMPT convention.
     """
     stripped = rest.lstrip()
     # Pattern 1: adjective + known unit (e.g. "liten burk")
@@ -262,10 +274,10 @@ def _extract_unit_with_adj(rest: str) -> tuple[str, str, str]:
     m = re.match(rf"^({UNIT_PATTERN})\b\s*(.*)$", stripped, re.IGNORECASE)
     if m:
         return m.group(1).lower(), "", m.group(2).strip()
-    # Pattern 3: lone size adjective acting as unit ("1 stort ägg")
+    # Pattern 3: lone size adjective acting as a size sentinel ("1 stort ägg")
     m = re.match(r"^([a-zäåö]+)\s+(.*)$", stripped, re.IGNORECASE)
     if m and m.group(1).lower() in SIZE_ADJ_AS_UNIT:
-        return m.group(1).lower(), "", m.group(2).strip()
+        return _size_sentinel(m.group(1)), "", m.group(2).strip()
     return "", "", stripped
 
 
@@ -353,6 +365,10 @@ def label_line(line: str) -> dict:
     qty, rest = _extract_quantity(line)
     unit, leading_prep, rest = _extract_unit_with_adj(rest)
     ingredient, prep = _split_prep_and_noun(rest, leading_prep)
+    # Bare countable with leading quantity (``3 ägg``, ``1 gurka``) → MEDIUM
+    # sentinel. Lines with no leading number (``smör``, ``salt``) stay "".
+    if qty is not None and unit == "" and ingredient:
+        unit = "MEDIUM"
     if qty is None:
         qty = 1.0
 
@@ -395,6 +411,7 @@ def category_for(unit: str) -> str:
         return "spoon"
     if unit in package:
         return "package"
+    # MEDIUM/LARGE/SMALL sentinels and bare "" both fall under count.
     return "count"
 
 
@@ -410,10 +427,11 @@ OVERRIDES: dict[str, dict[str, object]] = {
         "preparation": "",
     },
     # Zest + juice of half a washed lemon — the "1/2" belongs to the
-    # head noun at the end, not a mid-phrase quantity.
+    # head noun at the end, not a mid-phrase quantity. Citron is
+    # countable, so unit is the MEDIUM sentinel.
     "finrivet skal och juice av 1/2 tvättad citron": {
         "quantity": 0.5,
-        "unit": "",
+        "unit": "MEDIUM",
         "ingredient": "citron",
         "preparation": "finrivet skal, juice, tvättad",
     },

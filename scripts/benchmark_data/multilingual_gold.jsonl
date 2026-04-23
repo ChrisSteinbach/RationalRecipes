@@ -3,11 +3,11 @@
 {"language": "de", "host": "chefkoch.de", "row_id": 173, "line": "1 Liter Gemüsebrühe", "expected": {"quantity": 1.0, "unit": "liter", "ingredient": "gemüsebrühe", "preparation": ""}}
 {"language": "de", "host": "chefkoch.de", "row_id": 241, "line": "500 g Joghurt , griechischen", "expected": {"quantity": 500.0, "unit": "g", "ingredient": "joghurt", "preparation": "griechischen"}}
 {"language": "de", "host": "chefkoch.de", "row_id": 339, "line": "200 g Butter , weiche", "expected": {"quantity": 200.0, "unit": "g", "ingredient": "butter", "preparation": "weiche"}}
-{"language": "de", "host": "chefkoch.de", "row_id": 377, "line": "3 Forellenfilet(s) , geräucherte", "expected": {"quantity": 3.0, "unit": "", "ingredient": "forellenfilet", "preparation": "geräucherte"}}
+{"language": "de", "host": "chefkoch.de", "row_id": 377, "line": "3 Forellenfilet(s) , geräucherte", "expected": {"quantity": 3.0, "unit": "MEDIUM", "ingredient": "forellenfilet", "preparation": "geräucherte"}}
 {"language": "de", "host": "chefkoch.de", "row_id": 87, "line": "1 Beutel Lebkuchengewürz", "expected": {"quantity": 1.0, "unit": "beutel", "ingredient": "lebkuchengewürz", "preparation": ""}}
 {"language": "de", "host": "chefkoch.de", "row_id": 349, "line": "1 Dose Kidneybohnen", "expected": {"quantity": 1.0, "unit": "dose", "ingredient": "kidneybohnen", "preparation": ""}}
-{"language": "de", "host": "chefkoch.de", "row_id": 199, "line": "3 kleine Zucchini", "expected": {"quantity": 3.0, "unit": "kleine", "ingredient": "zucchini", "preparation": ""}}
-{"language": "de", "host": "chefkoch.de", "row_id": 368, "line": "2 m.-große Ei(er)", "expected": {"quantity": 2.0, "unit": "m.-große", "ingredient": "ei", "preparation": ""}}
+{"language": "de", "host": "chefkoch.de", "row_id": 199, "line": "3 kleine Zucchini", "expected": {"quantity": 3.0, "unit": "SMALL", "ingredient": "zucchini", "preparation": ""}}
+{"language": "de", "host": "chefkoch.de", "row_id": 368, "line": "2 m.-große Ei(er)", "expected": {"quantity": 2.0, "unit": "MEDIUM", "ingredient": "ei", "preparation": ""}}
 {"language": "de", "host": "chefkoch.de", "row_id": 34, "line": "Semmelbrösel", "expected": {"quantity": 1.0, "unit": "", "ingredient": "semmelbrösel", "preparation": ""}}
 {"language": "de", "host": "chefkoch.de", "row_id": 49, "line": "1 Handvoll Koriander", "expected": {"quantity": 1.0, "unit": "handvoll", "ingredient": "koriander", "preparation": ""}}
 {"language": "de", "host": "chefkoch.de", "row_id": 215, "line": "1 TL Oregano , getrocknet", "expected": {"quantity": 1.0, "unit": "tl", "ingredient": "oregano", "preparation": "getrocknet"}}

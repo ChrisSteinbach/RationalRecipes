@@ -187,7 +187,14 @@ Return ONLY a JSON object with these fields:
 - "quantity": number (float). For fractions, convert to decimal. If no
   quantity, use 1.
 - "unit": the unit of measurement in the original language, lowercase.
-  If no unit, use "" (empty string).
+  For COUNTABLE items where NO unit is stated (e.g. "3 ägg", "2 apples",
+  "3 Forellenfilet"), use "MEDIUM" as a size sentinel. If a size adjective
+  is the only modifier (Swedish "stor"/"stort"/"stora", "liten"/"små";
+  German "große"/"kleine"; etc.), emit "LARGE" or "SMALL" instead of the
+  adjective. If the line HAS an explicit counter or packaging unit
+  (Japanese 個/丁/かけ, Russian шт., "burk"/"paket"/"Dose"), keep that
+  counter as the unit. If no unit AND the item is NOT countable (bare
+  ingredient like "smör", "to taste", "适量"), use "" (empty string).
 - "preparation": any preparation notes. Empty string if none.
 
 Examples in different languages:
@@ -195,8 +202,17 @@ Examples in different languages:
 Input: "3 dl vetemjöl"
 Output: {"ingredient": "vetemjöl", "quantity": 3.0, "unit": "dl", "preparation": ""}
 
+Input: "3 ägg"
+Output: {"ingredient": "ägg", "quantity": 3.0, "unit": "MEDIUM", "preparation": ""}
+
+Input: "1 stort ägg"
+Output: {"ingredient": "ägg", "quantity": 1.0, "unit": "LARGE", "preparation": ""}
+
 Input: "2 große Eier"
-Output: {"ingredient": "eier", "quantity": 2.0, "unit": "große", "preparation": ""}
+Output: {"ingredient": "eier", "quantity": 2.0, "unit": "LARGE", "preparation": ""}
+
+Input: "3 kleine Zucchini"
+Output: {"ingredient": "zucchini", "quantity": 3.0, "unit": "SMALL", "preparation": ""}
 
 Input: "卵 3個"
 Output: {"ingredient": "卵", "quantity": 3.0, "unit": "個", "preparation": ""}
@@ -207,6 +223,9 @@ Output: {"ingredient": "молоко", "quantity": 500.0, "unit": "мл", "prepa
 Input: "250 g frysta, halvtinade blåbär"
 Output: {"ingredient": "blåbär", "quantity": 250.0, "unit": "g",\
  "preparation": "frysta, halvtinade"}
+
+Input: "smör"
+Output: {"ingredient": "smör", "quantity": 1.0, "unit": "", "preparation": ""}
 """
 
 
