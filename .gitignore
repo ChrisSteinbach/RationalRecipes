@@ -55,3 +55,6 @@ nosetests.xml
 /output/
 
 .dispatch/
+
+# JetBrains IDE files
+.idea/
