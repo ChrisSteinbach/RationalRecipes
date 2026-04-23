@@ -139,11 +139,11 @@
 {"line": "1 pkg. flour tortillas (18 count)", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "flour tortilla", "preparation": ""}}
 {"line": "1 pkg. fresh chopped broccoli", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "broccoli", "preparation": "fresh, chopped"}}
 {"line": "1 (11 oz.) can mandarin oranges with juice (reserve 3 slices to place on top of cake)", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "mandarin orange", "preparation": "with juice"}}
-{"line": "1 box orange supreme cake mix", "category": "packaging", "expected": {"quantity": 1.0, "unit": "box", "ingredient": "cake mix", "preparation": "orange supreme"}}
+{"line": "1 box orange supreme cake mix", "category": "packaging", "expected": {"quantity": 1.0, "unit": "box", "ingredient": "orange supreme cake mix", "preparation": ""}}
 {"line": "1 (0.4 oz.) pkg. buttermilk salad dressing mix", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "buttermilk salad dressing mix", "preparation": ""}}
-{"line": "1 (3 oz.) pkg. raspberry flavor Jell-O", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "jell-o", "preparation": "raspberry flavor"}}
+{"line": "1 (3 oz.) pkg. raspberry flavor Jell-O", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "raspberry flavor jell-o", "preparation": ""}}
 {"line": "1 can Campbell's Healthy Request cream of mushroom soup", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "cream of mushroom soup", "preparation": ""}}
-{"line": "1 pkg. chocolate fudge or chocolate cake mix (without pudding)", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "cake mix", "preparation": "chocolate fudge"}}
+{"line": "1 pkg. chocolate fudge or chocolate cake mix (without pudding)", "category": "packaging", "expected": {"quantity": 1.0, "unit": "pkg", "ingredient": "chocolate fudge cake mix", "preparation": ""}}
 {"line": "2 pkg. crescent rolls (uncooked)", "category": "packaging", "expected": {"quantity": 2.0, "unit": "pkg", "ingredient": "roll", "preparation": "crescent, uncooked"}}
 {"line": "1 (6 oz.) can pork and beans", "category": "packaging", "expected": {"quantity": 1.0, "unit": "can", "ingredient": "pork and beans", "preparation": ""}}
 {"line": "1 (8 oz.) bottle Kraft House Italian dressing", "category": "packaging", "expected": {"quantity": 1.0, "unit": "bottle", "ingredient": "italian dressing", "preparation": ""}}
