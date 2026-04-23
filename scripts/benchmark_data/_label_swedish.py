@@ -22,6 +22,13 @@ Conventions (consistent with the NEUTRAL_PROMPT examples):
   first head noun. "X eller Y" where both are adjectives collapses into
   a prep list (first only).
 - "X och Y" between adjectives is treated like a comma.
+- Multi-ingredient lines ("salt och peppar") take only the first head
+  noun for per-line scoring. This is a known limitation of the per-line
+  gold shape — a line can't encode two ingredients. Recipe-level
+  name-set F1 is not harmed if the second ingredient appears elsewhere
+  in the same recipe (which is the case for r111, the only current
+  example). A future schema extension (``also_ingredients`` array)
+  could lift this, tracked under RationalRecipes-zqo's scope.
 - Leading size adjectives before a package unit ("1 liten burk") are
   peeled into preparation.
 - Trailing qualifiers "till stekning", "i olja", "med skal" move to prep.
