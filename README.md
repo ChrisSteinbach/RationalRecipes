@@ -1,20 +1,57 @@
-# RationalRecipes                                                               
-                                                                                
-Recipe ratio statistical analysis and comparison tool                           
+# RationalRecipes
 
-----------------------
+Recipes by the central-tendency of many recipes.
 
-## stats command
+Gather a corpus of recipes for a dish, normalize every ingredient to grams,
+compute mean proportions with confidence intervals — produce a single
+"average" recipe that reflects what most cooks actually do. The premise:
+across enough independent recipes, shared structure reveals itself and the
+noise averages out.
 
-A command for calculating mean recipe ratios from recipe data provided in heterageneous units of measure; both volume
-and weight based.
+The project has two parts that meet at a SQLite database:
 
-Also prints the ratio in the form of a recipe ingredient list.
+- **Python pipeline** (`src/rational_recipes/`) — discovers dishes in
+  existing recipe corpora (RecipeNLG, Web Data Commons), parses ingredient
+  lines via a local LLM, normalizes to grams, and produces per-dish CSVs
+  and stats.
+- **PWA** (`web/`) — a Vite + vanilla TypeScript + sql.js browser app that
+  serves the resulting recipes as a fully client-side browsable catalog.
 
-### Example output
+## Layout
+
+| Path | Contents |
+| --- | --- |
+| `src/rational_recipes/` | Stats library and CLIs (`rr-stats`, `rr-diff`, `rr-discover`) |
+| `src/rational_recipes/scrape/` | RecipeNLG + WDC loaders, dish grouping, LLM parse, pipeline |
+| `web/` | Client-side PWA (Vite + TS + sql.js) |
+| `scripts/` | Database build, benchmark, and pipeline utilities |
+| `sample_input/` | Worked CSV examples, one subdirectory per dish |
+| `docs/design/` | Architecture decision documents |
+
+## Quick start
+
+```bash
+# install the Python package (and CLI entry points) in editable mode
+python3 -m pip install -e .
+
+# average a set of recipes at 1000g total, merging 'water' into 'milk'
+rr-stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water
+
+# compare two recipe sets and show per-ingredient percentage differences
+rr-diff sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv
+
+# discover common dish names in a RecipeNLG corpus (see 'Scrape pipeline' below)
+python3 scripts/explore_groups.py pannkak --l1-min=1 --l2-min=1
+```
+
+Run any CLI with `--help` for the full option set.
+
+## The three CLIs
+
+### `rr-stats` — central-tendency recipe from a CSV
 
 ```
- $ stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water
+ $ rr-stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water
 
 Recipe ratio in units of weight is 1.00:3.56:1.02:0.17:0.02 (all purpose flour:milk:egg:butter:salt)
 
@@ -29,11 +66,36 @@ Recipe ratio in units of weight is 1.00:3.56:1.02:0.17:0.02 (all purpose flour:m
 Note: these calculations are based on 200 distinct recipe proportions. Duplicates have been removed.
 ```
 
-### Usage                                                                   
-                                                                                
-``` $ stats [options] recipe.csv [recipe2.csv]``` 
+`-v` additionally prints 95% confidence intervals for each proportion and the
+minimum sample size needed to reach a given interval width — useful when
+deciding whether a dataset is "enough."
 
-The CSV files must be of the form,
+### `rr-diff` — per-ingredient comparison of two recipe sets
+
+```
+ $ rr-diff sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv
+
+Ratio for data set 1 in units of weight is 1.00:1.86:0.12:0.75:0.18:0.01 (all purpose flour:milk:water:egg:butter:salt)
+Ratio for data set 2 in units of weight is 1.00:2.17:0.22:1.17:0.23:0.01 (all purpose flour:milk:water:egg:butter:salt)
+
+Percentage difference between salt proportions 58%
+Percentage difference between water proportions 40%
+...
+Overall percentage difference = 25%
+```
+
+### `rr-discover` — find common dishes in a RecipeNLG corpus
+
+Streams a RecipeNLG CSV, counts normalized title forms, and ranks the most
+common dishes. With `--variants` it makes a second pass and splits each dish
+into L2 buckets by ingredient set — useful for spotting polyglot groups
+(e.g. 'pancakes' splits into American / Swedish / other variants).
+
+## CSV input format
+
+`rr-stats` and `rr-diff` accept CSVs where the header row is ingredient
+names and each data row is `value unit` pairs. Weight and volume units may
+be mixed freely.
 
 ```
 Flour, Egg, Milk, Butter, Salt
@@ -42,214 +104,80 @@ Flour, Egg, Milk, Butter, Salt
 16oz, 2.5 medium, 2.5c, 1 stick, 0
 ```
 
-As you can see, a good deal of freedom is given, so for example "1c" is as good as "1 cup". Weight and volumne based measures
-can be mixed freely. If an ingredient is missing, simply specifiy 0 without any unit of measure.
+Missing ingredients are written as `0`. Unit synonyms (`c`, `cup`, `cups`)
+resolve through the unit registry in `src/rational_recipes/units.py`.
 
-If more than one CSV file is given, the column headings must be identical.
+## Scrape pipeline
 
-### Options                                                                      
-                                                                                
-```  -h, --help```            Prints a summary of the options described below..
+CSVs for individual dishes can be produced by hand, or by running the scrape
+pipeline against one of the bundled corpus loaders. The pipeline:
 
------
+1. Streams a recipe corpus (RecipeNLG CSV or Web Data Commons Schema.org
+   archive).
+2. Groups candidate recipes by normalized title (L1) and by ingredient set
+   (L2), so that genuinely different dishes sharing a name end up in
+   separate groups.
+3. Parses each ingredient line via a local Ollama model (`parse.py`),
+   extracting `quantity`, `unit`, `ingredient`, `preparation`.
+4. Normalizes everything to grams using the ingredient database (USDA
+   FoodData Central + FAO/INFOODS densities + supplementary entries in
+   `src/rational_recipes/data/ingredients.db`).
+5. Emits a per-group CSV in the same format as the hand-curated inputs.
 
-```  -p DIGITS, --precision=DIGITS```                                                 
+```bash
+# explore what dish groups exist for a prefix (fast, no LLM)
+python3 scripts/explore_groups.py pannkak --l1-min=1 --l2-min=1
 
-Number of digits to show after decimal point for ratio values (default is 2).
-
--------
-
-```  -r DIGITS, --recipe-precision=DIGITS```
-
-Number of digits to show after decimal point for recipe values (default is 0).                           
-
------
-
-```  -w GRAMS, --weight=GRAMS```                                                    
-
-Restrict the total weight to use for the printed recipe. Weight is given in grams (default is 100g).
-
------
-
-```  -v, --verbose```
-
-Show confidence intervals and the sample size that is required to reach a confidence interval that is a certain percentage
-difference from the mean. The default value for the desired difference-from-mean is 5%, but may be adjusted using the
---confidence-interval option. Here is an example of how the verbose output looks,
-
--------
-
-```
- $ stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water -v
-
-Recipe ratio in units of weight is 1.00:3.56:1.02:0.17:0.02 (all purpose flour:milk:egg:butter:salt)
-
-Recipe ratio with confidence intervals (confidence level is 95%)
-----------------------------------------------------------------
-The all purpose flour proportion is between 16.68% and 18.00% (the interval is 4% of the mean proportion: 17.34%)
-The milk proportion is between 60.67% and 62.84% (the interval is 2% of the mean proportion: 61.75%)
-The egg proportion is between 16.98% and 18.49% (the interval is 4% of the mean proportion: 17.74%)
-The butter proportion is between 2.40% and 3.38% (the interval is 17% of the mean proportion: 2.89%)
-The salt proportion is between 0.24% and 0.32% (the interval is 13% of the mean proportion: 0.28%)
-
-Minimum sample sizes needed for confidence interval with 5% difference and confidence level of 95%
---------------------------------------------------------------------------------------------------
-Minimum sample size for all purpose flour proportion: 115
-Minimum sample size for milk proportion: 25
-Minimum sample size for egg proportion: 146
-Minimum sample size for butter proportion: 2300
-Minimum sample size for salt proportion: 1399
-
-1000g Recipe
-------------
-173g or 329ml all purpose flour
-618g or 618ml milk
-177g, 150ml or 3 egg(s) where each egg is 53g
-29g or 29ml butter
-3g or 2ml salt
-
-Note: these calculations are based on 200 distinct recipe proportions. Duplicates have been removed.
+# full scrape → CSV (slow — one LLM call per ingredient line)
+python3 scripts/scrape_to_csv.py pannkak --l1-min=1 --l2-min=1 \
+    --ollama-url http://localhost:11434 -v
 ```
 
------
+Run `scripts/scrape_to_csv.py --help` to see the default Ollama model and
+override flags.
 
-```  -i, --include```
+Scrape scripts need RecipeNLG at `dataset/full_dataset.csv` (2.2 GB,
+gitignored) and a running Ollama instance. See
+[`docs/design/recipe-scraping.md`](docs/design/recipe-scraping.md) for the
+full design rationale and the corpus-first, structured-first approach.
 
-Include duplicate ingredient proportions from the input data when calculating the recipe statistics. By default
-duplicates are removed.
+## PWA
 
------
+`web/` is a fully client-side recipe browser built with Vite, vanilla
+TypeScript, and sql.js. It loads a prebuilt SQLite database into the
+browser and serves a curated catalog of averaged recipes — no backend, no
+API, just static hosting. See epic **RationalRecipes-f85** (tracked in
+beads) for the MVP scope and progress.
 
-```  -c CONFIDENCE, --confidence-interval=CONFIDENCE```
-
-Desired confidence interval expressed as a percentage difference from zero to the mean, default is 0.05 (5%). This option
-only has effect when the --verbose setting is used to show required sample sizes.
-
------
-
-#### Merging columns
-
-```  -m MAPPING, --merge=MAPPING```                                                  
-
-Merge columns either partly or wholly into another. As an example, the following merges the "water" column into the
-"milk" column,
-
-```-m milk+water```
-
-The left-most column will be retained. The "water" column, in this case will no longer be visible.
-
-Partial columns may be merged with a specification of the percentage weight to be taken. Take the following example,
-
-```-m butter.84+milk.02+cream.2:milk.98+cream.8+butter.16```
-
-This merge specification seperates butter fat from three ingredients under the heading "butter" and the remaining liquid
-under the heading "milk". Notice that a semicolon is used to seperate merge specifications that should result in different
-columns.
-
-Ingredients with a space in the name can be specified using either quotation marks, or using the column index (starting at 
-zero). The following, for example, are valid specifications,
-
-```-m 0+1+2```
-
-```-m "all purpose flour+granulated sugar"```
-
-------
-
-```  -t RESTRICTIONS, --restrict=RESTRICTIONS```
-
-Restrict individual columns to a given weight. This is useful if, for example, you only have a limited amount of one or
-more ingredient available. The following example shows how per-ingredient weight restrictions are used,
-
-```-t egg=123,sugar=545```
-
-Weight is given in grams. With this specification, the printed recipe will not include more than 123g egg or 545g sugar.
-If this option is used in combination with the --weight option, then the total weight will not exceed the weight specified
-there. If the --weight option is *not* used, then the recipe weight will be as high as possible within the given weight
-restrictions.
-
-As with the column merge option (see above) it is possible to specify ingredient names containing spaces using either the
-column index (starting at zero) or quotation marks.
-
------
-
-```-z IGNOREZEROS, --ignore-zeros=IGNOREZEROS```
-
-Remove zero values from the calculation of means for one or more columns. The specification is a comma seperated list of
-column names or indexes. For example, the following specifies that missing values for salt and sugar should be disregarded.
-
-```-z salt,sugar```
-
-This is useful for ingredients that are frequently missed out from recipes, salt being the prime example.
-
--------
-
-## diff command
-
-### Example output
-
-```
- $ diff sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv 
-
-Ratio for data set 1 in units of weight is 1.00:1.86:0.12:0.75:0.18:0.01 (all purpose flour:milk:water:egg:butter:salt)
-Ratio for data set 2 in units of weight is 1.00:2.17:0.22:1.17:0.23:0.01 (all purpose flour:milk:water:egg:butter:salt)
-
-Percentage difference between salt proportions 58%
-Percentage difference between water proportions 40%
-Percentage difference between egg proportions 24%
-Percentage difference between all purpose flour proportions 20%
-Percentage difference between milk proportions 5%
-Percentage difference between butter proportions 5%
-
-Overall percentage difference = 25%
+```bash
+cd web
+npm install
+npm run dev
 ```
 
-### Usage
+## Ingredient database
 
-``` $ diff [options] recipe1.csv recipe2.csv [recipe3.csv]```
+`src/rational_recipes/data/ingredients.db` is built from:
 
-### Options
+- **USDA FoodData Central SR Legacy** — ~8K foods with portion weights.
+- **FAO/INFOODS Density Database v2.0** — ~600 density values for
+  volume-to-weight conversion.
+- Supplementary entries for ingredients not covered by either source.
 
-```  -h, --help```            Prints a summary of the options described below..
+To rebuild:
 
------
-
-```-p DIGITS, --precision=DIGITS```
-
-Number of digits to show after decimal point for percentage values (default is 0)
-
-------
-
-
-```  -i, --include```
-
-Include duplicate ingredient proportions from the input data when calculating the recipe statistics. By default
-duplicates are removed.
-
------
-
-
-```-c, --change```
-
-Show percentage change (percentage difference is default). Here is how the output looks with this option enabled,
-
-```
- $ diff -c sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv 
-
-Ratio for data set 1 in units of weight is 1.00:1.86:0.12:0.75:0.18:0.01 (all purpose flour:milk:water:egg:butter:salt)
-Ratio for data set 2 in units of weight is 1.00:2.17:0.22:1.17:0.23:0.01 (all purpose flour:milk:water:egg:butter:salt)
-
-The salt proportion has increased by 82% from data set 1 to 2
-The water proportion has increased by 50% from data set 1 to 2
-The egg proportion has increased by 27% from data set 1 to 2
-The all purpose flour proportion has decreased by 19% from data set 1 to 2
-The butter proportion has increased by 5% from data set 1 to 2
-The milk proportion has decreased by 5% from data set 1 to 2
-
-Overall percentage difference = 25%
+```bash
+scripts/download_data.sh     # fetch raw data to data/fdc/ and data/fao/
+python3 scripts/build_db.py  # build ingredients.db (requires openpyxl)
 ```
 
-------
+## Development
 
-```  -m MAPPING, --merge=MAPPING```
+```bash
+python3 -m pytest            # run the full test suite
+python3 -m ruff check .      # lint
+python3 -m mypy src          # type check
+```
 
-Same as for ```stats``` command (see above).
+Python 3.12+. Runtime deps: `numpy`. Dev deps: `ruff`, `mypy`, `pytest`,
+`pytest-cov`, `pre-commit`. Declared in `pyproject.toml`.
