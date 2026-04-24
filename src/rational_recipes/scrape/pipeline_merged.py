@@ -1,32 +1,41 @@
-"""Merged-pipeline emission layer.
+"""Merged-pipeline emission + orchestration.
 
-Turns per-variant normalized rows (produced upstream by the
-LLM-parse + normalize path, which already exists in ``pipeline.py``
-for the RecipeNLG case and needs extending for the merged case)
-into the on-disk artifact the downstream review shell
-(``RationalRecipes-eco``) and SQLite writer (``RationalRecipes-5ub``)
-consume:
+The module owns two kinds of work:
 
-- One CSV per variant in the ``rr-stats``-compatible format.
-- A single ``manifest.json`` indexing all variants by stable
-  ``variant_id``.
+- **Emission layer** (``MergedVariantResult``, ``emit_variants``): pure
+  data transforms that turn per-variant normalized rows into the
+  on-disk artifacts consumed by downstream beads (review shell ``eco``,
+  SQLite writer ``5ub``). One CSV per variant in the ``rr-stats``-
+  compatible format, plus one ``manifest.json`` indexing all variants
+  by stable ``variant_id``.
 
-The ``MergedVariantResult`` dataclass carries the data a variant
-contributes to both artifacts. ``emit_variants()`` writes them to disk.
-Both are LLM-free so the orchestration logic is testable without a
-running Ollama instance.
+- **Orchestration** (``build_variants``, ``run_merged_pipeline``): end
+  to end wiring that loads both corpora, LLM-extracts WDC ingredient
+  names, merges them at the row level, groups into variants, LLM-
+  parses each surviving row's ingredient lines, normalizes to rr-stats
+  cells + proportion dicts, applies within-variant proportion-bucket
+  dedup, and emits. The pure helpers accept injectable parse/extract
+  callbacks so orchestration logic is testable without a running
+  Ollama instance.
 """
 
 from __future__ import annotations
 
 import csv
+import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 
-from rational_recipes.scrape.grouping import normalize_title
+from rational_recipes.ingredient import Factory as IngredientFactory
+from rational_recipes.scrape.canonical import canonicalize_name
+from rational_recipes.scrape.grouping import (
+    group_by_ingredients,
+    group_by_title,
+    normalize_title,
+)
 from rational_recipes.scrape.manifest import (
     Manifest,
     VariantManifestEntry,
@@ -34,9 +43,47 @@ from rational_recipes.scrape.manifest import (
 )
 from rational_recipes.scrape.merge import (
     DEFAULT_BUCKET_SIZE,
+    MergedRecipe,
+    MergeStats,
+    merge_corpora,
     proportion_bucket_dedup,
 )
 from rational_recipes.scrape.outlier import compute_outlier_scores
+from rational_recipes.scrape.parse import (
+    OLLAMA_BASE_URL,
+    ParsedIngredient,
+    parse_ingredient_lines,
+)
+from rational_recipes.scrape.recipenlg import Recipe, RecipeNLGLoader
+from rational_recipes.scrape.wdc import WDCLoader, WDCRecipe, extract_batch
+from rational_recipes.units import BadUnitException
+from rational_recipes.units import Factory as UnitFactory
+
+logger = logging.getLogger(__name__)
+
+# Unit-name aliases the LLM may emit that aren't directly registered on
+# UnitFactory. Mirrors pipeline.py's private table for RecipeNLG output.
+_UNIT_ALIASES = {
+    "cup": "cup",
+    "cups": "cup",
+    "tablespoon": "tbsp",
+    "tablespoons": "tbsp",
+    "teaspoon": "tsp",
+    "teaspoons": "tsp",
+    "ounce": "oz",
+    "ounces": "oz",
+    "pound": "lb",
+    "pounds": "lb",
+}
+
+
+ParseFn = Callable[[list[str]], list[ParsedIngredient | None]]
+"""Callback type for LLM-parsing one recipe's ingredient lines.
+
+Shape matches ``parse_ingredient_lines(lines, model=..., base_url=...)``
+with the LLM params bound. Tests inject a stub that returns canned
+``ParsedIngredient``s without touching Ollama.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,3 +207,297 @@ def emit_variants(
     manifest = Manifest(variants=entries)
     manifest.write(output_dir / "manifest.json")
     return manifest
+
+
+# --- Orchestration: merged-pipeline end-to-end ---
+
+
+def _resolve_unit(unit_name: str) -> tuple[object, str] | None:
+    """Look up a unit by name, applying LLM-alias normalization.
+
+    Returns ``(unit, canonical_name)`` or ``None`` if unresolvable.
+    """
+    name = unit_name.strip()
+    unit = UnitFactory.get_by_name(name)
+    if unit is not None:
+        return unit, name
+    alias = _UNIT_ALIASES.get(name.lower())
+    if alias:
+        unit = UnitFactory.get_by_name(alias)
+        if unit is not None:
+            return unit, alias
+    return None
+
+
+def normalize_merged_row(
+    url: str,
+    title: str,
+    corpus: str,
+    parsed_ingredients: Iterable[ParsedIngredient],
+) -> tuple[MergedNormalizedRow | None, list[str]]:
+    """Normalize one recipe's parsed ingredients into a merged row.
+
+    Returns ``(row, skipped)``. ``row`` is ``None`` if fewer than one
+    ingredient resolved to both a known unit and a DB entry — that row
+    carries no information and shouldn't enter a variant. ``skipped``
+    lists each ingredient that couldn't be normalized (for miss-rate
+    tracking in calling code).
+    """
+    cells: dict[str, str] = {}
+    grams: dict[str, float] = {}
+    skipped: list[str] = []
+
+    for parsed in parsed_ingredients:
+        canonical = canonicalize_name(parsed.ingredient)
+        if not canonical:
+            continue
+        try:
+            ingredient = IngredientFactory.get_by_name(canonical)
+        except KeyError:
+            skipped.append(canonical)
+            continue
+
+        resolved = _resolve_unit(parsed.unit)
+        if resolved is None:
+            skipped.append(f"{canonical} (unknown unit: {parsed.unit})")
+            continue
+        unit, unit_name = resolved
+
+        quantity = parsed.quantity
+        if quantity == 0:
+            cells[canonical] = "0"
+            grams[canonical] = 0.0
+            continue
+
+        try:
+            g = unit.norm(quantity, ingredient)  # type: ignore[attr-defined]
+        except BadUnitException:
+            skipped.append(
+                f"{canonical} (incompatible unit {unit_name} for this ingredient)"
+            )
+            continue
+
+        cells[canonical] = f"{quantity:g} {unit_name}"
+        grams[canonical] = float(g)
+
+    if not cells:
+        return None, skipped
+
+    total = sum(grams.values())
+    if total > 0:
+        proportions = {k: v / total * 100 for k, v in grams.items()}
+    else:
+        # All-zero row (every ingredient resolved but quantity 0). Keep
+        # cells for CSV fidelity, but proportion vector is empty so the
+        # row contributes nothing to outlier / dedup work.
+        proportions = {}
+
+    return (
+        MergedNormalizedRow(
+            url=url,
+            title=title,
+            corpus=corpus,
+            cells=cells,
+            proportions=proportions,
+        ),
+        skipped,
+    )
+
+
+@dataclass(frozen=True)
+class PipelineRunStats:
+    """Summary numbers from a merged-pipeline run."""
+
+    recipenlg_in: int
+    wdc_in: int
+    merge_stats: MergeStats
+    l1_groups_kept: int
+    l2_variants_kept: int
+    rows_parsed: int
+    rows_normalized: int
+    rows_dedup_dropped: int
+    db_misses: dict[str, int]
+
+
+def build_variants(
+    merged_recipes: Sequence[MergedRecipe],
+    *,
+    parse_fn: ParseFn,
+    l1_min_group_size: int,
+    l2_similarity_threshold: float,
+    l2_min_group_size: int,
+    bucket_size: float = DEFAULT_BUCKET_SIZE,
+) -> tuple[list[MergedVariantResult], PipelineRunStats]:
+    """Group merged recipes, LLM-parse each, normalize, and dedup.
+
+    Pure orchestration over injectable ``parse_fn`` — tests pass a
+    stub that returns canned parsed lines, so this function exercises
+    full variant-building without Ollama.
+    """
+    l1_groups = group_by_title(merged_recipes, min_group_size=l1_min_group_size)
+    logger.info("L1: %d title groups kept", len(l1_groups))
+
+    variants: list[MergedVariantResult] = []
+    rows_parsed = 0
+    rows_normalized = 0
+    rows_dedup_dropped = 0
+    db_misses: dict[str, int] = {}
+
+    for title_key, l1_members in l1_groups.items():
+        l2_clusters = group_by_ingredients(
+            l1_members,
+            similarity_threshold=l2_similarity_threshold,
+            min_group_size=l2_min_group_size,
+        )
+        logger.info(
+            "  L1 %r (%d recipes) → %d L2 cluster(s)",
+            title_key,
+            len(l1_members),
+            len(l2_clusters),
+        )
+
+        for cluster in l2_clusters:
+            canonical_ingredients: set[str] = set()
+            cooking_methods: set[str] = set()
+            normalized_rows: list[MergedNormalizedRow] = []
+
+            for recipe in cluster.recipes:
+                rows_parsed += 1
+                raw_parsed = parse_fn(list(recipe.ingredients))
+                parsed = [p for p in raw_parsed if p is not None]
+                if not parsed:
+                    continue
+
+                row, skipped = normalize_merged_row(
+                    url=recipe.url,
+                    title=recipe.title,
+                    corpus=recipe.corpus,
+                    parsed_ingredients=parsed,
+                )
+                for miss in skipped:
+                    base = miss.split(" (")[0]
+                    db_misses[base] = db_misses.get(base, 0) + 1
+                if row is None:
+                    continue
+
+                normalized_rows.append(row)
+                canonical_ingredients.update(row.cells.keys())
+                cooking_methods.update(recipe.cooking_methods)
+                rows_normalized += 1
+
+            if not normalized_rows:
+                continue
+
+            # Header: ingredients present in at least half the rows.
+            min_appearance = max(1, len(normalized_rows) // 2)
+            counts: dict[str, int] = {}
+            for row in normalized_rows:
+                for name in row.cells:
+                    counts[name] = counts.get(name, 0) + 1
+            header = sorted(name for name, n in counts.items() if n >= min_appearance)
+            if not header:
+                continue
+
+            variant = MergedVariantResult(
+                variant_title=title_key,
+                canonical_ingredients=frozenset(canonical_ingredients),
+                cooking_methods=frozenset(cooking_methods),
+                normalized_rows=normalized_rows,
+                header_ingredients=header,
+            )
+            dropped = variant.dedup_in_place(bucket_size=bucket_size)
+            rows_dedup_dropped += dropped
+            if variant.normalized_rows:
+                variants.append(variant)
+
+    stats = PipelineRunStats(
+        recipenlg_in=0,  # filled by caller
+        wdc_in=0,
+        merge_stats=MergeStats(0, 0, 0, 0, 0),
+        l1_groups_kept=len(l1_groups),
+        l2_variants_kept=len(variants),
+        rows_parsed=rows_parsed,
+        rows_normalized=rows_normalized,
+        rows_dedup_dropped=rows_dedup_dropped,
+        db_misses=db_misses,
+    )
+    return variants, stats
+
+
+def run_merged_pipeline(
+    *,
+    recipenlg_path: Path,
+    wdc_zip_path: Path,
+    title_query: str,
+    output_dir: Path,
+    wdc_hosts: Sequence[str] | None = None,
+    l1_min_group_size: int = 3,
+    l2_similarity_threshold: float = 0.6,
+    l2_min_group_size: int = 3,
+    bucket_size: float = DEFAULT_BUCKET_SIZE,
+    llm_model: str = "qwen3.6:35b-a3b",
+    ollama_url: str = OLLAMA_BASE_URL,
+) -> tuple[Manifest, PipelineRunStats]:
+    """End-to-end: load both corpora, merge, LLM-parse, normalize, emit.
+
+    Calls Ollama twice per recipe (once for WDC ingredient-name
+    extraction before merge, once for ingredient-line parsing after
+    merge); start with a small title_query and tight min-group-size
+    when exercising on real data.
+    """
+    rnlg_loader = RecipeNLGLoader(path=recipenlg_path)
+    rnlg_matching: list[Recipe] = list(rnlg_loader.search_title(title_query))
+    logger.info("RecipeNLG: %d recipes match %r", len(rnlg_matching), title_query)
+
+    wdc_loader = WDCLoader(zip_path=wdc_zip_path)
+    wdc_raw: list[WDCRecipe] = list(
+        wdc_loader.search_title(title_query, hosts=wdc_hosts)
+    )
+    logger.info("WDC: %d recipes match %r", len(wdc_raw), title_query)
+
+    # LLM-extract ingredient names on WDC (needed for the near-dup
+    # Jaccard step of merge_corpora).
+    wdc_populated = extract_batch(wdc_raw, model=llm_model, base_url=ollama_url)
+
+    merged, merge_stats = merge_corpora(rnlg_matching, wdc_populated)
+    logger.info(
+        "Merge: rnlg=%d wdc=%d → merged=%d (url_dups=%d, near_dups=%d)",
+        merge_stats.recipenlg_in,
+        merge_stats.wdc_in,
+        merge_stats.merged_out,
+        merge_stats.url_duplicates,
+        merge_stats.near_dup_duplicates,
+    )
+
+    def _parse(lines: list[str]) -> list[ParsedIngredient | None]:
+        return parse_ingredient_lines(lines, model=llm_model, base_url=ollama_url)
+
+    variants, partial_stats = build_variants(
+        merged,
+        parse_fn=_parse,
+        l1_min_group_size=l1_min_group_size,
+        l2_similarity_threshold=l2_similarity_threshold,
+        l2_min_group_size=l2_min_group_size,
+        bucket_size=bucket_size,
+    )
+
+    manifest = emit_variants(variants, output_dir)
+    logger.info(
+        "Emitted %d variant(s) to %s (dropped %d rows in within-variant dedup)",
+        len(manifest.variants),
+        output_dir,
+        partial_stats.rows_dedup_dropped,
+    )
+
+    stats = PipelineRunStats(
+        recipenlg_in=len(rnlg_matching),
+        wdc_in=len(wdc_raw),
+        merge_stats=merge_stats,
+        l1_groups_kept=partial_stats.l1_groups_kept,
+        l2_variants_kept=partial_stats.l2_variants_kept,
+        rows_parsed=partial_stats.rows_parsed,
+        rows_normalized=partial_stats.rows_normalized,
+        rows_dedup_dropped=partial_stats.rows_dedup_dropped,
+        db_misses=partial_stats.db_misses,
+    )
+    return manifest, stats

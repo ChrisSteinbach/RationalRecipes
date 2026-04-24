@@ -5,11 +5,52 @@ from __future__ import annotations
 from pathlib import Path
 
 from rational_recipes.scrape.manifest import Manifest, compute_variant_id
+from rational_recipes.scrape.merge import MergedRecipe
+from rational_recipes.scrape.parse import ParsedIngredient
 from rational_recipes.scrape.pipeline_merged import (
     MergedNormalizedRow,
     MergedVariantResult,
+    build_variants,
     emit_variants,
+    normalize_merged_row,
 )
+from rational_recipes.scrape.recipenlg import Recipe
+
+
+def _parsed(ing: str, qty: float, unit: str, prep: str = "") -> ParsedIngredient:
+    return ParsedIngredient(
+        ingredient=ing,
+        quantity=qty,
+        unit=unit,
+        preparation=prep,
+        raw=f"{qty} {unit} {ing}".strip(),
+    )
+
+
+def _make_merged(
+    title: str,
+    ingredient_lines: tuple[str, ...],
+    ingredient_names: frozenset[str],
+    url: str = "https://example.com/r",
+    corpus: str = "recipenlg",
+) -> MergedRecipe:
+    src = Recipe(
+        row_index=0,
+        title=title,
+        ingredients=ingredient_lines,
+        ner=tuple(ingredient_names),
+        source="test",
+        link=url,
+    )
+    return MergedRecipe(
+        title=title,
+        ingredients=ingredient_lines,
+        ingredient_names=ingredient_names,
+        url=url,
+        cooking_methods=frozenset(),
+        corpus=corpus,
+        source=src,
+    )
 
 
 def _row(
@@ -270,3 +311,212 @@ class TestEmitVariants:
         manifest = emit_variants([a, b], tmp_path)
         assert len({v.csv_path for v in manifest.variants}) == 2
         assert a.variant_id != b.variant_id
+
+
+class TestNormalizeMergedRow:
+    def test_empty_parsed_returns_none(self) -> None:
+        row, skipped = normalize_merged_row("u", "t", "wdc", [])
+        assert row is None
+        assert skipped == []
+
+    def test_fully_resolved_row_proportions_sum_to_100(self) -> None:
+        # flour 200g + milk 200g + egg (MEDIUM ≈ 50g) → proportions sum to 100.
+        row, skipped = normalize_merged_row(
+            "https://x/r/1",
+            "Pancakes",
+            "recipenlg",
+            [
+                _parsed("flour", 200, "g"),
+                _parsed("milk", 200, "g"),
+            ],
+        )
+        assert row is not None
+        assert skipped == []
+        assert "flour" in row.cells
+        assert "milk" in row.cells
+        total_prop = sum(row.proportions.values())
+        assert abs(total_prop - 100.0) < 1e-6
+
+    def test_db_miss_recorded_and_skipped(self) -> None:
+        row, skipped = normalize_merged_row(
+            "u",
+            "t",
+            "wdc",
+            [
+                _parsed("flour", 100, "g"),
+                _parsed("zzzunknownfood", 10, "g"),
+            ],
+        )
+        assert row is not None
+        assert "flour" in row.cells
+        assert "zzzunknownfood" not in row.cells
+        assert any("zzzunknownfood" in s for s in skipped)
+
+    def test_unit_synonym_registered_in_factory(self) -> None:
+        # "cups" is a UnitFactory synonym for CUP, so it resolves directly
+        # without needing the alias fallback — cell keeps the original word.
+        row, _skipped = normalize_merged_row(
+            "u",
+            "t",
+            "wdc",
+            [_parsed("flour", 1, "cups")],
+        )
+        assert row is not None
+        assert row.cells["flour"] == "1 cups"
+
+    def test_alias_fallback_when_not_a_factory_synonym(self) -> None:
+        # "ounce" (singular) is not a direct UnitFactory synonym — alias
+        # maps it to "oz", which is. Cell shows the resolved canonical form.
+        row, _skipped = normalize_merged_row(
+            "u",
+            "t",
+            "wdc",
+            [_parsed("flour", 2, "ounce")],
+        )
+        assert row is not None
+        assert row.cells["flour"] == "2 oz"
+
+    def test_unknown_unit_skipped_with_note(self) -> None:
+        row, skipped = normalize_merged_row(
+            "u",
+            "t",
+            "wdc",
+            [
+                _parsed("flour", 200, "g"),
+                _parsed("salt", 1, "handful"),
+            ],
+        )
+        assert row is not None
+        assert "salt" not in row.cells
+        assert any("unknown unit" in s and "handful" in s for s in skipped)
+
+    def test_zero_quantity_kept_as_zero(self) -> None:
+        row, _skipped = normalize_merged_row(
+            "u",
+            "t",
+            "wdc",
+            [
+                _parsed("flour", 100, "g"),
+                _parsed("salt", 0, "g"),
+            ],
+        )
+        assert row is not None
+        assert row.cells["salt"] == "0"
+        # salt contributes 0 to proportion numerator; flour is 100%.
+        assert abs(row.proportions["flour"] - 100.0) < 1e-6
+        assert row.proportions["salt"] == 0.0
+
+
+class TestBuildVariants:
+    def test_empty_input_no_variants(self) -> None:
+        variants, stats = build_variants(
+            [],
+            parse_fn=lambda lines: [],
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+        )
+        assert variants == []
+        assert stats.l1_groups_kept == 0
+        assert stats.l2_variants_kept == 0
+
+    def test_below_l1_min_drops_group(self) -> None:
+        merged = [
+            _make_merged(
+                "pannkakor",
+                ("1 dl flour",),
+                frozenset({"flour"}),
+                url="https://x/1",
+            ),
+        ]
+        variants, _stats = build_variants(
+            merged,
+            parse_fn=lambda lines: [_parsed("flour", 100, "g")],
+            l1_min_group_size=3,  # only 1 recipe in group; below min
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=1,
+        )
+        assert variants == []
+
+    def test_builds_variant_from_homogeneous_group(self) -> None:
+        lines = ("200 g flour", "200 ml milk")
+        merged = [
+            _make_merged(
+                "pannkakor", lines, frozenset({"flour", "milk"}), url=f"https://x/{i}"
+            )
+            for i in range(3)
+        ]
+
+        def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            return [
+                _parsed("flour", 200, "g"),
+                _parsed("milk", 200, "g"),
+            ]
+
+        variants, stats = build_variants(
+            merged,
+            parse_fn=fake_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+        )
+        assert len(variants) == 1
+        v = variants[0]
+        # 3 identical rows → 2 should be dedup'd.
+        assert stats.rows_parsed == 3
+        assert stats.rows_dedup_dropped == 2
+        # After dedup, one survivor.
+        assert len(v.normalized_rows) == 1
+        assert set(v.header_ingredients) == {"flour", "milk"}
+
+    def test_parse_failure_skipped(self) -> None:
+        merged = [
+            _make_merged(
+                "pannkakor",
+                ("1 dl flour",),
+                frozenset({"flour"}),
+                url=f"https://x/{i}",
+            )
+            for i in range(3)
+        ]
+
+        def always_fail(lines: list[str]) -> list[ParsedIngredient | None]:
+            return [None]
+
+        variants, stats = build_variants(
+            merged,
+            parse_fn=always_fail,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+        )
+        assert variants == []
+        assert stats.rows_parsed == 3
+        assert stats.rows_normalized == 0
+
+    def test_db_misses_aggregated(self) -> None:
+        merged = [
+            _make_merged(
+                "pannkakor",
+                ("1",),
+                frozenset({"flour"}),
+                url=f"https://x/{i}",
+            )
+            for i in range(3)
+        ]
+
+        def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            return [
+                _parsed("flour", 100, "g"),
+                _parsed("zzzunknownfood", 5, "g"),
+            ]
+
+        _variants, stats = build_variants(
+            merged,
+            parse_fn=fake_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+        )
+        # Each of 3 recipes produced one unresolved "zzzunknownfood".
+        assert stats.db_misses.get("zzzunknownfood") == 3
