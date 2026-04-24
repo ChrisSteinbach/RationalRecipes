@@ -184,8 +184,9 @@ python3 scripts/tally_wdc_misses.py --label swedish \
 
 On the full 2.2M-row RecipeNLG corpus the English miss rate sits at ~26%
 after bead `RationalRecipes-b7t.1` (was 64% before the frequency-ranked
-synonym additions). Per-language misses on WDC are tracked in beads
-`b7t.20` (Swedish) and siblings for DE/FR/RU/IT/JA.
+synonym additions). Swedish equivalent landed in `b7t.20` (WDC ica.se
++ tasteline.com). Other languages are out of maintained scope — see
+`docs/design/recipe-scraping.md` § Scope for the contribution channel.
 
 ## Development
 

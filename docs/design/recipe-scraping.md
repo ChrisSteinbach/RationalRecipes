@@ -30,10 +30,15 @@ code in `src/rational_recipes/`.
 - **LLM-assisted parsing**: use a local LLM to turn natural-language ingredient
   lines ("1 heaping cup flour, sifted") into structured fields. Local keeps
   iteration cheap and avoids API costs during exploration.
-- **Language-agnostic**: the pipeline should handle any language present in
-  the source corpora. A language-neutral LLM prompt with multilingual
-  examples extracts cleanly across Swedish, German, Russian, and Japanese
-  without per-language specialization.
+- **Language-neutral pipeline, en+sv maintained scope**: the pipeline
+  itself handles any language present in the source corpora — a
+  language-neutral LLM prompt with multilingual examples extracts
+  cleanly across Swedish, German, Russian, and Japanese without
+  per-language specialization. Maintained ingredient-DB coverage is
+  English and Swedish only (the maintainer's working languages); adding
+  another language requires the miss-tally → classification → DB-rebuild
+  loop described in § Scope below, where step 3 (classification) needs
+  native-speaker judgement.
 - **Use the whole corpus**: the source corpora are fixed-size archives
   (RecipeNLG 2020, WDC 2023), so "sample size" per variant is whatever
   survives grouping and filtering — there is no crawl-until-enough loop.
@@ -51,6 +56,38 @@ code in `src/rational_recipes/`.
   exploration. Targeted web search (Google Programmable Search API or
   similar) can supplement archives later if coverage gaps appear for
   specific dish variants.
+
+## Scope
+
+Maintained-language scope is **English and Swedish** — the languages the
+project maintainer can personally validate for ingredient-name
+classification. The extraction pipeline itself is language-neutral (see
+§ Ingredient-line parsing) and was qualitatively validated on Swedish,
+German, Russian, and Japanese during the extraction spike. The
+constraint is not the extractor; it is the per-language ingredient-DB
+coverage work, which runs in four steps:
+
+1. LLM extraction of ingredient names from WDC hosts in the target
+   language.
+2. Frequency-rank names that don't resolve via
+   `IngredientFactory.get_by_name`.
+3. Classify each top-N miss per bead `RationalRecipes-3cu`'s policy:
+   (a) synonym into an existing DB food, (b) new SUPPLEMENTARY entry
+   with density, or (c) alias-only for a clear language variant.
+4. Rebuild `ingredients.db` and re-tally to measure miss-rate drop.
+
+Steps 1, 2, and 4 are mechanical and ship in
+`scripts/tally_wdc_misses.py`. Step 3 requires native-speaker fluency
+with cooking vocabulary, which the maintainer has for English and
+Swedish only.
+
+Other languages are out of maintained scope and may reopen later as a
+contributor track. The `RationalRecipes-b7t.24` WDC volume survey
+ranked candidate languages: German (53,892 recipes / 7 hosts), French
+(37,922 / 8), Russian (31,882 / 8), Italian (31,224 / 5), Japanese
+(19,160 / 3). A language-adding contribution is mostly DB entries
+(~hundreds of synonym/supplementary rows) plus a re-tally measurement,
+not code.
 
 ## Data sources
 
@@ -630,7 +667,7 @@ Broaden beyond the test case to many dish families. Swap in a larger LLM
 if parse-accuracy measurements show it's worth it.
 Productionize the review UI if it's getting heavy use.
 
-*Results so far (2026-04-24):*
+*Results (2026-04-24):*
 
 - **Model swap executed.** Production default swapped from Gemma 4 e2b
   to `qwen3.6:35b-a3b` following the v2 benchmark sweep across 14
@@ -641,18 +678,14 @@ Productionize the review UI if it's getting heavy use.
 - **Systematic ingredient-DB coverage.** English (RecipeNLG corpus,
   `RationalRecipes-b7t.1`, miss rate 63.9% → 26.0% on 2.2M rows,
   clean-recipe fraction 1.3% → 14.6%) and Swedish (WDC ica.se +
-  tasteline.com, `RationalRecipes-b7t.20`) shipped. The WDC top-100
-  language survey (`RationalRecipes-b7t.24`) filed per-language
-  follow-on beads — German (`bie`), French (`sdk`), Russian (`asq`),
-  Italian (`9oa`), Japanese (`lw8`) — each blocked on native-speaker
-  reviewer availability. Infrastructure
-  (`scripts/tally_wdc_misses.py`) is ready to run end-to-end on
-  steps 1–2–4.
+  tasteline.com, `RationalRecipes-b7t.20`) shipped. These are the
+  maintained-language scope (see § Scope).
 - **Review UI** already built (see Phase 2 Results); "productionize
   if heavy use" remains deferred until heavy use emerges.
 
-Open: broadening beyond en/sv awaits reviewer availability. Bead:
-`RationalRecipes-1z2`.
+Phase 4 closed at en+sv coverage. Other languages (DE/FR/RU/IT/JA)
+moved out of maintained scope — tooling is in place for a future
+contributor track. Bead: `RationalRecipes-1z2`.
 
 ## Open questions (to resolve during exploration)
 
@@ -722,23 +755,22 @@ Open: broadening beyond en/sv awaits reviewer availability. Bead:
        prompt variants needed. Reference implementation in
        `src/rational_recipes/scrape/wdc.py`.
 
-   (b) *Cross-corpus ingredient-name collision* — **RESOLVED for the
-       pannkakor scope, ONGOING per language.** The neutral prompt
-       deliberately keeps `vetemjöl` / `mjölk` / `ägg` in Swedish, so
-       cross-corpus Jaccard sees 0 matches against RecipeNLG's English
-       NER (`flour` / `milk` / `eggs`) without a further canonicalization
+   (b) *Cross-corpus ingredient-name collision* — **RESOLVED for
+       maintained scope (en+sv).** The neutral prompt deliberately
+       keeps `vetemjöl` / `mjölk` / `ägg` in Swedish, so cross-corpus
+       Jaccard sees 0 matches against RecipeNLG's English NER
+       (`flour` / `milk` / `eggs`) without a further canonicalization
        step. `src/rational_recipes/scrape/canonical.py` (bead `3cu`)
        routes every extracted name through `IngredientFactory` at
-       extraction time so downstream L2 Jaccard, cross-corpus dedup, and
-       within-variant comparison all see a shared English vocabulary.
-       Swedish pannkakor-family coverage ships in the synonym table;
-       broader Swedish follow-on landed in `RationalRecipes-b7t.20`
-       (WDC ica.se + tasteline.com). The `RationalRecipes-b7t.24`
-       volume-ranked survey of other WDC languages filed per-language
-       follow-on beads — `bie` (German), `sdk` (French), `asq`
-       (Russian), `9oa` (Italian), `lw8` (Japanese) — each blocked
-       on native-speaker reviewer availability for the
-       classification step.
+       extraction time so downstream L2 Jaccard, cross-corpus dedup,
+       and within-variant comparison all see a shared English
+       vocabulary. Swedish pannkakor-family coverage ships in the
+       synonym table; broader Swedish follow-on landed in
+       `RationalRecipes-b7t.20` (WDC ica.se + tasteline.com). The
+       `RationalRecipes-b7t.24` volume-ranked survey identified
+       follow-on candidates in German, French, Russian, Italian, and
+       Japanese; those languages are out of maintained scope and are
+       retained as a pointer for future contributors (see § Scope).
 9. ~~**Ingredient-DB coverage**~~ **RESOLVED** — Phase 1 measured ~18%
    miss rate on 10 pannkakor recipes (71 ingredient lines). Core baking
    ingredients resolve correctly; misses concentrate in specialty items.
@@ -752,11 +784,12 @@ Open: broadening beyond en/sv awaits reviewer availability. Bead:
    mentions over four rounds of synonym additions. The clean-recipe
    fraction (recipes where every NER name resolves) rose from 1.3% →
    14.6% — a 11× improvement that's load-bearing for the pipeline's
-   "skip or keep" decision on each RecipeNLG row. Non-English
-   equivalents (`b7t.20` SV, `bie` DE, `sdk` FR, `asq` RU, `9oa` IT,
-   `lw8` JA) each need per-language WDC LLM extraction (infrastructure
-   in `scripts/tally_wdc_misses.py`) plus native-speaker review for
-   the classification step.
+   "skip or keep" decision on each RecipeNLG row. Swedish equivalent
+   landed in `RationalRecipes-b7t.20` (WDC ica.se + tasteline.com).
+   Other languages (DE/FR/RU/IT/JA) are out of maintained scope; the
+   per-language WDC LLM extraction infrastructure
+   (`scripts/tally_wdc_misses.py`) is ready for a future contributor
+   track — see § Scope.
 
 ## Dependencies on existing code
 
