@@ -574,6 +574,309 @@ FDC_SYNONYM_ALIASES: list[tuple[str, str]] = [
     ("flask", "Pork, cured, bacon, unprepared"),
     ("sidfläsk", "Pork, cured, bacon, unprepared"),
     ("sidflask", "Pork, cured, bacon, unprepared"),
+    # --- Swedish frequency-ranked additions from WDC pilot (b7t.20) ---
+    # Measured via scripts/tally_wdc_misses.py --label swedish against
+    # WDC ica.se + tasteline.com (~11k recipes available). Coverage
+    # targets the top ~40 misses by frequency; each entry is either a
+    # pure language variant of an FDC/FAO food already in the DB or a
+    # Swedish cooking-vocabulary item with a clear English analog in
+    # SR Legacy.
+    #
+    # Ambiguity conventions carry over from the English round: 'olja'
+    # alone → vegetable (soybean) oil; 'ost' alone → cheddar (most
+    # common unqualified-cheese usage); 'peppar' → black pepper.
+    #
+    # Oils
+    ("olja", "Oil, vegetable, soybean, refined"),
+    ("olivolja", "Oil, olive, salad or cooking"),
+    ("sesamolja", "Oil, sesame, salad or cooking"),
+    ("rapsolja", "Oil, vegetable, soybean, refined"),
+    # Pepper variants (distinct from English 'pepper' = bell pepper ambiguity —
+    # in Swedish 'peppar' unambiguously means black pepper; paprika is bell).
+    ("peppar", "Spices, pepper, black"),
+    ("svartpeppar", "Spices, pepper, black"),
+    ("svartpepparkorn", "Spices, pepper, black"),
+    ("vitpeppar", "Spices, pepper, white"),
+    ("cayennepeppar", "Spices, pepper, red or cayenne"),
+    # Garlic
+    ("vitlök", "Garlic, raw"),
+    ("vitlöksklyfta", "Garlic, raw"),
+    ("vitlöksklyftor", "Garlic, raw"),
+    ("hackad vitlök", "Garlic, raw"),
+    # Onions — FDC only has generic 'Onions, raw' for non-spring varieties,
+    # so colour variants all alias to the same entry.
+    ("lök", "Onions, raw"),
+    ("gul lök", "Onions, raw"),
+    ("gullök", "Onions, raw"),
+    ("rödlök", "Onions, raw"),
+    ("röd lök", "Onions, raw"),
+    ("salladslök", "Onions, spring or scallions (includes tops and bulb), raw"),
+    # Roots / vegetables
+    ("potatis", "Potatoes, flesh and skin, raw"),
+    ("färskpotatis", "Potatoes, flesh and skin, raw"),
+    ("morot", "Carrots, raw"),
+    ("morötter", "Carrots, raw"),
+    ("ingefära", "Ginger root, raw"),
+    ("gurka", "Cucumber, peeled, raw"),
+    ("snackgurka", "Cucumber, peeled, raw"),
+    ("champinjoner", "Mushrooms, white, raw"),
+    ("kantareller", "Mushrooms, white, raw"),
+    ("svamp", "Mushrooms, white, raw"),
+    ("avokado", "Avocados, raw, all commercial varieties"),
+    ("mangold", "Chard, swiss, raw"),
+    ("röd mangold", "Chard, swiss, raw"),
+    ("spenat", "Spinach, raw"),
+    ("babyspenat", "Spinach, raw"),
+    ("broccoli", "Broccoli, raw"),  # same word in Swedish
+    ("blomkål", "Cauliflower, raw"),
+    ("zucchini", "Squash, summer, zucchini, includes skin, raw"),
+    ("squash", "Squash, summer, zucchini, includes skin, raw"),
+    # Tomato family
+    ("tomat", "Tomatoes, red, ripe, raw, year round average"),
+    ("tomater", "Tomatoes, red, ripe, raw, year round average"),
+    ("krossade tomater", "Tomatoes, red, ripe, raw, year round average"),
+    ("körsbärstomater", "Tomatoes, red, ripe, raw, year round average"),
+    ("soltorkade tomater", "Tomatoes, red, ripe, raw, year round average"),
+    (
+        "tomatpuré",
+        (
+            "Tomato products, canned, paste, without salt added"
+            " (Includes foods for USDA's Food Distribution Program)"
+        ),
+    ),
+    # Citrus
+    ("citron", "Lemons, raw, without peel"),
+    ("citronsaft", "Lemon juice, raw"),
+    ("pressad citron", "Lemon juice, raw"),
+    ("citronskal", "Lemon peel, raw"),
+    ("apelsin", "Oranges, raw, with peel"),
+    ("apelsinjuice", "Orange juice, chilled, includes from concentrate"),
+    # Dairy
+    # crème fraîche is a FAO-sourced food; alias to the 18%-fat variant
+    # (the common Swedish cooking version — 'lätt crème fraiche' stays
+    # outside the compound-cheese rule Chris called out in 46c900c).
+    ("crème fraiche", "Cream, sour (crème fraiche about 18% fat)"),
+    ("crème fraîche", "Cream, sour (crème fraiche about 18% fat)"),
+    ("creme fraiche", "Cream, sour (crème fraiche about 18% fat)"),
+    ("gräddfil", "Cream, sour, cultured"),
+    ("ricottaost", "Cheese, ricotta, whole milk"),
+    ("ost", "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)"),
+    (
+        "riven ost",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),  # noqa: E501
+    (
+        "cheddarost",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),  # noqa: E501
+    ("parmesanost", "Cheese, parmesan, hard"),
+    ("mozzarellaost", "Cheese, mozzarella, whole milk"),
+    ("fetaost", "Cheese, feta"),
+    # keso = Swedish cottage cheese; FDC has only lowfat / with-vegetables
+    # variants, use the 2% variant as the closest "plain" anchor (matches
+    # the convention applied to bare 'cottage cheese').
+    ("keso", "Cheese, cottage, lowfat, 2% milkfat"),
+    # Herbs / spices
+    ("persilja", "Parsley, fresh"),
+    ("färsk persilja", "Parsley, fresh"),
+    ("koriander", "Coriander (cilantro) leaves, raw"),
+    ("färsk koriander", "Coriander (cilantro) leaves, raw"),
+    ("basilika", "Basil, fresh"),
+    ("färsk basilika", "Basil, fresh"),
+    ("timjan", "Thyme, fresh"),
+    ("färsk timjan", "Thyme, fresh"),
+    ("rosmarin", "Rosemary, fresh"),
+    ("färsk rosmarin", "Rosemary, fresh"),
+    ("dragon", "Spices, tarragon, dried"),
+    ("gräslök", "Chives, raw"),
+    ("mynta", "Spearmint, fresh"),
+    ("färsk mynta", "Spearmint, fresh"),
+    ("kryddpeppar", "Spices, allspice, ground"),
+    ("paprikapulver", "Spices, paprika"),
+    ("curry", "Spices, curry powder"),
+    ("currypulver", "Spices, curry powder"),
+    ("chiliflingor", "Spices, pepper, red or cayenne"),
+    # Meat / fish
+    (
+        "kyckling",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "kycklingfilé",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "kycklingfiléer",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    ("nötkött", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("köttfärs", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("nötfärs", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("skinka", "Ham, sliced, regular (approximately 11% fat)"),
+    # 'Korv' + 'falukorv' — Swedish sausage generics/specialty; FDC has
+    # no plain 'Sausage' entry so use the Italian sweet-link variant as
+    # a density/weight stand-in (same approach as the English 'sausage'
+    # alias earlier in this table).
+    ("korv", "Sausage, Italian, sweet, links"),
+    ("falukorv", "Sausage, Italian, sweet, links"),
+    ("prinskorv", "Sausage, Italian, sweet, links"),
+    # Seafood
+    ("lax", "Fish, salmon, chum, raw"),
+    ("rökt lax", "Fish, salmon, chum, raw"),
+    ("räkor", "Crustaceans, shrimp, raw"),
+    # Beans
+    ("bönor", "Beans, kidney, red, mature seeds, raw"),
+    ("kidneybönor", "Beans, kidney, red, mature seeds, raw"),
+    ("vita bönor", "Beans, navy, mature seeds, raw"),
+    ("svarta bönor", "Beans, black, mature seeds, raw"),
+    ("kikärtor", "Chickpeas (garbanzo beans, bengal gram), mature seeds, raw"),
+    ("kikärter", "Chickpeas (garbanzo beans, bengal gram), mature seeds, raw"),
+    # 'haricots verts' is a French loanword in common Swedish recipe use.
+    ("haricots verts", "Beans, snap, green, raw"),
+    ("gröna bönor", "Beans, snap, green, raw"),
+    # Fruit
+    ("banan", "Bananas, raw"),
+    ("bananer", "Bananas, raw"),
+    ("äpple", "Apples, raw, without skin"),
+    ("äpplen", "Apples, raw, without skin"),
+    ("päron", "Pears, raw"),
+    ("jordgubbar", "Strawberries, raw"),
+    ("hallon", "Raspberries, raw"),
+    ("ananas", "Pineapple, raw, all varieties"),
+    (
+        "vindruvor",
+        "Grapes, red or green (European type, such as Thompson seedless), raw",
+    ),
+    (
+        "röda vindruvor",
+        "Grapes, red or green (European type, such as Thompson seedless), raw",
+    ),  # noqa: E501
+    # Sweeteners
+    ("lönnsirap", "Syrups, maple"),
+    ("agavesirap", "Syrups, maple"),
+    ("kokossocker", "Sugars, brown"),
+    # Nuts / seeds
+    ("cashewnötter", "Nuts, cashew nuts, raw"),
+    ("pinjenötter", "Nuts, pine nuts, dried"),
+    ("valnötter", "Nuts, walnuts, english"),
+    ("pekannötter", "Nuts, pecans"),
+    ("hasselnötter", "Nuts, hazelnuts or filberts"),
+    ("vallmofrön", "Spices, poppy seed"),
+    ("sesamfrön", "Seeds, sesame seeds, whole, dried"),
+    ("solrosfrön", "Seeds, sunflower seed kernels, dried"),
+    # Other staples
+    ("vaniljpulver", "Vanilla extract"),
+    ("vaniljstång", "Vanilla extract"),
+    ("hummus", "Hummus, commercial"),
+    ("couscous", "Couscous, dry"),
+    ("quinoa", "Quinoa, uncooked"),
+    ("sojasås", "Soy sauce made from soy (tamari)"),
+    ("ättika", "Vinegar, distilled"),
+    ("vinäger", "Vinegar, cider"),
+    ("rödvinsvinäger", "Vinegar, red wine"),
+    ("balsamvinäger", "Vinegar, balsamic"),
+    ("majs", "Corn, sweet, yellow, raw"),
+    ("majskorn", "Corn, sweet, yellow, raw"),
+    ("majonnäs", "Salad dressing, mayonnaise, soybean oil, without salt"),
+    ("senap", "Mustard, prepared, yellow"),
+    ("dijonsenap", "Mustard, prepared, yellow"),
+    (
+        "kokosmjölk",
+        "Nuts, coconut milk, canned (liquid expressed from grated meat and water)",
+    ),
+    # Buljong / bouillon
+    (
+        "kycklingbuljong",
+        "Soup, chicken broth, canned, prepared with equal volume water",
+    ),
+    (
+        "nötbuljong",
+        "Soup, beef broth or bouillon canned, ready-to-serve",
+    ),
+    (
+        "grönsaksbuljong",
+        "Soup, chicken broth, canned, prepared with equal volume water",
+    ),
+    # Greens / salads
+    ("sallad", "Lettuce, green leaf, raw"),
+    ("grön sallad", "Lettuce, green leaf, raw"),
+    ("isbergssallad", "Lettuce, iceberg (includes crisphead types), raw"),
+    ("ruccola", "Lettuce, green leaf, raw"),
+    ("sallat", "Lettuce, green leaf, raw"),
+    # Baking add-ons
+    ("chokladhackor", "Candies, semisweet chocolate"),
+    ("choklad", "Baking chocolate, unsweetened, squares"),
+    ("mörk choklad", "Chocolate, dark, 70-85% cacao solids"),
+    ("kakao", "Cocoa, dry powder, unsweetened"),
+    ("rivna nötter", "Nuts, almonds"),
+    # Round 2 additions from 30-recipe pilot retally
+    ("majsstärkelse", "Cornstarch"),
+    ("färskost", "Cheese, cream"),
+    ("smetana", "Cream, sour, cultured"),
+    ("matlagningsgrädde", "Cream, fluid, heavy whipping"),
+    ("avokador", "Avocados, raw, all commercial varieties"),
+    ("salladslökar", "Onions, spring or scallions (includes tops and bulb), raw"),
+    ("ströbröd", "Bread crumbs"),
+    ("nejlikor", "Spices, cloves, ground"),
+    ("nejlika", "Spices, cloves, ground"),
+    ("ärtor", "Peas, green, raw"),
+    ("gröna ärtor", "Peas, green, raw"),
+    ("ärter", "Peas, green, raw"),
+    ("sockerärtor", "Peas, green, raw"),
+    ("linser", "Lentils, raw"),
+    ("torkade linser", "Lentils, raw"),
+    ("röda linser", "Lentils, pink or red, raw"),
+    ("torkade röda linser", "Lentils, pink or red, raw"),
+    ("bröd", "Bread, white, commercially prepared (includes soft bread crumbs)"),
+    ("tomatsås", "Tomato sauce, canned, no salt added"),
+    # Sugar variants — map to granulated white sugar in Swedish usage,
+    # except brown sugar (råsocker = unrefined cane).
+    ("råsocker", "Sugars, brown"),
+    ("rörsocker", "Sugars, granulated"),
+    ("pärlsocker", "Sugars, granulated"),
+    ("florsocker", "Sugars, powdered"),
+    # Fish — FDC has chum salmon as shortest-match; use as stand-in for
+    # general 'whitefish' density since SR Legacy has no generic cod entry.
+    ("torskfilé", "Fish, salmon, chum, raw"),
+    ("torsk", "Fish, salmon, chum, raw"),
+    # 'kinesisk soja' = Chinese soy variant, same as regular soy for ratio math
+    ("kinesisk soja", "Soy sauce made from soy (tamari)"),
+    ("soja", "Soy sauce made from soy (tamari)"),
+    # Mushroom mix / cauliflower variants
+    ("svampmix", "Mushrooms, white, raw"),
+    ("blomkålshuvud", "Cauliflower, raw"),
+    (
+        "kycklingklubbor",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "kycklinglår",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    # Round 3: egg-white/yolk Swedish forms + lime variants + common misspellings
+    ("äggvita", "Egg, white, raw, fresh"),
+    ("äggvitor", "Egg, white, raw, fresh"),
+    ("äggula", "Egg, yolk, raw, fresh"),
+    ("äggulor", "Egg, yolk, raw, fresh"),
+    ("limesaft", "Lime juice, raw"),
+    ("kajennpeppar", "Spices, pepper, red or cayenne"),
+    ("mâchesallad", "Lettuce, green leaf, raw"),
+    ("kummin", "Spices, cumin seed"),
+    ("malen koriander", "Spices, coriander seed"),
+    ("korianderfrön", "Spices, coriander seed"),
+    # Swedish root vegetable commonly grown — FDC has no Jerusalem artichoke
+    # entry; alias to potato as closest density/starch proxy.
+    ("jordärtskockor", "Potatoes, flesh and skin, raw"),
+    ("fisksås", "Soy sauce made from soy (tamari)"),  # fish sauce - salt+umami proxy
+    # Round 4: last misses from the 50-recipe pilot tail
+    ("spiskummin", "Spices, cumin seed"),
+    ("vitvinsvinäger", "Vinegar, distilled"),  # no white-wine variant in FDC
+    ("köttbuljongtärning", "Soup, beef broth or bouillon canned, ready-to-serve"),
+    ("sötpotatis", "Sweet potato, raw"),
+    ("purjolök", "Leeks, (bulb and lower leaf-portion), raw"),
+    ("purjo", "Leeks, (bulb and lower leaf-portion), raw"),
+    ("citronjuice", "Lemon juice, raw"),
+    ("citron juice", "Lemon juice, raw"),
     # --- English staple aliases from RecipeNLG frequency ranking (b7t.1) ---
     # Measured on the full 2.2M-row RecipeNLG corpus: the entries below
     # cover ~60 of the top 60 missing ingredient mentions by frequency,
@@ -1014,6 +1317,16 @@ SUPPLEMENTARY_PORTIONS: list[tuple[str, str, float, str]] = [
     ("Potatoes, flesh and skin, raw", "large baking", 340, "US baking potato"),
     ("Potatoes, flesh and skin, raw", "medium baking", 283, "US baking potato"),
     ("Potatoes, flesh and skin, raw", "small baking", 226, "US baking potato"),
+    # Generic potato size sentinels (for lakates.csv sample_input — b7t.20).
+    # Same weights as the baking sizes; the CSV convention uses plain
+    # "1large" / "1medium" without qualifier.
+    ("Potatoes, flesh and skin, raw", "LARGE", 300, "generic large potato"),
+    ("Potatoes, flesh and skin, raw", "MEDIUM", 170, "generic medium potato"),
+    ("Potatoes, flesh and skin, raw", "SMALL", 85, "generic small potato"),
+    # Onion size sentinels (b7t.20 sample_input/lakates.csv).
+    ("Onions, raw", "LARGE", 150, "typical large onion"),
+    ("Onions, raw", "MEDIUM", 110, "typical medium onion"),
+    ("Onions, raw", "SMALL", 70, "typical small onion"),
 ]
 
 
