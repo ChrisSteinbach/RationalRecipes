@@ -34,8 +34,9 @@ import math
 import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from rational_recipes.scrape.pipeline_merged import (
     MergedNormalizedRow,
@@ -206,6 +207,12 @@ class VariantSourceRow:
     ref: str
 
 
+ReviewStatus = Literal["accept", "drop", "annotate"]
+_VALID_REVIEW_STATUSES: frozenset[str] = frozenset(
+    {"accept", "drop", "annotate"}
+)
+
+
 @dataclass(frozen=True, slots=True)
 class ListFilters:
     """Filters accepted by ``CatalogDB.list_variants``."""
@@ -215,6 +222,10 @@ class ListFilters:
     title_search: str | None = None
     order_by: str = "n_recipes_desc"
     include_dropped: bool = False
+    # Narrow the result to variants still needing review (status IS NULL).
+    # Independent of ``include_dropped``: ``pending_only`` implies NULL, so
+    # dropped rows are excluded regardless.
+    pending_only: bool = False
 
 
 _ORDER_BY_SQL = {
@@ -479,6 +490,37 @@ class CatalogDB:
                 (variant_id, ordinal, source_type, title, ref),
             )
 
+    def update_review_status(
+        self,
+        variant_id: str,
+        status: ReviewStatus | None,
+        note: str | None = None,
+    ) -> None:
+        """Persist a reviewer decision for a single variant (bead vwt.9).
+
+        Status ``None`` clears the decision (reverts to pending). Each
+        call runs a single UPDATE in its own transaction so an abandoned
+        review session never leaves the DB half-written. Timestamps
+        ``reviewed_at`` in ISO-8601 UTC; writes ``None`` when clearing.
+        """
+        if status is not None and status not in _VALID_REVIEW_STATUSES:
+            raise ValueError(
+                f"invalid review status {status!r}; expected one of "
+                f"{sorted(_VALID_REVIEW_STATUSES)} or None"
+            )
+        reviewed_at = (
+            datetime.now(UTC).isoformat() if status is not None else None
+        )
+        with self._conn:
+            self._conn.execute(
+                """
+                UPDATE variants
+                   SET review_status = ?, review_note = ?, reviewed_at = ?
+                 WHERE variant_id = ?
+                """,
+                (status, note, reviewed_at, variant_id),
+            )
+
     def record_l1_run(
         self,
         l1_key: str,
@@ -535,7 +577,9 @@ class CatalogDB:
         if f.title_search:
             where.append("LOWER(normalized_title) LIKE ?")
             params.append(f"%{f.title_search.lower()}%")
-        if not f.include_dropped:
+        if f.pending_only:
+            where.append("review_status IS NULL")
+        elif not f.include_dropped:
             where.append("(review_status IS NULL OR review_status != 'drop')")
 
         sql = "SELECT * FROM variants"

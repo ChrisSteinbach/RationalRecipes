@@ -353,6 +353,67 @@ class TestUpsertRecipe:
         assert parsed[0] == 0
 
 
+class TestUpdateReviewStatus:
+    """Bead vwt.9: CLI review persistence via UPDATE."""
+
+    def test_set_drop_hides_from_default_list(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+
+        db.update_review_status(v.variant_id, "drop", note="category bleed")
+
+        row = db.connection.execute(
+            "SELECT review_status, review_note, reviewed_at"
+            " FROM variants WHERE variant_id = ?",
+            (v.variant_id,),
+        ).fetchone()
+        assert row[0] == "drop"
+        assert row[1] == "category bleed"
+        assert row[2] is not None and row[2].endswith("+00:00")
+
+        # Default list filter hides the dropped variant.
+        assert db.list_variants() == []
+        assert len(db.list_variants(ListFilters(include_dropped=True))) == 1
+
+    def test_accept_keeps_variant_visible(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        db.update_review_status(v.variant_id, "accept")
+        assert len(db.list_variants()) == 1
+
+    def test_pending_only_filter_hides_reviewed(self) -> None:
+        db = CatalogDB.in_memory()
+        a = _variant(n_rows=3, title="pannkakor")
+        b = _variant(n_rows=3, title="crepes")
+        db.upsert_variant(a, l1_key="pannkakor", base_ingredient="flour")
+        db.upsert_variant(b, l1_key="crepes", base_ingredient="flour")
+        db.update_review_status(a.variant_id, "accept")
+        pending = db.list_variants(ListFilters(pending_only=True))
+        assert {v.normalized_title for v in pending} == {"crepes"}
+
+    def test_status_none_clears_decision(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        db.update_review_status(v.variant_id, "drop", note="temp")
+        db.update_review_status(v.variant_id, None)
+        row = db.connection.execute(
+            "SELECT review_status, review_note, reviewed_at"
+            " FROM variants WHERE variant_id = ?",
+            (v.variant_id,),
+        ).fetchone()
+        assert row == (None, None, None)
+
+    def test_invalid_status_rejected(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        with pytest.raises(ValueError, match="invalid review status"):
+            db.update_review_status(v.variant_id, "bogus")  # type: ignore[arg-type]
+
+
 class TestVariantSources:
     def test_add_and_retrieve(self) -> None:
         db = CatalogDB.in_memory()
