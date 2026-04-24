@@ -686,7 +686,18 @@ Productionize the review UI if it's getting heavy use.
    Bead `3cu` folded the pannkakor-scope misses (saffron, lingonberry,
    margarine, vanilla sugar, almond flour, Swedish syrup, plus Swedish
    core vocabulary) into the DB. Broader frequency-ranked additions
-   tracked in `RationalRecipes-b7t.1`.
+   landed in `RationalRecipes-b7t.1`: streaming the full RecipeNLG
+   corpus via `scripts/tally_recipenlg_misses.py` (NER column as a
+   pre-extracted name source, so no LLM calls needed) drove the
+   English miss rate from 63.9% → 26.0% on 2.2M rows / 18.9M ingredient
+   mentions over four rounds of synonym additions. The clean-recipe
+   fraction (recipes where every NER name resolves) rose from 1.3% →
+   14.6% — a 11× improvement that's load-bearing for the pipeline's
+   "skip or keep" decision on each RecipeNLG row. Non-English
+   equivalents (`b7t.20` SV, `bie` DE, `sdk` FR, `asq` RU, `9oa` IT,
+   `lw8` JA) each need per-language WDC LLM extraction (infrastructure
+   in `scripts/tally_wdc_misses.py`) plus native-speaker review for
+   the classification step.
 
 ## Dependencies on existing code
 

@@ -171,6 +171,22 @@ scripts/download_data.sh     # fetch raw data to data/fdc/ and data/fao/
 python3 scripts/build_db.py  # build ingredients.db (requires openpyxl)
 ```
 
+To measure coverage against a corpus:
+
+```bash
+# whole-RecipeNLG tally (~70s, no LLM — uses the NER column)
+python3 scripts/tally_recipenlg_misses.py --top 30
+
+# per-language WDC tally (slow — runs the LLM extractor, cached by URL)
+python3 scripts/tally_wdc_misses.py --label swedish \
+    --hosts ica.se,tasteline.com --limit 200 --top 40
+```
+
+On the full 2.2M-row RecipeNLG corpus the English miss rate sits at ~26%
+after bead `RationalRecipes-b7t.1` (was 64% before the frequency-ranked
+synonym additions). Per-language misses on WDC are tracked in beads
+`b7t.20` (Swedish) and siblings for DE/FR/RU/IT/JA.
+
 ## Development
 
 ```bash
