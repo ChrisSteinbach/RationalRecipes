@@ -413,6 +413,14 @@ SUPPLEMENTARY: list[dict[str, str | float | list[str]]] = [
             "molasses in character; density typical for heavy food syrups"
         ),
     },
+    # 37,512 mentions in the RecipeNLG corpus (bead b7t.1) — not in FDC
+    # SR Legacy. Density is loose crumbs packed into a measuring cup.
+    {
+        "name": "Bread crumbs",
+        "synonyms": ["bread crumbs", "breadcrumbs", "dry bread crumbs"],
+        "density": 0.32,
+        "source_note": "dry bread crumbs, loosely packed bulk density",
+    },
 ]
 
 # Synonym aliases: map common recipe names to FDC food descriptions
@@ -566,6 +574,427 @@ FDC_SYNONYM_ALIASES: list[tuple[str, str]] = [
     ("flask", "Pork, cured, bacon, unprepared"),
     ("sidfläsk", "Pork, cured, bacon, unprepared"),
     ("sidflask", "Pork, cured, bacon, unprepared"),
+    # --- English staple aliases from RecipeNLG frequency ranking (b7t.1) ---
+    # Measured on the full 2.2M-row RecipeNLG corpus: the entries below
+    # cover ~60 of the top 60 missing ingredient mentions by frequency,
+    # each concentrated around clear FDC SR Legacy targets. See
+    # scripts/tally_recipenlg_misses.py for the reproducible measurement.
+    #
+    # Ambiguity resolution conventions:
+    #   - 'pepper' alone → black pepper (US/UK recipe convention; "bell
+    #     pepper" is always qualified in cooking prose).
+    #   - 'cheese' alone → cheddar (most common unqualified use in
+    #     recipes.com-style data).
+    #   - 'oil' alone → vegetable (soybean) oil (most common neutral
+    #     cooking oil in the corpus).
+    #   - 'vanilla' alone → vanilla extract (recipe context, not the
+    #     sweetener 'vanilla sugar' already aliased via vaniljsocker).
+    ("garlic", "Garlic, raw"),
+    ("clove garlic", "Garlic, raw"),
+    ("cloves garlic", "Garlic, raw"),
+    ("garlic clove", "Garlic, raw"),
+    ("garlic cloves", "Garlic, raw"),
+    ("vanilla", "Vanilla extract"),
+    ("pure vanilla extract", "Vanilla extract"),
+    ("olive oil", "Oil, olive, salad or cooking"),
+    ("extra virgin olive oil", "Oil, olive, salad or cooking"),
+    ("virgin olive oil", "Oil, olive, salad or cooking"),
+    ("pepper", "Spices, pepper, black"),
+    ("black pepper", "Spices, pepper, black"),
+    ("ground black pepper", "Spices, pepper, black"),
+    ("freshly ground black pepper", "Spices, pepper, black"),
+    ("cayenne pepper", "Spices, pepper, red or cayenne"),
+    ("cayenne", "Spices, pepper, red or cayenne"),
+    ("tomato", "Tomatoes, red, ripe, raw, year round average"),
+    ("tomatoes", "Tomatoes, red, ripe, raw, year round average"),
+    ("ripe tomatoes", "Tomatoes, red, ripe, raw, year round average"),
+    ("lemon juice", "Lemon juice, raw"),
+    ("fresh lemon juice", "Lemon juice, raw"),
+    ("cream cheese", "Cheese, cream"),
+    ("celery", "Celery, raw"),
+    ("celery stalks", "Celery, raw"),
+    ("celery stalk", "Celery, raw"),
+    # Chicken entries map to the boneless/skinless breast variant — the
+    # most common form in recipes. The bare 'chicken' alias defaults to
+    # the same since full-chicken roasting recipes are a minority of
+    # mentions.
+    (
+        "chicken",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "chicken breast",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "chicken breasts",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "boneless chicken breast",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "cheddar cheese",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),
+    (
+        "cheddar",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),
+    (
+        "sharp cheddar",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),
+    (
+        "grated cheddar",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),
+    (
+        "cheese",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),
+    ("parsley", "Parsley, fresh"),
+    ("fresh parsley", "Parsley, fresh"),
+    ("chopped parsley", "Parsley, fresh"),
+    ("vegetable oil", "Oil, vegetable, soybean, refined"),
+    ("oil", "Oil, vegetable, soybean, refined"),
+    ("canola oil", "Oil, vegetable, soybean, refined"),
+    (
+        "mayonnaise",
+        "Salad dressing, mayonnaise, soybean oil, without salt",
+    ),
+    ("mayo", "Salad dressing, mayonnaise, soybean oil, without salt"),
+    ("parmesan cheese", "Cheese, parmesan, hard"),
+    ("parmesan", "Cheese, parmesan, hard"),
+    ("pecans", "Nuts, pecans"),
+    ("chopped pecans", "Nuts, pecans"),
+    ("kosher salt", "Salt, table"),
+    ("sea salt", "Salt, table"),
+    ("carrot", "Carrots, raw"),
+    ("carrots", "Carrots, raw"),
+    ("shredded carrots", "Carrots, raw"),
+    ("soy sauce", "Soy sauce made from soy (tamari)"),
+    ("pineapple", "Pineapple, raw, all varieties"),
+    ("crushed pineapple", "Pineapple, raw, all varieties"),
+    ("thyme", "Thyme, fresh"),
+    ("fresh thyme", "Thyme, fresh"),
+    ("dried thyme", "Spices, thyme, dried"),
+    (
+        "chicken broth",
+        "Soup, chicken broth, canned, prepared with equal volume water",
+    ),
+    (
+        "chicken stock",
+        "Soup, chicken broth, canned, prepared with equal volume water",
+    ),
+    ("oregano", "Spices, oregano, dried"),
+    ("dried oregano", "Spices, oregano, dried"),
+    ("ground beef", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("lean ground beef", "Beef, ground, 90% lean meat / 10% fat, raw"),
+    ("mustard", "Mustard, prepared, yellow"),
+    ("yellow mustard", "Mustard, prepared, yellow"),
+    ("dijon mustard", "Mustard, prepared, yellow"),
+    ("prepared mustard", "Mustard, prepared, yellow"),
+    ("dry mustard", "Spices, mustard seed, ground"),
+    ("mustard powder", "Spices, mustard seed, ground"),
+    ("unsalted butter", "Butter, without salt"),
+    ("sweet butter", "Butter, without salt"),
+    ("worcestershire sauce", "Sauce, worcestershire"),
+    ("mushrooms", "Mushrooms, white, raw"),
+    ("white mushrooms", "Mushrooms, white, raw"),
+    ("paprika", "Spices, paprika"),
+    ("smoked paprika", "Spices, paprika"),
+    ("green pepper", "Peppers, sweet, green, raw"),
+    ("green bell pepper", "Peppers, sweet, green, raw"),
+    ("bell pepper", "Peppers, sweet, green, raw"),
+    ("red pepper", "Peppers, sweet, red, raw"),
+    ("red bell pepper", "Peppers, sweet, red, raw"),
+    ("vinegar", "Vinegar, cider"),
+    ("apple cider vinegar", "Vinegar, cider"),
+    ("cider vinegar", "Vinegar, cider"),
+    ("white vinegar", "Vinegar, distilled"),
+    ("distilled vinegar", "Vinegar, distilled"),
+    ("scallion", "Onions, spring or scallions (includes tops and bulb), raw"),
+    ("scallions", "Onions, spring or scallions (includes tops and bulb), raw"),
+    (
+        "green onion",
+        "Onions, spring or scallions (includes tops and bulb), raw",
+    ),
+    (
+        "green onions",
+        "Onions, spring or scallions (includes tops and bulb), raw",
+    ),
+    # 'spring onions' collides with British/Australian usage for the same
+    # plant — alias identically.
+    (
+        "spring onion",
+        "Onions, spring or scallions (includes tops and bulb), raw",
+    ),
+    (
+        "spring onions",
+        "Onions, spring or scallions (includes tops and bulb), raw",
+    ),
+    ("lemon", "Lemons, raw, without peel"),
+    ("lemons", "Lemons, raw, without peel"),
+    ("shortening", "Shortening, vegetable, household, composite"),
+    ("walnuts", "Nuts, walnuts, english"),
+    ("chopped walnuts", "Nuts, walnuts, english"),
+    ("basil", "Basil, fresh"),
+    ("fresh basil", "Basil, fresh"),
+    ("dried basil", "Spices, basil, dried"),
+    ("chili powder", "Spices, chili powder"),
+    # Red onion is not in FDC SR Legacy as a separate entry — alias to
+    # generic onion. Accept that density/portion for red/yellow/white
+    # varieties is indistinguishable at recipe precision.
+    ("red onion", "Onions, raw"),
+    ("red onions", "Onions, raw"),
+    ("yellow onion", "Onions, raw"),
+    ("yellow onions", "Onions, raw"),
+    ("white onion", "Onions, raw"),
+    ("white onions", "Onions, raw"),
+    ("sweet onion", "Onions, raw"),
+    ("chopped onion", "Onions, raw"),
+    ("diced onion", "Onions, raw"),
+    ("ginger", "Ginger root, raw"),
+    ("fresh ginger", "Ginger root, raw"),
+    ("ginger root", "Ginger root, raw"),
+    ("white sugar", "Sugars, granulated"),
+    ("tomato sauce", "Tomato sauce, canned, no salt added"),
+    ("white wine", "Alcoholic beverage, wine, table, white"),
+    ("red wine", "Alcoholic beverage, wine, table, red"),
+    ("cooking wine", "Alcoholic beverage, wine, table, white"),
+    ("dry white wine", "Alcoholic beverage, wine, table, white"),
+    ("dry red wine", "Alcoholic beverage, wine, table, red"),
+    ("mozzarella cheese", "Cheese, mozzarella, whole milk"),
+    ("mozzarella", "Cheese, mozzarella, whole milk"),
+    ("shredded mozzarella", "Cheese, mozzarella, whole milk"),
+    ("coconut", "Nuts, coconut meat, raw"),
+    ("shredded coconut", "Nuts, coconut meat, raw"),
+    ("flaked coconut", "Nuts, coconut meat, raw"),
+    ("chocolate chips", "Candies, semisweet chocolate"),
+    ("chocolate morsels", "Candies, semisweet chocolate"),
+    ("semisweet chocolate chips", "Candies, semisweet chocolate"),
+    ("zucchini", "Squash, summer, zucchini, includes skin, raw"),
+    ("lime juice", "Lime juice, raw"),
+    ("fresh lime juice", "Lime juice, raw"),
+    ("peanut butter", "Peanut butter, smooth style, without salt"),
+    ("smooth peanut butter", "Peanut butter, smooth style, without salt"),
+    ("shrimp", "Crustaceans, shrimp, raw"),
+    # --- Round 2 (b7t.1): next 20 high-frequency misses after the first
+    # pass, measured on the full corpus with round-1 aliases live.
+    ("all-purpose", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("soda", "Leavening agents, baking soda"),
+    ("cilantro", "Coriander (cilantro) leaves, raw"),
+    ("fresh cilantro", "Coriander (cilantro) leaves, raw"),
+    ("chopped cilantro", "Coriander (cilantro) leaves, raw"),
+    ("coriander leaves", "Coriander (cilantro) leaves, raw"),
+    ("cumin", "Spices, cumin seed"),
+    ("ground cumin", "Spices, cumin seed"),
+    ("cumin seed", "Spices, cumin seed"),
+    ("boiling water", "Beverages, water, tap, drinking"),
+    ("cold water", "Beverages, water, tap, drinking"),
+    ("warm water", "Beverages, water, tap, drinking"),
+    ("hot water", "Beverages, water, tap, drinking"),
+    # Egg plurals (singulars already aliased above — these are the
+    # common NER form).
+    ("egg yolks", "Egg, yolk, raw, fresh"),
+    ("yolks", "Egg, yolk, raw, fresh"),
+    ("egg whites", "Egg, white, raw, fresh"),
+    ("whites", "Egg, white, raw, fresh"),
+    # Hyphenated form is separate from "extra virgin olive oil".
+    ("extra-virgin olive oil", "Oil, olive, salad or cooking"),
+    ("banana", "Bananas, raw"),
+    ("bananas", "Bananas, raw"),
+    ("ripe banana", "Bananas, raw"),
+    ("ripe bananas", "Bananas, raw"),
+    (
+        "tomato paste",
+        (
+            "Tomato products, canned, paste, without salt added"
+            " (Includes foods for USDA's Food Distribution Program)"
+        ),
+    ),
+    ("chocolate", "Baking chocolate, unsweetened, squares"),
+    ("unsweetened chocolate", "Baking chocolate, unsweetened, squares"),
+    ("corn", "Corn, sweet, yellow, raw"),
+    ("frozen corn", "Corn, sweet, yellow, raw"),
+    ("ketchup", "Catsup"),
+    ("tomato ketchup", "Catsup"),
+    # 'oleo' is an older American name for margarine; common in the
+    # RecipeNLG corpus which skews toward older regional cookbook sources.
+    (
+        "oleo",
+        (
+            "Margarine, 80% fat, stick, includes regular and hydrogenated"
+            " corn and soybean oils"
+        ),
+    ),
+    ("rosemary", "Rosemary, fresh"),
+    ("fresh rosemary", "Rosemary, fresh"),
+    ("dried rosemary", "Spices, rosemary, dried"),
+    ("bay leaf", "Spices, bay leaf"),
+    ("bay leaves", "Spices, bay leaf"),
+    ("sesame oil", "Oil, sesame, salad or cooking"),
+    ("toasted sesame oil", "Oil, sesame, salad or cooking"),
+    ("red wine vinegar", "Vinegar, red wine"),
+    ("cabbage", "Cabbage, raw"),
+    ("shredded cabbage", "Cabbage, raw"),
+    ("garlic powder", "Spices, garlic powder"),
+    ("marshmallows", "Candies, marshmallows"),
+    ("mini marshmallows", "Candies, marshmallows"),
+    (
+        "cream of mushroom soup",
+        "Soup, cream of mushroom, canned, condensed",
+    ),
+    (
+        "cream of chicken soup",
+        "Soup, cream of chicken, canned, condensed",
+    ),
+    ("oats", "Oats (Includes foods for USDA's Food Distribution Program)"),
+    (
+        "rolled oats",
+        "Oats (Includes foods for USDA's Food Distribution Program)",
+    ),
+    ("oatmeal", "Oats (Includes foods for USDA's Food Distribution Program)"),
+    (
+        "old-fashioned oats",
+        "Oats (Includes foods for USDA's Food Distribution Program)",
+    ),
+    ("sesame seeds", "Seeds, sesame seeds, whole, dried"),
+    ("sesame seed", "Seeds, sesame seeds, whole, dried"),
+    ("salmon", "Fish, salmon, chum, raw"),
+    ("dill", "Dill weed, fresh"),
+    ("fresh dill", "Dill weed, fresh"),
+    ("dried dill", "Spices, dill weed, dried"),
+    ("dill weed", "Dill weed, fresh"),
+    # --- Round 3 (b7t.1): long-tail staples, each 0.3-0.4% of corpus
+    # mentions; diminishing returns from here.
+    ("broccoli", "Broccoli, raw"),
+    ("broccoli florets", "Broccoli, raw"),
+    ("beans", "Beans, kidney, red, mature seeds, raw"),
+    ("kidney beans", "Beans, kidney, red, mature seeds, raw"),
+    ("red kidney beans", "Beans, kidney, red, mature seeds, raw"),
+    ("navy beans", "Beans, navy, mature seeds, raw"),
+    ("black beans", "Beans, black, mature seeds, raw"),
+    ("pinto beans", "Beans, pinto, mature seeds, raw"),
+    ("green beans", "Beans, snap, green, raw"),
+    ("shallot", "Shallots, raw"),
+    ("shallots", "Shallots, raw"),
+    ("italian sausage", "Sausage, Italian, sweet, links"),
+    ("sausage", "Sausage, Italian, sweet, links"),
+    ("balsamic vinegar", "Vinegar, balsamic"),
+    ("cucumber", "Cucumber, peeled, raw"),
+    ("cucumbers", "Cucumber, peeled, raw"),
+    (
+        "ham",
+        "Ham, sliced, regular (approximately 11% fat)",
+    ),
+    ("diced ham", "Ham, sliced, regular (approximately 11% fat)"),
+    ("condensed milk", "Milk, canned, condensed, sweetened"),
+    ("sweetened condensed milk", "Milk, canned, condensed, sweetened"),
+    # Garlic salt is predominantly salt (~75-80%) plus garlic powder —
+    # alias to table salt preserves density/weight accurately for the
+    # bulk component; the small garlic fraction is noise at recipe scale.
+    ("garlic salt", "Salt, table"),
+    ("lime", "Limes, raw"),
+    ("limes", "Limes, raw"),
+    ("maple syrup", "Syrups, maple"),
+    ("pure maple syrup", "Syrups, maple"),
+    ("hamburger", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("hamburger meat", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("lemon zest", "Lemon peel, raw"),
+    ("lemon peel", "Lemon peel, raw"),
+    ("grated lemon peel", "Lemon peel, raw"),
+    ("curry powder", "Spices, curry powder"),
+    # Bare 'beef' defaults to ground 80/20 since that's the recipe
+    # context — FDC's 'Beef, cured, dried' shortest-match is jerky,
+    # the wrong semantic.
+    ("beef", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    (
+        "crackers",
+        "Crackers, saltines (includes oyster, soda, soup)",
+    ),
+    ("saltines", "Crackers, saltines (includes oyster, soda, soup)"),
+    ("strawberries", "Strawberries, raw"),
+    ("strawberry", "Strawberries, raw"),
+    ("cornmeal", "Cornmeal, whole-grain, yellow"),
+    ("yellow cornmeal", "Cornmeal, whole-grain, yellow"),
+    ("jalapeno", "Peppers, hot chili, green, raw"),
+    ("jalapeno pepper", "Peppers, hot chili, green, raw"),
+    ("jalapenos", "Peppers, hot chili, green, raw"),
+    ("spinach", "Spinach, raw"),
+    ("fresh spinach", "Spinach, raw"),
+    ("frozen spinach", "Spinach, raw"),
+    ("raisins", "Raisins, seeded"),
+    ("almonds", "Nuts, almonds"),
+    ("sliced almonds", "Nuts, almonds"),
+    ("slivered almonds", "Nuts, almonds"),
+    ("blueberries", "Blueberries, raw"),
+    ("yeast", "Leavening agents, yeast, baker's, active dry"),
+    ("active dry yeast", "Leavening agents, yeast, baker's, active dry"),
+    ("instant yeast", "Leavening agents, yeast, baker's, active dry"),
+    ("dry yeast", "Leavening agents, yeast, baker's, active dry"),
+    ("beef broth", "Soup, beef broth or bouillon canned, ready-to-serve"),
+    ("beef stock", "Soup, beef broth or bouillon canned, ready-to-serve"),
+    ("crumbled bacon", "Pork, cured, bacon, unprepared"),
+    ("bacon strips", "Pork, cured, bacon, unprepared"),
+    ("chives", "Chives, raw"),
+    ("fresh chives", "Chives, raw"),
+    # Celery stalks (plural, with 'stalks') shows up as a frequent
+    # compound form — singularize to celery.
+    ("stalks celery", "Celery, raw"),
+    # --- Round 4 (b7t.1): last meaningful round; each item ~0.3% of
+    # mentions, after which the long tail drops below 0.3%.
+    ("whole wheat flour", "Wheat flour, whole-grain, soft wheat"),
+    ("whole-wheat flour", "Wheat flour, whole-grain, soft wheat"),
+    ("wheat flour", "Wheat flour, whole-grain, soft wheat"),
+    ("onion powder", "Spices, onion powder"),
+    ("swiss cheese", "Cheese, swiss"),
+    ("black olives", "Olives, ripe, canned (small-extra large)"),
+    ("olives", "Olives, ripe, canned (small-extra large)"),
+    ("ripe olives", "Olives, ripe, canned (small-extra large)"),
+    ("light brown sugar", "Sugars, brown"),
+    ("dark brown sugar", "Sugars, brown"),
+    ("packed brown sugar", "Sugars, brown"),
+    ("cranberries", "Cranberries, raw"),
+    ("fresh cranberries", "Cranberries, raw"),
+    ("dried cranberries", "Cranberries, raw"),
+    (
+        "pineapple juice",
+        "Pineapple juice, canned or bottled, unsweetened, with added ascorbic acid",
+    ),
+    ("orange", "Oranges, raw, with peel"),
+    ("oranges", "Oranges, raw, with peel"),
+    ("orange juice", "Orange juice, chilled, includes from concentrate"),
+    ("fresh orange juice", "Orange juice, chilled, includes from concentrate"),
+    # Cottage cheese — the closest 'plain' FDC entry is the low-fat
+    # variant; the full-fat basic form isn't separately in SR Legacy.
+    # Pick 2% as the typical "what a recipe means" anchor.
+    ("cottage cheese", "Cheese, cottage, lowfat, 2% milkfat"),
+    ("mint", "Spearmint, fresh"),
+    ("fresh mint", "Spearmint, fresh"),
+    ("peppermint", "Spearmint, fresh"),
+    ("pasta", "Pasta, dry, enriched"),
+    ("spaghetti", "Pasta, dry, enriched"),
+    ("penne", "Pasta, dry, enriched"),
+    ("noodles", "Pasta, dry, enriched"),
+    ("avocado", "Avocados, raw, all commercial varieties"),
+    ("avocados", "Avocados, raw, all commercial varieties"),
+    ("pumpkin", "Pumpkin, raw"),
+    ("pumpkin puree", "Pumpkin, raw"),
+    ("canned pumpkin", "Pumpkin, raw"),
+    ("chickpeas", "Chickpeas (garbanzo beans, bengal gram), mature seeds, raw"),
+    (
+        "garbanzo beans",
+        "Chickpeas (garbanzo beans, bengal gram), mature seeds, raw",
+    ),
+    ("apples", "Apples, raw, without skin"),
+    ("apple slices", "Apples, raw, without skin"),
+    ("diced apples", "Apples, raw, without skin"),
+    ("feta cheese", "Cheese, feta"),
+    ("feta", "Cheese, feta"),
+    ("crumbled feta", "Cheese, feta"),
 ]
 
 # Supplementary portion data (whole-unit weights not in FDC)
