@@ -1,51 +1,70 @@
-// Catalog list view: browse / search / category-filter the CuratedRecipeCatalog.
+// Catalog list view: browse / search / category- and sample-size-filter.
 //
 // Pure DOM — no framework. Render is idempotent: the caller owns a
 // container element and calls render(state) after any state change.
+// Filters compile to SQL in main.ts via CatalogRepo.listRecipes (vwt.4);
+// this view receives the pre-filtered list and only paints it.
 
-import {
-  type Catalog,
-  type CuratedRecipe,
-  categoriesOf,
-  filterRecipes,
-} from "./catalog.ts";
+import { type Catalog, type CuratedRecipe, categoriesOf } from "./catalog.ts";
+import type { CatalogOrderBy } from "./catalog_repo.ts";
 
 export interface CatalogViewState {
   query: string;
   category: string;
+  minSampleSize: number;
+  orderBy: CatalogOrderBy;
 }
 
 export interface CatalogViewCallbacks {
   onQueryChange(q: string): void;
   onCategoryChange(c: string): void;
+  onMinSampleSizeChange(n: number): void;
+  onOrderByChange(o: CatalogOrderBy): void;
   onRecipeSelect(id: string): void;
 }
 
 const ALL_CATEGORIES = "all";
 
+const SAMPLE_SIZE_TIERS: ReadonlyArray<{ label: string; value: number }> = [
+  { label: "All", value: 0 },
+  { label: "≥3", value: 3 },
+  { label: "≥10", value: 10 },
+  { label: "≥30", value: 30 },
+];
+
+const ORDER_BY_OPTIONS: ReadonlyArray<{ label: string; value: CatalogOrderBy }> = [
+  { label: "Sample size", value: "sample_size" },
+  { label: "Alphabetical", value: "title" },
+];
+
 export function initialCatalogState(): CatalogViewState {
-  return { query: "", category: ALL_CATEGORIES };
+  return {
+    query: "",
+    category: ALL_CATEGORIES,
+    minSampleSize: 0,
+    orderBy: "sample_size",
+  };
 }
 
 export function renderCatalog(
   container: HTMLElement,
   catalog: Catalog,
+  visibleRecipes: CuratedRecipe[],
   state: CatalogViewState,
   callbacks: CatalogViewCallbacks,
 ): void {
   container.replaceChildren();
   container.appendChild(renderToolbar(catalog, state, callbacks));
 
-  const filtered = filterRecipes(catalog, state.query, state.category);
   const countLine = document.createElement("p");
   countLine.className = "catalog-count";
-  countLine.textContent = `${filtered.length} of ${catalog.recipes.length} recipes`;
+  countLine.textContent = `${visibleRecipes.length} of ${catalog.recipes.length} recipes`;
   container.appendChild(countLine);
 
   const release = renderReleaseBadge(catalog);
   if (release) container.appendChild(release);
 
-  if (filtered.length === 0) {
+  if (visibleRecipes.length === 0) {
     const empty = document.createElement("p");
     empty.className = "catalog-empty";
     empty.textContent = "No recipes match the current filters.";
@@ -55,7 +74,7 @@ export function renderCatalog(
 
   const list = document.createElement("ul");
   list.className = "catalog-list";
-  for (const recipe of filtered) {
+  for (const recipe of visibleRecipes) {
     list.appendChild(renderRecipeCard(recipe, callbacks));
   }
   container.appendChild(list);
@@ -101,7 +120,43 @@ function renderToolbar(
   select.addEventListener("change", () => callbacks.onCategoryChange(select.value));
   categoryLabel.append(catText, select);
 
-  toolbar.append(searchLabel, categoryLabel);
+  const sampleLabel = document.createElement("label");
+  sampleLabel.className = "toolbar-field";
+  const sampleText = document.createElement("span");
+  sampleText.textContent = "Min sample size";
+  const sampleSelect = document.createElement("select");
+  sampleSelect.className = "catalog-min-sample";
+  for (const tier of SAMPLE_SIZE_TIERS) {
+    const opt = document.createElement("option");
+    opt.value = String(tier.value);
+    opt.textContent = tier.label;
+    sampleSelect.appendChild(opt);
+  }
+  sampleSelect.value = String(state.minSampleSize);
+  sampleSelect.addEventListener("change", () =>
+    callbacks.onMinSampleSizeChange(Number(sampleSelect.value)),
+  );
+  sampleLabel.append(sampleText, sampleSelect);
+
+  const orderLabel = document.createElement("label");
+  orderLabel.className = "toolbar-field";
+  const orderText = document.createElement("span");
+  orderText.textContent = "Sort by";
+  const orderSelect = document.createElement("select");
+  orderSelect.className = "catalog-order-by";
+  for (const option of ORDER_BY_OPTIONS) {
+    const opt = document.createElement("option");
+    opt.value = option.value;
+    opt.textContent = option.label;
+    orderSelect.appendChild(opt);
+  }
+  orderSelect.value = state.orderBy;
+  orderSelect.addEventListener("change", () =>
+    callbacks.onOrderByChange(orderSelect.value as CatalogOrderBy),
+  );
+  orderLabel.append(orderText, orderSelect);
+
+  toolbar.append(searchLabel, categoryLabel, sampleLabel, orderLabel);
   return toolbar;
 }
 
