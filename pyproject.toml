@@ -23,8 +23,6 @@ dev = [
 ]
 
 [project.scripts]
-rr-stats = "rational_recipes.stats_cli:run"
-rr-diff = "rational_recipes.diff_cli:run"
 rr-discover = "rational_recipes.discover_cli:run"
 
 [tool.setuptools.packages.find]
@@ -52,8 +50,6 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/test_diff.py" = ["E501"]
-"tests/test_stats.py" = ["E501"]
 "src/rational_recipes/scrape/parse.py" = ["E501"]  # LLM prompt strings
 
 [tool.mypy]
