@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Synced from ../artifacts/curated_recipes.json by scripts/sync-catalog.mjs
+public/curated_recipes.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -4,8 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "sync-catalog": "node scripts/sync-catalog.mjs",
+    "dev": "npm run sync-catalog && vite",
+    "build": "npm run sync-catalog && tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

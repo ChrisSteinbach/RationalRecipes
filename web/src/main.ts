@@ -1,75 +1,118 @@
-import { loadIngredientsDb } from "./db.ts";
+// App shell: load the catalog, route between catalog list and detail.
+//
+// Route state lives in the URL hash so refreshing preserves the view
+// and back/forward navigation works. Hash format:
+//   #/              → catalog
+//   #/recipe/<id>   → detail
 
-type Counts = {
-  foods: number;
-  synonyms: number;
-  densities: number;
-  portions: number;
-};
+import "./styles.css";
+import { type Catalog, type CuratedRecipe, loadCatalog } from "./catalog.ts";
+import {
+  type CatalogViewState,
+  initialCatalogState,
+  renderCatalog,
+} from "./catalog_view.ts";
+import {
+  type DetailViewState,
+  initialDetailState,
+  renderDetail,
+} from "./detail_view.ts";
 
-function countRows(db: import("sql.js").Database, table: string): number {
-  const result = db.exec(`SELECT COUNT(*) FROM ${table}`);
-  return result[0].values[0][0] as number;
+interface AppState {
+  catalog: Catalog;
+  catalogView: CatalogViewState;
+  detailView: DetailViewState;
+  route: Route;
 }
 
-function sampleLookup(
-  db: import("sql.js").Database,
-  name: string,
-): { food: string; density?: number } | null {
-  // Mirrors the Python Factory.get_by_name() lookup: match on synonym, then
-  // join back to food and any density row.
-  const rows = db.exec(
-    `SELECT f.name, d.g_per_ml
-     FROM synonym s
-     JOIN food f ON f.id = s.food_id
-     LEFT JOIN density d ON d.food_id = f.id
-     WHERE s.name = ? COLLATE NOCASE
-     LIMIT 1`,
-    [name],
-  );
-  if (rows.length === 0) return null;
-  const [foodName, density] = rows[0].values[0];
-  return {
-    food: foodName as string,
-    density: density == null ? undefined : (density as number),
-  };
+type Route = { kind: "catalog" } | { kind: "detail"; recipeId: string };
+
+function parseRoute(hash: string): Route {
+  const m = /^#\/recipe\/([^/]+)\/?$/.exec(hash);
+  if (m) return { kind: "detail", recipeId: decodeURIComponent(m[1]) };
+  return { kind: "catalog" };
+}
+
+function routeToHash(route: Route): string {
+  if (route.kind === "detail") return `#/recipe/${encodeURIComponent(route.recipeId)}`;
+  return "#/";
+}
+
+function findRecipe(catalog: Catalog, id: string): CuratedRecipe | null {
+  return catalog.recipes.find((r) => r.id === id) ?? null;
+}
+
+function render(container: HTMLElement, state: AppState): void {
+  if (state.route.kind === "detail") {
+    const recipe = findRecipe(state.catalog, state.route.recipeId);
+    if (recipe) {
+      renderDetail(container, recipe, state.detailView, {
+        onBack: () => navigate({ kind: "catalog" }),
+      });
+      return;
+    }
+    // Unknown id → fall back to catalog.
+    state.route = { kind: "catalog" };
+  }
+  renderCatalog(container, state.catalog, state.catalogView, {
+    onQueryChange(q) {
+      state.catalogView.query = q;
+      render(container, state);
+    },
+    onCategoryChange(c) {
+      state.catalogView.category = c;
+      render(container, state);
+    },
+    onRecipeSelect(id) {
+      state.detailView = initialDetailState();
+      navigate({ kind: "detail", recipeId: id });
+    },
+  });
+}
+
+let rootState: AppState | null = null;
+let rootContainer: HTMLElement | null = null;
+
+function navigate(route: Route): void {
+  if (!rootState || !rootContainer) return;
+  rootState.route = route;
+  const nextHash = routeToHash(route);
+  if (location.hash !== nextHash) {
+    location.hash = nextHash;
+    // hashchange handler will call render; avoid a double-render.
+    return;
+  }
+  render(rootContainer, rootState);
 }
 
 async function main(): Promise<void> {
-  const app = document.querySelector<HTMLDivElement>("#app")!;
-  app.innerHTML = `<h1>RationalRecipes</h1><p id="status">Loading ingredients database…</p>`;
-  const status = app.querySelector<HTMLParagraphElement>("#status")!;
+  const app = document.querySelector<HTMLDivElement>("#app");
+  if (!app) return;
+  app.innerHTML = `<p class="app-loading">Loading catalog…</p>`;
 
+  let catalog: Catalog;
   try {
-    const db = await loadIngredientsDb();
-
-    const counts: Counts = {
-      foods: countRows(db, "food"),
-      synonyms: countRows(db, "synonym"),
-      densities: countRows(db, "density"),
-      portions: countRows(db, "portion"),
-    };
-
-    const flour = sampleLookup(db, "all purpose flour");
-    const water = sampleLookup(db, "water");
-
-    status.innerHTML = `
-      <strong>Database loaded.</strong>
-      ${counts.foods.toLocaleString()} foods,
-      ${counts.synonyms.toLocaleString()} synonyms,
-      ${counts.densities.toLocaleString()} densities,
-      ${counts.portions.toLocaleString()} portions.
-      <br>Sample lookups —
-      all-purpose flour: <code>${flour ? `${flour.food} (${flour.density ?? "no density"} g/ml)` : "not found"}</code>,
-      water: <code>${water ? `${water.food} (${water.density ?? "no density"} g/ml)` : "not found"}</code>
-    `;
-
-    // Expose for ad-hoc console poking during development.
-    (window as unknown as { db: typeof db }).db = db;
+    catalog = await loadCatalog();
   } catch (err) {
-    status.textContent = `Failed to load database: ${(err as Error).message}`;
+    app.innerHTML = `<p class="app-error">Failed to load catalog: ${(err as Error).message}</p>`;
     throw err;
   }
+
+  rootState = {
+    catalog,
+    catalogView: initialCatalogState(),
+    detailView: initialDetailState(),
+    route: parseRoute(location.hash),
+  };
+  rootContainer = app;
+
+  window.addEventListener("hashchange", () => {
+    if (!rootState || !rootContainer) return;
+    rootState.route = parseRoute(location.hash);
+    render(rootContainer, rootState);
+  });
+
+  render(app, rootState);
 }
 
 void main();
