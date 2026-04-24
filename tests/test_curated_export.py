@@ -85,3 +85,26 @@ def test_base_ingredient_has_ratio_one(catalog: Catalog) -> None:
         base_name = recipe["base_ingredient"]
         base = next(i for i in recipe["ingredients"] if i["name"] == base_name)
         assert base["ratio"] == pytest.approx(1.0)
+
+
+def test_build_catalog_with_metadata_attaches_block() -> None:
+    """Release-tagged catalogs carry a schema-valid metadata block."""
+    module = _load_export_module()
+    metadata = {
+        "dataset_version": "2026.04.24",
+        "released": "2026-04-24",
+        "pipeline_revision": "abc1234",
+        "notes": "Hand-curated crepes baseline",
+    }
+    catalog: Catalog = module.build_catalog(metadata=metadata)
+    assert catalog["metadata"]["dataset_version"] == "2026.04.24"
+    assert catalog["metadata"]["recipe_count"] == len(catalog["recipes"])
+    schema = json.loads(SCHEMA_PATH.read_text())
+    jsonschema.validate(catalog, schema)
+
+
+def test_build_catalog_without_metadata_omits_block() -> None:
+    """Untagged builds produce exactly the v1 shape with no metadata key."""
+    module = _load_export_module()
+    catalog: Catalog = module.build_catalog()
+    assert "metadata" not in catalog

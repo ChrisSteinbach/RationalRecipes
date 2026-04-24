@@ -42,6 +42,9 @@ export function renderCatalog(
   countLine.textContent = `${filtered.length} of ${catalog.recipes.length} recipes`;
   container.appendChild(countLine);
 
+  const release = renderReleaseBadge(catalog);
+  if (release) container.appendChild(release);
+
   if (filtered.length === 0) {
     const empty = document.createElement("p");
     empty.className = "catalog-empty";
@@ -100,6 +103,21 @@ function renderToolbar(
 
   toolbar.append(searchLabel, categoryLabel);
   return toolbar;
+}
+
+function renderReleaseBadge(catalog: Catalog): HTMLElement | null {
+  const meta = catalog.metadata;
+  if (!meta) return null;
+  const parts: string[] = [];
+  if (meta.dataset_version) parts.push(`Dataset ${meta.dataset_version}`);
+  if (meta.released) parts.push(`released ${meta.released}`);
+  if (meta.pipeline_revision) parts.push(`rev ${meta.pipeline_revision}`);
+  if (parts.length === 0) return null;
+  const el = document.createElement("p");
+  el.className = "catalog-release";
+  el.textContent = parts.join(" · ");
+  if (meta.notes) el.title = meta.notes;
+  return el;
 }
 
 function renderRecipeCard(

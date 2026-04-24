@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +43,95 @@ from rational_recipes.utils import get_ratio_and_stats
 CATALOG_VERSION = 1
 CONFIDENCE_LEVEL = 0.95
 DESIRED_INTERVAL = 0.05  # 5% — used for min_sample_size calculation
+
+# Keys allowed in the catalog's optional metadata block. Must stay in sync
+# with schema/curated_recipes.schema.json $defs/Metadata. Unknown keys are
+# rejected by build_metadata so a typo doesn't silently ship in a release.
+_METADATA_KEYS = frozenset(
+    {
+        "dataset_version",
+        "released",
+        "pipeline_revision",
+        "recipe_count",
+        "notes",
+    }
+)
+
+
+def detect_pipeline_revision(repo_root: Path | None = None) -> str | None:
+    """Return the short git SHA of the working tree, or None if unavailable.
+
+    Used as a default for the ``pipeline_revision`` metadata field so
+    releases auto-record the state of the code that produced them.
+    Returns None outside a git checkout (CI with no git, sdist install,
+    etc.) — the field is optional so absence is fine.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=2,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return None
+    sha = result.stdout.strip()
+    return sha or None
+
+
+def build_metadata(
+    *,
+    dataset_version: str | None = None,
+    released: str | date | None = None,
+    pipeline_revision: str | None = None,
+    recipe_count: int | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    """Build a metadata dict, dropping any field that's None.
+
+    ``released`` accepts either a date (serialized as ISO YYYY-MM-DD) or a
+    pre-formatted string (passed through unchanged — useful for callers
+    that want a specific format). ``recipe_count`` can be provided
+    explicitly or later filled in by ``attach_metadata``. The returned
+    dict contains only the keys actually supplied, so the catalog output
+    stays minimal and schema-valid when nothing is tagged.
+    """
+    raw: dict[str, Any] = {
+        "dataset_version": dataset_version,
+        "released": released.isoformat() if isinstance(released, date) else released,
+        "pipeline_revision": pipeline_revision,
+        "recipe_count": recipe_count,
+        "notes": notes,
+    }
+    return {k: v for k, v in raw.items() if v is not None}
+
+
+def attach_metadata(
+    catalog: dict[str, Any],
+    metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Return a new catalog dict with ``metadata`` inserted before ``recipes``.
+
+    If ``metadata`` is None or empty, returns the catalog unchanged so
+    release tagging is opt-in. ``recipe_count`` is filled in from
+    ``len(catalog["recipes"])`` if not already set, since callers almost
+    always want it to match the list they just built.
+    """
+    if not metadata:
+        return catalog
+    unknown = set(metadata) - _METADATA_KEYS
+    if unknown:
+        raise ValueError(f"Unknown metadata keys: {sorted(unknown)}")
+    filled = dict(metadata)
+    if "recipe_count" not in filled:
+        filled["recipe_count"] = len(catalog.get("recipes", []))
+    return {
+        "version": catalog["version"],
+        "metadata": filled,
+        "recipes": catalog["recipes"],
+    }
 
 
 def slugify(text: str) -> str:
@@ -154,6 +245,7 @@ def catalog_from_manifest(
     category_overrides: dict[str, str] | None = None,
     description_overrides: dict[str, str] | None = None,
     title_overrides: dict[str, str] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a CuratedRecipeCatalog from a merged-pipeline manifest.
 
@@ -195,7 +287,10 @@ def catalog_from_manifest(
         )
         recipes.append(recipe)
 
-    return {"version": CATALOG_VERSION, "recipes": recipes}
+    return attach_metadata(
+        {"version": CATALOG_VERSION, "recipes": recipes},
+        metadata,
+    )
 
 
 def validate_catalog(catalog: dict[str, Any], schema_path: Path) -> None:

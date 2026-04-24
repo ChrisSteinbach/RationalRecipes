@@ -9,8 +9,11 @@ import pytest
 
 from rational_recipes.catalog import (
     CATALOG_VERSION,
+    attach_metadata,
+    build_metadata,
     build_recipe_entry,
     catalog_from_manifest,
+    detect_pipeline_revision,
     slugify,
     validate_catalog,
 )
@@ -228,6 +231,122 @@ class TestCatalogFromManifest:
         manifest.write(manifest_path)
         catalog = catalog_from_manifest(manifest_path)
         assert catalog["recipes"] == []
+
+
+class TestBuildMetadata:
+    def test_all_none_returns_empty_dict(self) -> None:
+        assert build_metadata() == {}
+
+    def test_date_serialized_iso(self) -> None:
+        from datetime import date
+
+        md = build_metadata(released=date(2026, 4, 24))
+        assert md == {"released": "2026-04-24"}
+
+    def test_string_date_passthrough(self) -> None:
+        md = build_metadata(released="2026-04-24")
+        assert md == {"released": "2026-04-24"}
+
+    def test_all_fields_populated(self) -> None:
+        md = build_metadata(
+            dataset_version="2026.04.24",
+            released="2026-04-24",
+            pipeline_revision="abc1234",
+            recipe_count=7,
+            notes="Initial release",
+        )
+        assert md == {
+            "dataset_version": "2026.04.24",
+            "released": "2026-04-24",
+            "pipeline_revision": "abc1234",
+            "recipe_count": 7,
+            "notes": "Initial release",
+        }
+
+
+class TestAttachMetadata:
+    def _mk_catalog(self) -> dict[str, object]:
+        return {"version": CATALOG_VERSION, "recipes": [{"id": "a"}, {"id": "b"}]}
+
+    def test_none_returns_unchanged(self) -> None:
+        cat = self._mk_catalog()
+        assert attach_metadata(cat, None) is cat
+
+    def test_empty_returns_unchanged(self) -> None:
+        cat = self._mk_catalog()
+        assert attach_metadata(cat, {}) is cat
+
+    def test_inserts_metadata_block(self) -> None:
+        cat = self._mk_catalog()
+        out = attach_metadata(cat, {"dataset_version": "2026.04.24"})
+        assert list(out.keys()) == ["version", "metadata", "recipes"]
+        assert out["metadata"]["dataset_version"] == "2026.04.24"
+
+    def test_fills_recipe_count_when_missing(self) -> None:
+        cat = self._mk_catalog()
+        out = attach_metadata(cat, {"dataset_version": "1.0"})
+        assert out["metadata"]["recipe_count"] == 2
+
+    def test_preserves_explicit_recipe_count(self) -> None:
+        cat = self._mk_catalog()
+        out = attach_metadata(cat, {"recipe_count": 99})
+        assert out["metadata"]["recipe_count"] == 99
+
+    def test_rejects_unknown_keys(self) -> None:
+        cat = self._mk_catalog()
+        with pytest.raises(ValueError, match="Unknown metadata keys"):
+            attach_metadata(cat, {"bogus": "x"})
+
+
+class TestDetectPipelineRevision:
+    def test_returns_short_sha_in_git_repo(self) -> None:
+        sha = detect_pipeline_revision(REPO_ROOT)
+        # Short SHAs are 7+ hex chars.
+        assert sha is not None
+        assert len(sha) >= 7
+        assert all(c in "0123456789abcdef" for c in sha)
+
+    def test_returns_none_outside_repo(self, tmp_path: Path) -> None:
+        assert detect_pipeline_revision(tmp_path) is None
+
+
+class TestCatalogFromManifestMetadata:
+    """Manifest -> catalog with metadata passes through to output."""
+
+    def test_metadata_attached_to_output(self, tmp_path: Path) -> None:
+        csv_name = "variant_0.csv"
+        _write_variant_csv(
+            tmp_path / csv_name,
+            header=["flour", "milk"],
+            rows=[["100 g", "200 ml"], ["120 g", "210 ml"]],
+        )
+        manifest = Manifest(
+            variants=[
+                VariantManifestEntry(
+                    variant_id="abc123def456",
+                    title="pannkakor",
+                    canonical_ingredients=("flour", "milk"),
+                    cooking_methods=(),
+                    n_recipes=2,
+                    csv_path=csv_name,
+                    source_urls=(),
+                ),
+            ],
+        )
+        manifest_path = tmp_path / "manifest.json"
+        manifest.write(manifest_path)
+        catalog = catalog_from_manifest(
+            manifest_path,
+            metadata={"dataset_version": "2026.04.24", "notes": "test"},
+        )
+        assert catalog["metadata"]["dataset_version"] == "2026.04.24"
+        assert catalog["metadata"]["recipe_count"] == 1
+        # Still schema-valid.
+        try:
+            import jsonschema  # noqa: F401
+        except ImportError:
+            return
+        validate_catalog(catalog, SCHEMA_PATH)
 
 
 class TestValidateCatalog:

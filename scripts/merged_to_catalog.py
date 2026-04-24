@@ -29,10 +29,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import date
 from pathlib import Path
+from typing import Any
 
 from rational_recipes.catalog import (
+    build_metadata,
     catalog_from_manifest,
+    detect_pipeline_revision,
     validate_catalog,
 )
 
@@ -84,11 +88,46 @@ def main() -> int:
         type=Path,
         help="JSON file: {variant_id: title} overrides",
     )
+    parser.add_argument(
+        "--dataset-version",
+        help=(
+            "Release version to record in metadata (e.g. 2026.04.24)."
+            " Omit for untagged builds."
+        ),
+    )
+    parser.add_argument(
+        "--released",
+        help=(
+            "Release date in ISO YYYY-MM-DD."
+            " Defaults to today when --dataset-version is set."
+        ),
+    )
+    parser.add_argument(
+        "--notes",
+        help="Short human-readable release notes.",
+    )
+    parser.add_argument(
+        "--pipeline-revision",
+        help=(
+            "Git revision to record."
+            " Defaults to 'git rev-parse --short HEAD' when --dataset-version is set."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.manifest.exists():
         print(f"Manifest not found: {args.manifest}", file=sys.stderr)
         return 1
+
+    metadata: dict[str, Any] | None = None
+    if args.dataset_version or args.released or args.notes or args.pipeline_revision:
+        metadata = build_metadata(
+            dataset_version=args.dataset_version,
+            released=args.released or (date.today() if args.dataset_version else None),
+            pipeline_revision=args.pipeline_revision
+            or (detect_pipeline_revision(REPO_ROOT) if args.dataset_version else None),
+            notes=args.notes,
+        )
 
     catalog = catalog_from_manifest(
         args.manifest,
@@ -96,6 +135,7 @@ def main() -> int:
         category_overrides=_load_overrides(args.categories),
         description_overrides=_load_overrides(args.descriptions),
         title_overrides=_load_overrides(args.titles),
+        metadata=metadata,
     )
     validate_catalog(catalog, SCHEMA_PATH)
 

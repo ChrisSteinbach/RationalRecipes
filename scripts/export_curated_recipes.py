@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from rational_recipes.catalog import (
     CATALOG_VERSION,
+    attach_metadata,
+    build_metadata,
     build_recipe_entry,
+    detect_pipeline_revision,
     validate_catalog,
 )
 
@@ -124,12 +128,18 @@ def _build_recipe(config: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def build_catalog() -> dict[str, Any]:
-    """Run the pipeline for every configured recipe and return the catalog."""
-    return {
+def build_catalog(metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Run the pipeline for every configured recipe and return the catalog.
+
+    ``metadata`` attaches a dataset-release block (dataset_version,
+    released date, pipeline_revision, notes) for tagged releases; leave
+    it ``None`` for ad-hoc rebuilds during development.
+    """
+    catalog = {
         "version": CATALOG_VERSION,
         "recipes": [_build_recipe(cfg) for cfg in RECIPE_CONFIGS],
     }
+    return attach_metadata(catalog, metadata)
 
 
 def main() -> None:
@@ -141,14 +151,61 @@ def main() -> None:
         default=DEFAULT_OUTPUT,
         help=f"output path (default: {DEFAULT_OUTPUT.relative_to(REPO_ROOT)})",
     )
+    parser.add_argument(
+        "--dataset-version",
+        help=(
+            "Release version to record in metadata (e.g. 2026.04.24)."
+            " Omit for untagged builds."
+        ),
+    )
+    parser.add_argument(
+        "--released",
+        help=(
+            "Release date in ISO YYYY-MM-DD."
+            " Defaults to today's date when --dataset-version is set."
+        ),
+    )
+    parser.add_argument(
+        "--notes",
+        help="Short human-readable release notes.",
+    )
+    parser.add_argument(
+        "--pipeline-revision",
+        help=(
+            "Git revision to record."
+            " Defaults to 'git rev-parse --short HEAD' when --dataset-version is set."
+        ),
+    )
+    parser.add_argument(
+        "--no-metadata",
+        action="store_true",
+        help="Emit the catalog without any metadata block (explicit opt-out).",
+    )
     args = parser.parse_args()
 
-    catalog = build_catalog()
+    metadata: dict[str, Any] | None = None
+    if not args.no_metadata and (
+        args.dataset_version or args.released or args.notes or args.pipeline_revision
+    ):
+        metadata = build_metadata(
+            dataset_version=args.dataset_version,
+            released=args.released or (date.today() if args.dataset_version else None),
+            pipeline_revision=args.pipeline_revision
+            or (detect_pipeline_revision(REPO_ROOT) if args.dataset_version else None),
+            notes=args.notes,
+        )
+
+    catalog = build_catalog(metadata=metadata)
     validate_catalog(catalog, SCHEMA_PATH)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(catalog, indent=2, ensure_ascii=False) + "\n")
-    print(f"Wrote {args.output} ({len(catalog['recipes'])} recipes)")
+    tag = (
+        f" [{metadata['dataset_version']}]"
+        if metadata and "dataset_version" in metadata
+        else ""
+    )
+    print(f"Wrote {args.output} ({len(catalog['recipes'])} recipes){tag}")
 
 
 if __name__ == "__main__":

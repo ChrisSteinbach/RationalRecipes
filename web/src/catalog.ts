@@ -39,8 +39,17 @@ export interface CuratedRecipe {
   sources?: CatalogSource[];
 }
 
+export interface CatalogMetadata {
+  dataset_version?: string;
+  released?: string;
+  pipeline_revision?: string;
+  recipe_count?: number;
+  notes?: string;
+}
+
 export interface Catalog {
   version: 1;
+  metadata?: CatalogMetadata;
   recipes: CuratedRecipe[];
 }
 

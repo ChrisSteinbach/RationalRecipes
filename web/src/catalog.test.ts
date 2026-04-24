@@ -89,6 +89,21 @@ describe("validateCatalog", () => {
     expect(validated).toBe(c);
   });
 
+  it("preserves optional metadata block through validation", () => {
+    const c: Catalog = {
+      ...sampleCatalog(),
+      metadata: {
+        dataset_version: "2026.04.24",
+        released: "2026-04-24",
+        pipeline_revision: "abc1234",
+        notes: "Initial release",
+      },
+    };
+    const validated = validateCatalog(c);
+    expect(validated.metadata?.dataset_version).toBe("2026.04.24");
+    expect(validated.metadata?.released).toBe("2026-04-24");
+  });
+
   it("rejects non-object root", () => {
     expect(() => validateCatalog(null)).toThrow(/object/);
     // Arrays hit the version check before the array check (typeof []==="object").
