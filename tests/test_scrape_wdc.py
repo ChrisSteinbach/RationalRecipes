@@ -197,6 +197,12 @@ class TestWDCLoader:
         recipes = list(loader.iter_all())
         assert len(recipes) == 4
 
+    def test_iter_all_filtered_hosts(self, wdc_zip: Path) -> None:
+        loader = WDCLoader(wdc_zip)
+        recipes = list(loader.iter_all(hosts=["allrecipes.com"]))
+        assert len(recipes) == 1
+        assert recipes[0].host == "allrecipes.com"
+
     def test_search_title(self, wdc_zip: Path) -> None:
         loader = WDCLoader(wdc_zip)
         results = list(loader.search_title("swedish"))
