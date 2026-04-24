@@ -30,19 +30,24 @@ from rich.table import Table
 from rational_recipes.review import (
     ReviewAction,
     ReviewDecisions,
+    SplitProposal,
     format_variant_status,
     pending_variants,
     progress_summary,
+    propose_split,
     short_ingredient_list,
     summarize_variant,
 )
 from rational_recipes.scrape.manifest import Manifest, VariantManifestEntry
 
-ACTION_PROMPT = "Action: (a)ccept / (d)rop / (?)defer / (q)uit and save"
+ACTION_PROMPT_BASE = "Action: (a)ccept / (d)rop / (?)defer"
+ACTION_PROMPT_SPLIT = " / (s)accept split"
+ACTION_PROMPT_TAIL = " / (q)uit and save"
 ACTION_KEYS = {
     "a": ReviewAction.ACCEPT,
     "d": ReviewAction.DROP,
     "?": ReviewAction.DEFER,
+    "s": ReviewAction.ACCEPT_SPLIT,
 }
 
 
@@ -110,15 +115,46 @@ def _drill_in(
         )
 
 
-def _prompt_action(console: Console) -> ReviewAction | None:
+def _render_split_proposal(
+    console: Console, proposal: SplitProposal, entry: VariantManifestEntry
+) -> None:
+    """Show a candidate 2-way split so the reviewer can decide on it."""
+    console.print(
+        f"[bold cyan]Suggested split[/bold cyan] "
+        f"(centroid separation {proposal.separation:.2f} g/100g)"
+    )
+    urls = list(entry.source_urls)
+
+    def _group_repr(label: str, indexes: tuple[int, ...]) -> str:
+        rows = ", ".join(
+            f"row {i}" + (f" ({urls[i]})" if i < len(urls) else "") for i in indexes
+        )
+        return f"  {label} ({len(indexes)} rows): {rows}"
+
+    console.print(_group_repr("Group A", proposal.group_a), highlight=False)
+    console.print(_group_repr("Group B", proposal.group_b), highlight=False)
+
+
+def _prompt_action(console: Console, has_split_proposal: bool) -> ReviewAction | None:
     """Single-keystroke-style action prompt. Returns None on quit."""
+    prompt = (
+        ACTION_PROMPT_BASE
+        + (ACTION_PROMPT_SPLIT if has_split_proposal else "")
+        + ACTION_PROMPT_TAIL
+    )
+    valid_keys = {"a", "d", "?", "q"}
+    if has_split_proposal:
+        valid_keys.add("s")
     while True:
-        raw = Prompt.ask(ACTION_PROMPT, console=console).strip().lower()
+        raw = Prompt.ask(prompt, console=console).strip().lower()
         if raw == "q":
             return None
-        if raw in ACTION_KEYS:
+        if raw in valid_keys and raw in ACTION_KEYS:
             return ACTION_KEYS[raw]
-        console.print(f"[yellow]Unknown action {raw!r}; pick one of a/d/?/q[/yellow]")
+        console.print(
+            f"[yellow]Unknown action {raw!r}; pick one of "
+            f"{'/'.join(sorted(valid_keys))}[/yellow]"
+        )
 
 
 def _prompt_note(console: Console) -> str:
@@ -162,18 +198,27 @@ def review_loop(
     for i, entry in enumerate(pending, start=1):
         console.rule(f"[{i}/{len(pending)}]")
         _drill_in(console, entry, manifest_dir)
-        action = _prompt_action(console)
+        csv_path = manifest_dir / entry.csv_path
+        proposal = propose_split(csv_path)
+        if proposal is not None:
+            _render_split_proposal(console, proposal, entry)
+        action = _prompt_action(console, proposal is not None)
         if action is None:
             console.print("[yellow]Saving and quitting.[/yellow]")
             break
         note = _prompt_note(console)
-        decisions.record(entry.variant_id, action, note)
+        split_groups: tuple[tuple[int, ...], ...] = ()
+        if action is ReviewAction.ACCEPT_SPLIT and proposal is not None:
+            split_groups = proposal.groups
+        decisions.record(entry.variant_id, action, note, split_groups=split_groups)
         # Persist after each decision so a crash doesn't lose work.
         decisions.write(decisions_path)
-        console.print(
-            f"[green]Recorded {action.value}[/green]"
-            + (f' with note: "{note}"' if note else "")
-        )
+        detail = f' with note: "{note}"' if note else ""
+        if split_groups:
+            detail += (
+                f" (split into {len(split_groups[0])}+{len(split_groups[1])} rows)"
+            )
+        console.print(f"[green]Recorded {action.value}[/green]{detail}")
 
     decided, total, breakdown = progress_summary(manifest, decisions)
     console.print(f"\nFinal progress: {decided}/{total} decided ({breakdown})")

@@ -29,8 +29,9 @@ may carry a free-text note.
 from __future__ import annotations
 
 import json
+import math
 import statistics as py_stats
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -46,9 +47,10 @@ class ReviewAction(StrEnum):
     ACCEPT = "accept"
     DROP = "drop"
     DEFER = "defer"
+    ACCEPT_SPLIT = "accept_split"
 
 
-ActionLiteral = Literal["accept", "drop", "defer"]
+ActionLiteral = Literal["accept", "drop", "defer", "accept_split"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +58,11 @@ class Decision:
     action: ReviewAction
     note: str = ""
     decided_at: str = ""
+    # For ``accept_split``: list of row-index groups (0-based) describing how
+    # the variant's rows should be partitioned into sub-variants. Empty tuple
+    # for non-split actions. A later materialization stage re-emits each
+    # group as its own variant with a fresh variant_id.
+    split_groups: tuple[tuple[int, ...], ...] = ()
 
     def to_json_dict(self) -> dict[str, object]:
         out: dict[str, object] = {"action": self.action.value}
@@ -63,14 +70,23 @@ class Decision:
             out["note"] = self.note
         if self.decided_at:
             out["decided_at"] = self.decided_at
+        if self.split_groups:
+            out["split_groups"] = [list(g) for g in self.split_groups]
         return out
 
     @classmethod
     def from_json_dict(cls, data: dict[str, object]) -> Decision:
+        raw_groups = data.get("split_groups", [])
+        if not isinstance(raw_groups, list):
+            raise ValueError("split_groups must be a list of lists when present")
+        split_groups = tuple(
+            tuple(cast(int, i) for i in cast(list[object], g)) for g in raw_groups
+        )
         return cls(
             action=ReviewAction(str(data["action"])),
             note=str(data.get("note", "")),
             decided_at=str(data.get("decided_at", "")),
+            split_groups=split_groups,
         )
 
 
@@ -90,10 +106,16 @@ class ReviewDecisions:
         action: ReviewAction,
         note: str = "",
         *,
+        split_groups: tuple[tuple[int, ...], ...] = (),
         now: datetime | None = None,
     ) -> Decision:
         ts = (now or datetime.now(UTC)).isoformat()
-        decision = Decision(action=action, note=note, decided_at=ts)
+        decision = Decision(
+            action=action,
+            note=note,
+            decided_at=ts,
+            split_groups=split_groups,
+        )
         self.decisions[variant_id] = decision
         return decision
 
@@ -230,6 +252,152 @@ def progress_summary(
             breakdown[d.action.value] = breakdown.get(d.action.value, 0) + 1
     decided_count = sum(breakdown.values())
     return decided_count, len(manifest.variants), breakdown
+
+
+# --- L3 split proposal (bead 4lf) ---
+
+
+MIN_ROWS_FOR_SPLIT = 4
+"""Don't propose splits for variants with fewer than 4 rows — 2+2 is the
+smallest split where each sub-variant has enough signal to aggregate,
+and anything smaller is better served by individual keep/drop decisions."""
+
+MIN_SUB_GROUP_SIZE = 2
+"""Sub-groups below this count are rejected. A singleton sub-variant
+would itself fail L3's min-variant-size policy downstream."""
+
+
+@dataclass(frozen=True, slots=True)
+class SplitProposal:
+    """Two disjoint sub-groups of row indexes proposed for a variant."""
+
+    group_a: tuple[int, ...]
+    group_b: tuple[int, ...]
+    separation: float
+    """Euclidean distance between the two sub-group centroids (higher =
+    more proportion-distinct) — informational, for the reviewer's
+    judgement."""
+
+    @property
+    def groups(self) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        return (self.group_a, self.group_b)
+
+
+def _proportion_vectors_from_csv(csv_path: Path) -> list[list[float]]:
+    """Read variant CSV and return per-row proportion vectors.
+
+    Assumes consistent units within each column (generally true for
+    pipeline output). Treats missing/unparseable cells as 0. Each row is
+    normalized to sum-to-100 so absolute scale differences (small vs big
+    recipe) don't drown out proportion differences.
+    """
+    import csv as _csv
+
+    with csv_path.open(encoding="utf-8") as f:
+        reader = _csv.reader(f)
+        try:
+            header = next(reader)
+        except StopIteration:
+            return []
+        raw_rows = list(reader)
+
+    ncols = len(header)
+    vectors: list[list[float]] = []
+    for row in raw_rows:
+        vec = [0.0] * ncols
+        for i in range(min(ncols, len(row))):
+            cell = row[i].strip()
+            if not cell or cell == "0":
+                continue
+            try:
+                vec[i] = float(cell.split()[0])
+            except (ValueError, IndexError):
+                continue
+        total = sum(vec)
+        if total > 0:
+            vectors.append([v * 100.0 / total for v in vec])
+    return vectors
+
+
+def _euclidean(a: Sequence[float], b: Sequence[float]) -> float:
+    return math.sqrt(sum((x - y) * (x - y) for x, y in zip(a, b, strict=True)))
+
+
+def _centroid(
+    vectors: Sequence[Sequence[float]], indexes: Sequence[int]
+) -> list[float]:
+    if not indexes:
+        return []
+    ncols = len(vectors[indexes[0]])
+    totals = [0.0] * ncols
+    for i in indexes:
+        for j, v in enumerate(vectors[i]):
+            totals[j] += v
+    return [t / len(indexes) for t in totals]
+
+
+def propose_split(csv_path: Path) -> SplitProposal | None:
+    """Propose a 2-way split of a variant's rows using 2-medoid
+    clustering in proportion space.
+
+    Algorithm:
+    1. Build proportion vectors from the CSV (sum-to-100 per row).
+    2. If fewer than ``MIN_ROWS_FOR_SPLIT`` rows, return None.
+    3. Find the farthest-apart pair of rows — these are the two
+       medoid seeds.
+    4. Assign each remaining row to whichever seed it is closer to.
+    5. If either sub-group has fewer than ``MIN_SUB_GROUP_SIZE``
+       rows, return None — the split isn't viable.
+    6. Return a SplitProposal with the two row-index groups and the
+       distance between their centroids.
+
+    The function is a heuristic, not a classifier — it surfaces a
+    candidate split for the reviewer to accept or reject. A ``None``
+    return does not assert the variant is homogeneous; it means this
+    simple method did not find a viable 2-way split.
+    """
+    vectors = _proportion_vectors_from_csv(csv_path)
+    n = len(vectors)
+    if n < MIN_ROWS_FOR_SPLIT:
+        return None
+
+    # Farthest pair search — O(n²), fine at review-time scale (N << 100).
+    best_i, best_j = 0, 1
+    best_d = -1.0
+    for i in range(n):
+        for j in range(i + 1, n):
+            d = _euclidean(vectors[i], vectors[j])
+            if d > best_d:
+                best_d = d
+                best_i, best_j = i, j
+
+    if best_d <= 0:
+        return None  # all identical → no split
+
+    group_a_list: list[int] = [best_i]
+    group_b_list: list[int] = [best_j]
+    for k in range(n):
+        if k == best_i or k == best_j:
+            continue
+        d_a = _euclidean(vectors[k], vectors[best_i])
+        d_b = _euclidean(vectors[k], vectors[best_j])
+        if d_a <= d_b:
+            group_a_list.append(k)
+        else:
+            group_b_list.append(k)
+
+    if len(group_a_list) < MIN_SUB_GROUP_SIZE or len(group_b_list) < MIN_SUB_GROUP_SIZE:
+        return None
+
+    centroid_a = _centroid(vectors, group_a_list)
+    centroid_b = _centroid(vectors, group_b_list)
+    separation = _euclidean(centroid_a, centroid_b)
+
+    return SplitProposal(
+        group_a=tuple(sorted(group_a_list)),
+        group_b=tuple(sorted(group_b_list)),
+        separation=separation,
+    )
 
 
 def parse_iterable_actions(

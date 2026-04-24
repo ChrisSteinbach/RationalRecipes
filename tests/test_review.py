@@ -1,4 +1,4 @@
-"""Tests for the variant-level review shell's pure layer (bead eco)."""
+"""Tests for the variant-level review shell's pure layer (beads eco + 4lf)."""
 
 from __future__ import annotations
 
@@ -10,12 +10,14 @@ import pytest
 
 from rational_recipes.review import (
     DECISIONS_SCHEMA_VERSION,
+    MIN_ROWS_FOR_SPLIT,
     Decision,
     ReviewAction,
     ReviewDecisions,
     format_variant_status,
     pending_variants,
     progress_summary,
+    propose_split,
     short_ingredient_list,
     summarize_variant,
 )
@@ -244,3 +246,142 @@ class TestSummarizeVariant:
         summaries = summarize_variant(entry, csv_path)
         names = {s.name: s for s in summaries}
         assert abs(names["sugar"].mean - 5.0) < 1e-9
+
+
+class TestProposeSplit:
+    """Bead 4lf: 2-medoid split proposal on a variant's rows."""
+
+    def _write_csv(self, tmp_path: Path, header: str, rows: list[str]) -> Path:
+        csv_path = tmp_path / "v.csv"
+        csv_path.write_text(header + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
+        return csv_path
+
+    def test_splits_two_clear_clusters(self, tmp_path: Path) -> None:
+        """Three thin-crêpe rows (low flour) + three American-pancake rows
+        (high flour) should split along that axis."""
+        rows = [
+            "100 g,500 ml",  # thin cluster
+            "105 g,490 ml",
+            "95 g,510 ml",
+            "300 g,200 ml",  # thick cluster
+            "290 g,210 ml",
+            "310 g,190 ml",
+        ]
+        csv_path = self._write_csv(tmp_path, "flour,milk", rows)
+        proposal = propose_split(csv_path)
+        assert proposal is not None
+        # Six rows partitioned into two 3-row groups.
+        assert len(proposal.group_a) == 3
+        assert len(proposal.group_b) == 3
+        assert set(proposal.group_a) | set(proposal.group_b) == set(range(6))
+        assert set(proposal.group_a) & set(proposal.group_b) == set()
+        # The split should separate rows 0-2 from rows 3-5 (up to group label).
+        a = set(proposal.group_a)
+        b = set(proposal.group_b)
+        expected_partition = [{0, 1, 2}, {3, 4, 5}]
+        assert [a, b] == expected_partition or [b, a] == expected_partition
+
+    def test_below_min_rows_returns_none(self, tmp_path: Path) -> None:
+        rows = ["100 g,500 ml"] * (MIN_ROWS_FOR_SPLIT - 1)
+        csv_path = self._write_csv(tmp_path, "flour,milk", rows)
+        assert propose_split(csv_path) is None
+
+    def test_all_identical_rows_returns_none(self, tmp_path: Path) -> None:
+        rows = ["100 g,500 ml"] * 6
+        csv_path = self._write_csv(tmp_path, "flour,milk", rows)
+        assert propose_split(csv_path) is None
+
+    def test_outlier_in_a_tight_cluster_rejected_as_singleton(
+        self, tmp_path: Path
+    ) -> None:
+        """Five near-identical rows + one outlier: the split would be
+        5+1, but 1 < MIN_SUB_GROUP_SIZE, so None is returned."""
+        rows = [
+            "100 g,500 ml",
+            "101 g,499 ml",
+            "100 g,501 ml",
+            "99 g,500 ml",
+            "102 g,498 ml",
+            "300 g,200 ml",  # lone outlier
+        ]
+        csv_path = self._write_csv(tmp_path, "flour,milk", rows)
+        assert propose_split(csv_path) is None
+
+    def test_separation_reported(self, tmp_path: Path) -> None:
+        rows = [
+            "100 g,500 ml",
+            "100 g,500 ml",
+            "300 g,200 ml",
+            "300 g,200 ml",
+        ]
+        csv_path = self._write_csv(tmp_path, "flour,milk", rows)
+        proposal = propose_split(csv_path)
+        assert proposal is not None
+        assert proposal.separation > 0
+
+    def test_empty_csv_returns_none(self, tmp_path: Path) -> None:
+        csv_path = tmp_path / "v.csv"
+        csv_path.write_text("", encoding="utf-8")
+        assert propose_split(csv_path) is None
+
+    def test_groups_are_sorted_for_stable_diffs(self, tmp_path: Path) -> None:
+        rows = [
+            "100 g,500 ml",
+            "300 g,200 ml",
+            "100 g,500 ml",
+            "300 g,200 ml",
+        ]
+        csv_path = self._write_csv(tmp_path, "flour,milk", rows)
+        proposal = propose_split(csv_path)
+        assert proposal is not None
+        # Within each group, indexes are in ascending order.
+        assert list(proposal.group_a) == sorted(proposal.group_a)
+        assert list(proposal.group_b) == sorted(proposal.group_b)
+
+
+class TestDecisionWithSplitGroups:
+    """Decision's split_groups field rides along with the accept_split action."""
+
+    def test_accept_split_roundtrip(self) -> None:
+        d = Decision(
+            action=ReviewAction.ACCEPT_SPLIT,
+            split_groups=((0, 2, 4), (1, 3, 5)),
+            decided_at="2026-04-25T10:00:00+00:00",
+        )
+        restored = Decision.from_json_dict(d.to_json_dict())
+        assert restored.split_groups == ((0, 2, 4), (1, 3, 5))
+        assert restored.action == ReviewAction.ACCEPT_SPLIT
+
+    def test_empty_split_groups_omitted(self) -> None:
+        d = Decision(action=ReviewAction.ACCEPT)
+        data = d.to_json_dict()
+        assert "split_groups" not in data
+
+    def test_legacy_decision_without_field_defaults_to_empty(self) -> None:
+        legacy: dict[str, object] = {
+            "action": "accept",
+            "note": "",
+            "decided_at": "",
+        }
+        d = Decision.from_json_dict(legacy)
+        assert d.split_groups == ()
+
+    def test_non_list_split_groups_rejected(self) -> None:
+        bad: dict[str, object] = {
+            "action": "accept_split",
+            "split_groups": "not a list",
+        }
+        with pytest.raises(ValueError, match="split_groups"):
+            Decision.from_json_dict(bad)
+
+    def test_record_with_split_groups_persists(self, tmp_path: Path) -> None:
+        decisions = ReviewDecisions()
+        decisions.record(
+            "abc",
+            ReviewAction.ACCEPT_SPLIT,
+            split_groups=((0, 1), (2, 3)),
+        )
+        path = tmp_path / "decisions.json"
+        decisions.write(path)
+        reloaded = ReviewDecisions.read(path)
+        assert reloaded.decisions["abc"].split_groups == ((0, 1), (2, 3))
