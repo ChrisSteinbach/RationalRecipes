@@ -238,6 +238,30 @@ class TestWDCLoader:
         assert empty.title == ""
         assert empty.row_id == 0
 
+    def test_explicit_null_title_coerced_to_empty(self, tmp_path: Path) -> None:
+        """JSON null in the ``name`` field becomes an empty title.
+
+        Without this guard, ``search_title`` crashes with
+        ``AttributeError: 'NoneType' object has no attribute 'lower'``
+        on real WDC rows that emit ``"name": null`` (encountered when
+        scanning the full pannkak slice across the corpus).
+        """
+        zip_path = tmp_path / "nulls.zip"
+        _build_wdc_zip(
+            zip_path,
+            {
+                "nulls.com": [
+                    {"row_id": 1, "name": None, "page_url": None},
+                ],
+            },
+        )
+        loader = WDCLoader(zip_path)
+        recipes = list(loader.iter_host("nulls.com"))
+        assert recipes[0].title == ""
+        assert recipes[0].page_url == ""
+        # search_title must not crash on the null-title row.
+        assert list(loader.search_title("anything")) == []
+
 
 # --- Protocol integration ---
 

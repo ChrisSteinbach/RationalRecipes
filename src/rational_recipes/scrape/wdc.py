@@ -111,12 +111,14 @@ def _parse_row(row: dict[str, Any], host: str) -> WDCRecipe:
     if not isinstance(keywords_raw, str):
         keywords_raw = ""
 
+    title_raw = row.get("name", "")
+    page_url_raw = row.get("page_url", "")
     return WDCRecipe(
         row_id=row.get("row_id", 0),
         host=host,
-        title=row.get("name", ""),
+        title=title_raw if isinstance(title_raw, str) else "",
         ingredients=tuple(str(i) for i in ingredients_raw),
-        page_url=row.get("page_url", ""),
+        page_url=page_url_raw if isinstance(page_url_raw, str) else "",
         cooking_methods=frozenset(
             part.strip() for part in cooking_raw.split(",") if part.strip()
         ),
