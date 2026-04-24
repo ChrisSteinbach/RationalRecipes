@@ -58,3 +58,7 @@ nosetests.xml
 
 # JetBrains IDE files
 .idea/
+
+# Playwright MCP session artifacts (accessibility snapshots, screenshots)
+.playwright-mcp/
+/rationalrecipes-*.png

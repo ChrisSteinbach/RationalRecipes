@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "sync-catalog": "node scripts/sync-catalog.mjs",
-    "dev": "npm run sync-catalog && vite",
-    "build": "npm run sync-catalog && tsc && vite build",
+    "generate-manifest": "node scripts/generate-manifest.mjs",
+    "prepare-assets": "npm run sync-catalog && npm run generate-manifest",
+    "dev": "npm run prepare-assets && vite",
+    "build": "npm run prepare-assets && tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

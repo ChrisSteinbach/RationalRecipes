@@ -6,7 +6,7 @@
 import initSqlJs, { type Database } from "sql.js";
 import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 
-const DB_PATH = "/ingredients.db";
+const DB_PATH = `${import.meta.env.BASE_URL}ingredients.db`;
 
 export async function loadIngredientsDb(): Promise<Database> {
   const SQL = await initSqlJs({ locateFile: () => sqlWasmUrl });

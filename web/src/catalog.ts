@@ -44,7 +44,10 @@ export interface Catalog {
   recipes: CuratedRecipe[];
 }
 
-const CATALOG_PATH = "/curated_recipes.json";
+const CATALOG_FILE = "curated_recipes.json";
+
+/** Resolved default path (Vite base + filename); works at any deploy base. */
+export const CATALOG_PATH = `${import.meta.env.BASE_URL}${CATALOG_FILE}`;
 
 /** Fetch the catalog from the static asset path and sanity-check its shape. */
 export async function loadCatalog(path: string = CATALOG_PATH): Promise<Catalog> {

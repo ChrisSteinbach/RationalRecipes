@@ -17,6 +17,7 @@ import {
   initialDetailState,
   renderDetail,
 } from "./detail_view.ts";
+import { registerServiceWorker } from "./sw-register.ts";
 
 interface AppState {
   catalog: Catalog;
@@ -113,6 +114,7 @@ async function main(): Promise<void> {
   });
 
   render(app, rootState);
+  registerServiceWorker();
 }
 
 void main();
