@@ -68,6 +68,12 @@ def main() -> int:
     )
     parser.add_argument("--l2-min", type=int, default=3, help="L2 min group size")
     parser.add_argument(
+        "--l3-min",
+        type=int,
+        default=3,
+        help="L3 min variant size — drop cookingMethod sub-groups below this",
+    )
+    parser.add_argument(
         "--bucket-size",
         type=float,
         default=2.0,
@@ -109,6 +115,7 @@ def main() -> int:
         l1_min_group_size=args.l1_min,
         l2_similarity_threshold=args.l2_threshold,
         l2_min_group_size=args.l2_min,
+        l3_min_variant_size=args.l3_min,
         bucket_size=args.bucket_size,
         llm_model=args.model,
         ollama_url=args.ollama_url,

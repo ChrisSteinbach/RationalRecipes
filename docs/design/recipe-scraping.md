@@ -608,17 +608,30 @@ Productionize the review UI if it's getting heavy use.
    Jaccard at threshold 0.6. Shipped in `group_by_ingredients()`. Phase 1
    validated on 114 "swedish pancakes" recipes: clean split into 49
    American-style, 42 genuine pannkakor, 4 lingonberry-sauce variants.
-3. **Level 3 method extraction** — **PARTIALLY RESOLVED.** Design
-   direction landed in § Level 3: `cookingMethod`-first partition with
-   strict min-size guards, proportion clustering as a follow-on refinement.
-   Implementation tracked in `RationalRecipes-7eo` (runs on the merged
-   stream after `toj`). WDC provides structured fields on schema-good
-   hosts; RecipeNLG needs a second signal (LLM method extraction from
-   `recipeInstructions`, or proportion clustering) — not yet built.
-4. **Minimum group size thresholds** — **OPEN.** Likely different at each
-   level. Tune empirically against real variant outputs; variants whose
-   surviving group falls below threshold are dropped rather than topped up
-   (the source corpora are fixed).
+3. **Level 3 method extraction** — **RESOLVED for WDC, OPEN for
+   RecipeNLG.** `group_by_cooking_method()` shipped in
+   `scrape/grouping.py` and wired through `build_variants()` in
+   `scrape/pipeline_merged.py`: partition by distinct `cookingMethod`
+   tag set, singleton "unknown-method" bucket merges into the largest
+   non-empty bucket, sub-groups below `min_variant_size` dropped.
+   Proportion clustering as the design's follow-on signal stays open
+   pending evidence that pure-method partition leaves real ratio-
+   distinct clusters un-split. RecipeNLG-only input degenerates to a
+   single unknown bucket (no cookingMethod field) — the LLM-method-
+   extraction-from-`recipeInstructions` path is still unbuilt and is
+   the load-bearing piece for closing the RecipeNLG side.
+4. **Minimum group size thresholds** — **RESOLVED (defaults).** Default
+   `min_group_size=3` at L1 and L2, `min_variant_size=3` at L3 (matching
+   constant `DEFAULT_L3_MIN_VARIANT_SIZE` in `scrape/grouping.py`).
+   Defaults match across levels because the constraint is the same:
+   "enough recipes that mean ± stddev means something" — and `3` is the
+   smallest N where two outliers don't completely dominate. Override
+   per-level via the `--l1-min` / `--l2-min` / `--l3-min` flags on
+   `scripts/scrape_merged.py`. Sensitivity sweep on 3+ dish families is
+   gated on a real corpus run with the production model — captured in
+   `RationalRecipes-7eo`'s acceptance criteria, deferred to live runs.
+   Variants whose surviving group falls below threshold are dropped
+   rather than topped up (the source corpora are fixed).
 5. **Review UI shell** — **RESOLVED (form + minimum scope) / OPEN (build).**
    Terminal-based (Python, stdlib + `rich`). Minimum scope specified in
    § Human review as a first-class stage (variant-level only, no per-row

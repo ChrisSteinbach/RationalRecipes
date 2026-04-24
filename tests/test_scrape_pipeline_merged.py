@@ -33,6 +33,7 @@ def _make_merged(
     ingredient_names: frozenset[str],
     url: str = "https://example.com/r",
     corpus: str = "recipenlg",
+    cooking_methods: frozenset[str] = frozenset(),
 ) -> MergedRecipe:
     src = Recipe(
         row_index=0,
@@ -47,7 +48,7 @@ def _make_merged(
         ingredients=ingredient_lines,
         ingredient_names=ingredient_names,
         url=url,
-        cooking_methods=frozenset(),
+        cooking_methods=cooking_methods,
         corpus=corpus,
         source=src,
     )
@@ -520,3 +521,82 @@ class TestBuildVariants:
         )
         # Each of 3 recipes produced one unresolved "zzzunknownfood".
         assert stats.db_misses.get("zzzunknownfood") == 3
+
+    def test_l3_splits_l2_group_by_cooking_method(self) -> None:
+        """Two cooking_methods at sufficient size → two separate variants."""
+        fried = [
+            _make_merged(
+                "pannkakor",
+                ("200 g flour", "200 ml milk"),
+                frozenset({"flour", "milk"}),
+                url=f"https://x/fried/{i}",
+                corpus="wdc",
+                cooking_methods=frozenset({"stekt"}),
+            )
+            for i in range(3)
+        ]
+        baked = [
+            _make_merged(
+                "pannkakor",
+                ("150 g flour", "300 ml milk"),  # distinct proportions
+                frozenset({"flour", "milk"}),
+                url=f"https://x/baked/{i}",
+                corpus="wdc",
+                cooking_methods=frozenset({"i ugn"}),
+            )
+            for i in range(3)
+        ]
+
+        def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            # Use the line text to differentiate flour/milk per recipe.
+            out: list[ParsedIngredient | None] = []
+            for line in lines:
+                parts = line.split()
+                qty = float(parts[0])
+                unit = parts[1]
+                ing = parts[-1]
+                out.append(_parsed(ing, qty, unit))
+            return out
+
+        variants, _stats = build_variants(
+            fried + baked,
+            parse_fn=fake_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            l3_min_variant_size=3,
+        )
+
+        assert len(variants) == 2
+        method_sets = {v.cooking_methods for v in variants}
+        assert method_sets == {frozenset({"stekt"}), frozenset({"i ugn"})}
+        # Variant ids differ because method-set enters the hash.
+        assert variants[0].variant_id != variants[1].variant_id
+
+    def test_l3_noop_on_pure_recipenlg_stream(self) -> None:
+        """RecipeNLG rows carry no cooking_methods — all in unknown bucket."""
+        rows = [
+            _make_merged(
+                "pannkakor",
+                ("200 g flour",),
+                frozenset({"flour"}),
+                url=f"https://x/{i}",
+                corpus="recipenlg",
+                cooking_methods=frozenset(),
+            )
+            for i in range(4)
+        ]
+
+        def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            return [_parsed("flour", 200, "g")]
+
+        variants, _stats = build_variants(
+            rows,
+            parse_fn=fake_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            l3_min_variant_size=3,
+        )
+        assert len(variants) == 1
+        assert variants[0].cooking_methods == frozenset()
