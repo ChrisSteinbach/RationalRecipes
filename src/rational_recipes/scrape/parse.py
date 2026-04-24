@@ -99,6 +99,13 @@ def _ollama_generate(
     well under 100 tokens, so a small cap turns degenerate token-loop
     responses (seen on larger models like gemma4:26b) into bounded-length
     failures rather than 300s timeouts.
+
+    ``temperature=0`` + ``seed=42`` make the response deterministic so
+    that downstream ``variant_id`` hashes are stable across reruns of
+    the merged pipeline (RationalRecipes-toj). Without them, sampling
+    noise was occasionally swapping ingredients ("sugar" vs "flour")
+    between runs and producing different ``canonical_ingredient_set``s
+    for the same recipe.
     """
     payload = json.dumps(
         {
@@ -107,7 +114,11 @@ def _ollama_generate(
             "prompt": prompt,
             "format": "json",
             "stream": False,
-            "options": {"num_predict": num_predict},
+            "options": {
+                "num_predict": num_predict,
+                "temperature": 0.0,
+                "seed": 42,
+            },
         }
     ).encode()
 

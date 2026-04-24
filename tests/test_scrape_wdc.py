@@ -504,7 +504,11 @@ class TestNumPredictCap:
 
             req = mock_open.call_args.args[0]
             body = json.loads(req.data.decode())
-            assert body["options"] == {"num_predict": 256}
+            assert body["options"] == {
+                "num_predict": 256,
+                "temperature": 0.0,
+                "seed": 42,
+            }
 
     def test_num_predict_override_forwarded(self) -> None:
         from rational_recipes.scrape.parse import parse_ingredient_line
@@ -522,7 +526,11 @@ class TestNumPredictCap:
 
             req = mock_open.call_args.args[0]
             body = json.loads(req.data.decode())
-            assert body["options"] == {"num_predict": 64}
+            assert body["options"] == {
+                "num_predict": 64,
+                "temperature": 0.0,
+                "seed": 42,
+            }
 
     def test_parse_ingredient_lines_forwards_num_predict(self) -> None:
         from rational_recipes.scrape.parse import parse_ingredient_lines

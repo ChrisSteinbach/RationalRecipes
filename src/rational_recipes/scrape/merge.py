@@ -32,13 +32,19 @@ from rational_recipes.scrape.grouping import (
 from rational_recipes.scrape.recipenlg import Recipe
 from rational_recipes.scrape.wdc import WDCRecipe
 
-DEFAULT_NEAR_DUP_THRESHOLD = 0.5
+DEFAULT_NEAR_DUP_THRESHOLD = 0.3
 """Jaccard similarity threshold for cross-corpus near-dup detection.
 
-Midpoint of the 0.4-0.6 range measured by bead 3cu on real
-saffranspannkaka / fläskpannkaka pairs. Source-level default; not yet
-a CLI flag. Tune once the merged stream produces false-positive /
-false-negative evidence.
+Lowered from 0.5 to 0.3 by ``RationalRecipes-toj`` validation. A
+threshold sweep on the pannkak / WDC ica.se slice (with deterministic
+LLM extraction) found the documented saffranspannkaka cross-corpus
+pair (RecipeNLG food52.com × WDC ica.se) sits at Jaccard ~0.3-0.4
+because the two recipes list different optional accompaniments
+(blueberry jam vs sylt, vispgrädde vs whipping cream, etc.). 0.3 is
+the smallest threshold that catches the pair; the 43-row sweep
+showed no false positives at 0.3. Matches the bottom of the
+0.3-0.5 range documented by ``RationalRecipes-3cu``. Source-level
+default; not yet a CLI flag.
 """
 
 

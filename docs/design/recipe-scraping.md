@@ -625,7 +625,7 @@ separate known variants (e.g. ugnsmannkaka vs stekpannkaka)?
 
 WDC Schema.org Table Corpus loader + per-corpus L1/L2 grouping shipped
 in `scrape/wdc.py` and `scrape/grouping.py` (`RationalRecipes-ayw`).
-Cross-corpus merge (URL join + Jaccard near-dup at 0.5) and within-variant
+Cross-corpus merge (URL join + Jaccard near-dup) and within-variant
 proportion-bucket dedup shipped in `scrape/merge.py`
 (`RationalRecipes-toj`). The merged pipeline (`scrape/pipeline_merged.py`,
 driver `scripts/scrape_merged.py`) emits per-variant rr-stats-compatible
@@ -638,12 +638,45 @@ accept/drop/annotate/defer plus L3 split action — shipped in
 `scripts/review_variants.py` (`RationalRecipes-eco`,
 `RationalRecipes-4lf`).
 
-Remaining in Phase 2: validation run on the pannkakor slice (49
-American + 42 Swedish + 4 lingonberry variants from Phase 1) to
-confirm the URL+near-dup merge catches cross-corpus duplicates,
-proportion-bucket dedup reduces effective N without collapsing
-legitimate variants, and `variant_id`s are stable across reruns —
-gated in `RationalRecipes-toj`.
+Two settings landed via end-to-end validation on the pannkak / WDC
+ica.se slice (`RationalRecipes-toj`):
+
+- **Near-dup Jaccard threshold 0.3** (down from 0.5). A threshold
+  sweep on the 10 RecipeNLG + 33 WDC ica.se cross-corpus stream
+  (deterministic LLM extraction) found the documented saffranspannkaka
+  pair (RecipeNLG food52.com × WDC ica.se) sits at Jaccard ~0.3-0.4
+  — the two recipes list different optional accompaniments
+  (blueberry jam vs sylt, vispgrädde vs whipping cream, ground
+  almonds vs almond flour) so the intersection-over-union stays
+  modest. 0.3 catches the pair with no false positives in the 43-row
+  stream; 0.4 misses it under deterministic extraction. Matches the
+  bottom of the 0.3-0.5 range documented in `RationalRecipes-3cu`.
+- **Deterministic LLM calls** (`temperature=0`, `seed=42` in
+  `scrape/parse.py::_ollama_generate`). The first round of validation
+  reruns produced 31/43 differing `variant_id`s because LLM sampling
+  noise was shifting the canonical ingredient set ("sugar" vs "flour"
+  on the same recipe between runs; "chocolate 70 percent" vs "choklad"
+  pre-canonicalization). With determinism on, two reruns produce
+  byte-identical manifests.
+
+Phase 2 acceptance (run on 10 RecipeNLG + 33 WDC ica.se pannkak rows,
+the slice that contains the 3cu-documented cross-corpus pairs):
+(a) URL + near-dup merge fires on the saffranspannkaka pair at the
+new 0.3 default; the fläskpannkaka pair stays missed because
+RecipeNLG title `Fläsk Pannkaka - Pork Pancake` doesn't normalize to
+WDC's `fläskpannkaka` (the title-gating step never compares them —
+tracked as `RationalRecipes-cw1`);
+(b) within-variant proportion-bucket dedup did not fire on this slice
+because each variant is singleton — the dedup mechanism stays unit-
+tested in `test_dedup_in_place_collapses_identical_proportions`,
+real-world dedup hits will land once Phase 4's broader title queries
+build multi-recipe variants;
+(c) `manifest.json` round-trips cleanly through `Manifest.read →
+to_json_dict` and through the eco shell's
+`summarize_variant()`/`pending_variants()` consumers across all 43
+variants;
+(d) `variant_id`s are byte-identical across two reruns of the full
+pipeline once the LLM is deterministic.
 
 **Phase 3 — outlier flagging**
 Add outlier flagging on top of the review view: compute per-recipe

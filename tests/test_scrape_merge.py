@@ -125,22 +125,23 @@ class TestMergeCorpora:
 
         merged, stats = merge_corpora([r], [w])
 
-        # Jaccard = 1/7 = 0.14 — below 0.5 threshold; both kept.
+        # Jaccard = 1/7 = 0.14 — below 0.3 threshold; both kept.
         assert stats.near_dup_duplicates == 0
         assert len(merged) == 2
 
     def test_near_dup_threshold_respects_override(self) -> None:
         r_ings = ("flour", "milk", "egg", "salt")
-        w_ings = ("flour", "milk", "vanilla", "sugar")
+        w_ings = ("flour", "milk", "vanilla", "sugar", "butter", "salt")
         r = _rnlg("Pancakes", "https://a.com/r/1", r_ings, ner=r_ings)
         w = _wdc("Pancakes", "https://b.com/r/2", w_ings, names=frozenset(w_ings))
 
-        # Jaccard = 2/6 ≈ 0.33 — below default 0.5, above explicit 0.3.
+        # Jaccard = 3/7 ≈ 0.43 — above default 0.3 (merges) and above
+        # explicit 0.5 (also merges).
         _, stats_default = merge_corpora([r], [w])
-        assert stats_default.near_dup_duplicates == 0
+        assert stats_default.near_dup_duplicates == 1
 
-        _, stats_loose = merge_corpora([r], [w], near_dup_threshold=0.3)
-        assert stats_loose.near_dup_duplicates == 1
+        _, stats_strict = merge_corpora([r], [w], near_dup_threshold=0.5)
+        assert stats_strict.near_dup_duplicates == 0
 
     def test_near_dup_only_within_same_title_group(self) -> None:
         """Ingredient-set near-dup runs only inside normalized-title
@@ -155,9 +156,15 @@ class TestMergeCorpora:
         assert stats.near_dup_duplicates == 0
         assert len(merged) == 2
 
-    def test_default_threshold_is_0_5(self) -> None:
-        """Documented contract: the default lives at 0.5."""
-        assert DEFAULT_NEAR_DUP_THRESHOLD == 0.5
+    def test_default_threshold_is_0_3(self) -> None:
+        """Documented contract: the default lives at 0.3 — lowered from
+        0.5 by RationalRecipes-toj validation. A threshold sweep on
+        the pannkak/ica.se slice with deterministic LLM extraction
+        showed the documented saffranspannkaka cross-corpus pair sits
+        at Jaccard ~0.3-0.4 because the two recipes list different
+        optional accompaniments. 0.3 catches it with no false
+        positives in the 43-row stream."""
+        assert DEFAULT_NEAR_DUP_THRESHOLD == 0.3
 
     def test_url_match_wins_over_near_dup_count(self) -> None:
         """When a row is already URL-matched it isn't re-counted as a
