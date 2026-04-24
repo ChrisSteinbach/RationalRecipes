@@ -1,6 +1,23 @@
 # Design: Automated Recipe Collection
 
-**Status:** Draft
+**Status:** 🗄️ Historical record — Phases 1-4 complete.
+**Successor design:** `docs/design/full-catalog.md` (Phase 5 — where active
+work is happening). The successor supersedes two choices in this doc:
+
+1. **JSON catalog artifact → SQLite backing store.** Bead `ntm`'s
+   JSON-over-SQLite decision held when the dataset was ~dozens of
+   hand-curated recipes; Phase 5 scales to hundreds-to-thousands of
+   auto-extracted variants. See bead `RationalRecipes-vwt.6`.
+2. **Per-title-query extraction → whole-corpus extraction.**
+   `run_merged_pipeline(title_query=...)` stays as a dev affordance,
+   but the catalog-production path streams both corpora and
+   auto-discovers L1 groups in memory. See bead `RationalRecipes-vwt.2`.
+
+References to "rr-stats compatible CSV output" throughout this doc
+describe the Phase 1-4 emission contract; the CSV CLI itself is
+deprecated (bead `RationalRecipes-vwt.7`). The extraction modules
+(`src/rational_recipes/scrape/`) remain the basis for Phase 5.
+
 **Issue:** RationalRecipes-7ns (epic: RationalRecipes-b7t)
 **Last updated:** 2026-04-24
 
