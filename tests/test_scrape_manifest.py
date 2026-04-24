@@ -139,3 +139,84 @@ class TestManifestRoundtrip:
         )
         with pytest.raises(ValueError, match="manifest_version"):
             Manifest.read(manifest_path)
+
+
+class TestOutlierScoresField:
+    """Bead 0g3 adds optional row_outlier_scores to the manifest entry."""
+
+    def test_scores_roundtrip(self) -> None:
+        entry = VariantManifestEntry(
+            variant_id="abc123def456",
+            title="pannkakor",
+            canonical_ingredients=("flour", "milk"),
+            cooking_methods=(),
+            n_recipes=3,
+            csv_path="pannkakor_abc123def456.csv",
+            source_urls=(),
+            row_outlier_scores=(0.0, 1.5, 2.3),
+        )
+        restored = VariantManifestEntry.from_json_dict(entry.to_json_dict())
+        assert restored.row_outlier_scores == (0.0, 1.5, 2.3)
+
+    def test_empty_scores_omitted_from_json(self) -> None:
+        """Emit-when-empty would pollute the v1 schema; the field is optional."""
+        entry = VariantManifestEntry(
+            variant_id="abc123def456",
+            title="pannkakor",
+            canonical_ingredients=("flour",),
+            cooking_methods=(),
+            n_recipes=1,
+            csv_path="x.csv",
+            source_urls=(),
+        )
+        data = entry.to_json_dict()
+        assert "row_outlier_scores" not in data
+
+    def test_v1_manifest_without_scores_reads_as_empty(self) -> None:
+        """Backward compat: manifests written before bead 0g3 have no
+        row_outlier_scores key. Reader must default to () without raising."""
+        legacy_data: dict[str, object] = {
+            "variant_id": "abc123def456",
+            "title": "pannkakor",
+            "canonical_ingredients": ["flour"],
+            "cooking_methods": [],
+            "n_recipes": 5,
+            "csv_path": "x.csv",
+            "source_urls": [],
+        }
+        entry = VariantManifestEntry.from_json_dict(legacy_data)
+        assert entry.row_outlier_scores == ()
+
+    def test_non_list_scores_rejected(self, tmp_path: Path) -> None:
+        bad = {
+            "variant_id": "abc123def456",
+            "title": "pannkakor",
+            "canonical_ingredients": ["flour"],
+            "cooking_methods": [],
+            "n_recipes": 1,
+            "csv_path": "x.csv",
+            "source_urls": [],
+            "row_outlier_scores": "not a list",
+        }
+        with pytest.raises(ValueError, match="row_outlier_scores"):
+            VariantManifestEntry.from_json_dict(bad)
+
+    def test_manifest_with_scores_full_roundtrip(self, tmp_path: Path) -> None:
+        manifest = Manifest(
+            variants=[
+                VariantManifestEntry(
+                    variant_id="abc123def456",
+                    title="pannkakor",
+                    canonical_ingredients=("flour", "milk"),
+                    cooking_methods=(),
+                    n_recipes=3,
+                    csv_path="x.csv",
+                    source_urls=(),
+                    row_outlier_scores=(0.0, 1.5, 2.3),
+                ),
+            ],
+        )
+        path = tmp_path / "manifest.json"
+        manifest.write(path)
+        reloaded = Manifest.read(path)
+        assert reloaded.variants[0].row_outlier_scores == (0.0, 1.5, 2.3)

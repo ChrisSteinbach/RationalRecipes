@@ -133,6 +133,54 @@ class TestMergedVariantResult:
         assert dropped == 1
         assert len(variant.normalized_rows) == 2
 
+    def test_outlier_scores_aligned_with_rows(self) -> None:
+        """Bead 0g3: each row gets a scalar distance-from-median score."""
+        variant = MergedVariantResult(
+            variant_title="pannkakor",
+            canonical_ingredients=frozenset({"flour", "milk"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row("u1", {"flour": "100 g"}, {"flour": 50.0, "milk": 50.0}),
+                _row("u2", {"flour": "100 g"}, {"flour": 50.0, "milk": 50.0}),
+                _row("u3", {"flour": "100 g"}, {"flour": 50.0, "milk": 50.0}),
+                _row("u4", {"flour": "500 g"}, {"flour": 80.0, "milk": 20.0}),
+            ],
+            header_ingredients=["flour", "milk"],
+        )
+        scores = variant.outlier_scores()
+        assert len(scores) == 4
+        assert scores[0] == scores[1] == scores[2] == 0.0
+        assert scores[3] > 0.0
+
+    def test_manifest_entry_carries_outlier_scores(self) -> None:
+        variant = MergedVariantResult(
+            variant_title="pannkakor",
+            canonical_ingredients=frozenset({"flour"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row("u1", {"flour": "100 g"}, {"flour": 100.0}),
+                _row("u2", {"flour": "100 g"}, {"flour": 100.0}),
+            ],
+            header_ingredients=["flour"],
+        )
+        entry = variant.to_manifest_entry("x.csv")
+        assert entry.row_outlier_scores == (0.0, 0.0)
+
+    def test_manifest_entry_single_row_has_empty_scores(self) -> None:
+        """Single-row variants produce a (0.0,) score, but to_json_dict
+        omits the field only when strictly empty. Single-row stays in."""
+        variant = MergedVariantResult(
+            variant_title="pannkakor",
+            canonical_ingredients=frozenset({"flour"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row("u1", {"flour": "100 g"}, {"flour": 100.0}),
+            ],
+            header_ingredients=["flour"],
+        )
+        entry = variant.to_manifest_entry("x.csv")
+        assert entry.row_outlier_scores == (0.0,)
+
 
 class TestEmitVariants:
     def test_round_trip_via_manifest(self, tmp_path: Path) -> None:

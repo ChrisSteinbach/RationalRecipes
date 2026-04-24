@@ -36,6 +36,7 @@ from rational_recipes.scrape.merge import (
     DEFAULT_BUCKET_SIZE,
     proportion_bucket_dedup,
 )
+from rational_recipes.scrape.outlier import compute_outlier_scores
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +115,15 @@ class MergedVariantResult:
             slug = "variant"
         return f"{slug}_{self.variant_id}.csv"
 
+    def outlier_scores(self) -> list[float]:
+        """Per-row Euclidean distance from the variant's median (bead 0g3)."""
+        return compute_outlier_scores(
+            [row.proportions for row in self.normalized_rows],
+            self.canonical_ingredients,
+        )
+
     def to_manifest_entry(self, csv_path: str) -> VariantManifestEntry:
+        scores = self.outlier_scores()
         return VariantManifestEntry(
             variant_id=self.variant_id,
             title=normalize_title(self.variant_title),
@@ -123,6 +132,7 @@ class MergedVariantResult:
             n_recipes=len(self.normalized_rows),
             csv_path=csv_path,
             source_urls=tuple(self.source_urls),
+            row_outlier_scores=tuple(scores),
         )
 
 

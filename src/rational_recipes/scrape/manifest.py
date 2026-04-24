@@ -17,10 +17,16 @@ Schema — one entry per variant in ``manifest.json``::
           "cooking_methods": ["stekt"],
           "n_recipes": 42,
           "csv_path": "pannkakor_3fa8c91d7e42.csv",
-          "source_urls": ["https://example.com/recipe/..."]
+          "source_urls": ["https://example.com/recipe/..."],
+          "row_outlier_scores": [0.0, 1.23, ...]
         }
       ]
     }
+
+``row_outlier_scores`` is optional (bead 0g3) and aligned row-for-row
+with the per-variant CSV. Readers that predate the field treat it as
+empty; writers that have no meaningful scores to emit (n_recipes ≤ 1)
+may omit it.
 
 ``variant_id`` is the 12-char SHA1 prefix of
 ``normalized_l1_title | sorted(canonical_ingredients) | sorted(cooking_methods)``.
@@ -78,9 +84,10 @@ class VariantManifestEntry:
     n_recipes: int
     csv_path: str
     source_urls: tuple[str, ...]
+    row_outlier_scores: tuple[float, ...] = ()
 
     def to_json_dict(self) -> dict[str, object]:
-        return {
+        data: dict[str, object] = {
             "variant_id": self.variant_id,
             "title": self.title,
             "canonical_ingredients": list(self.canonical_ingredients),
@@ -89,9 +96,15 @@ class VariantManifestEntry:
             "csv_path": self.csv_path,
             "source_urls": list(self.source_urls),
         }
+        if self.row_outlier_scores:
+            data["row_outlier_scores"] = list(self.row_outlier_scores)
+        return data
 
     @classmethod
     def from_json_dict(cls, data: dict[str, object]) -> VariantManifestEntry:
+        raw_scores = data.get("row_outlier_scores", [])
+        if not isinstance(raw_scores, list):
+            raise ValueError("row_outlier_scores must be a list when present")
         return cls(
             variant_id=str(data["variant_id"]),
             title=str(data["title"]),
@@ -100,6 +113,7 @@ class VariantManifestEntry:
             n_recipes=cast(int, data["n_recipes"]),
             csv_path=str(data["csv_path"]),
             source_urls=tuple(cast(list[str], data["source_urls"])),
+            row_outlier_scores=tuple(float(x) for x in raw_scores),
         )
 
 
