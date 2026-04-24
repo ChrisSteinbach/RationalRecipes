@@ -54,6 +54,9 @@ nosetests.xml
 # Regenerable CSV outputs from scrape_to_csv.py / explore_groups.py
 /output/
 
+# Generated SQLite artifact from migrate_curated_to_db.py / scrape_catalog.py
+/artifacts/recipes.db
+
 .dispatch/
 
 # JetBrains IDE files
