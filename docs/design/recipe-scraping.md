@@ -645,8 +645,10 @@ in `scrape/wdc.py` and `scrape/grouping.py` (`RationalRecipes-ayw`).
 Cross-corpus merge (URL join + Jaccard near-dup) and within-variant
 proportion-bucket dedup shipped in `scrape/merge.py`
 (`RationalRecipes-toj`). The merged pipeline (`scrape/pipeline_merged.py`,
-driver `scripts/scrape_merged.py`) emits per-variant rr-stats-compatible
-CSVs alongside a `manifest.json` keyed by a stable `variant_id =
+driver `scripts/scrape_merged.py`) emits per-variant CSVs (in the
+legacy Phase 0 format — `rr-stats` was retired in vwt.8 but the format
+is preserved for the Phase 4 review flow) alongside a `manifest.json`
+keyed by a stable `variant_id =
 sha1(normalized_l1_title | sorted(canonical_ingredient_set) |
 sorted(cookingMethod_tag_set))[:12]`. Level 3 cookingMethod partition
 shipped in `group_by_cooking_method()` and is wired into the merged
@@ -846,14 +848,11 @@ contributor track. Bead: `RationalRecipes-1z2`.
 
 ## Dependencies on existing code
 
-The pipeline should produce CSV rows in the format consumed by `read.py` so
-that `rr-stats` and `rr-diff` work unchanged on the collected data. This
-means respecting:
-
-- Header row as ingredient names (looked up via `ingredient.Factory`)
-- Data cells as `value unit` pairs parsed by `read.py`'s regex
-- Units registered in `units.py`
-
-If the pipeline wants richer provenance (source URL, scrape date, quality
-score), that's additional columns or a sidecar file — don't break the
-existing format.
+**Historical note (2026-04-24):** this section originally required the
+pipeline to emit `rr-stats`-compatible CSVs so the Phase 0 CLI kept
+working on the collected data. `rr-stats` / `rr-diff` / `read.py` /
+`merge.py` were removed under bead `RationalRecipes-vwt.8`; the CSV
+compatibility constraint is gone. The extraction pipeline now writes
+directly to `recipes.db` (SQLite) via `catalog_db.CatalogDB` and the
+PWA consumes that database via sql.js. Ingredient normalization still
+uses `ingredient.Factory` and `units.py`.

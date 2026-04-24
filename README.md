@@ -8,152 +8,106 @@ compute mean proportions with confidence intervals — produce a single
 across enough independent recipes, shared structure reveals itself and the
 noise averages out.
 
-The project has two parts that meet at a SQLite database:
+The project has two halves that meet at a SQLite database:
 
-- **Python pipeline** (`src/rational_recipes/`) — discovers dishes in
-  existing recipe corpora (RecipeNLG, Web Data Commons), parses ingredient
-  lines via a local LLM, normalizes to grams, and produces per-dish CSVs
-  and stats.
 - **PWA** (`web/`) — a Vite + vanilla TypeScript + sql.js browser app that
-  serves the resulting recipes as a fully client-side browsable catalog.
+  serves the averaged catalog as a fully client-side browsable recipe
+  book. No backend, no API; just a static bundle + a prebuilt SQLite
+  file. This is the primary user-facing surface.
+- **Python extraction pipeline** (`src/rational_recipes/`) — discovers
+  dishes in existing recipe corpora (RecipeNLG, Web Data Commons), parses
+  ingredient lines via a local LLM, normalizes to grams, and writes
+  per-variant statistics into `recipes.db`. The PWA reads that database.
+
+The CSV-oriented command-line tools (`rr-stats`, `rr-diff`) that led the
+Phase 0 UX were retired under bead `RationalRecipes-vwt.8` — the PWA now
+covers what they used to do. The `rr-discover` diagnostic survives as a
+threshold-picking aid for the extraction pipeline.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `src/rational_recipes/` | Stats library and CLIs (`rr-stats`, `rr-diff`, `rr-discover`) |
-| `src/rational_recipes/scrape/` | RecipeNLG + WDC loaders, dish grouping, LLM parse, pipeline |
-| `web/` | Client-side PWA (Vite + TS + sql.js) |
-| `scripts/` | Database build, benchmark, and pipeline utilities |
-| `sample_input/` | Worked CSV examples, one subdirectory per dish |
-| `docs/design/` | Architecture decision documents |
+| `web/` | Client-side PWA (Vite + TS + sql.js) — primary UI |
+| `src/rational_recipes/scrape/` | RecipeNLG + WDC loaders, dish grouping, LLM parse, extraction pipeline |
+| `src/rational_recipes/catalog_db.py` | SQLite schema + reader/writer (the `recipes.db` contract) |
+| `src/rational_recipes/ingredient.py`, `units.py`, `normalize.py` | Ingredient/unit normalization primitives used by the pipeline |
+| `src/rational_recipes/statistics.py`, `ratio.py`, `ratio_format.py` | Reference implementation of the central-tendency math (ported to TS for the PWA) |
+| `src/rational_recipes/discover_cli.py` | `rr-discover` — extraction-pipeline threshold diagnostic |
+| `scripts/scrape_catalog.py` | Whole-corpus batch extraction driver (LLM, resumable) |
+| `scripts/review_variants.py` | Maintainer CLI review tool (variant accept/drop/annotate) |
+| `scripts/migrate_curated_to_db.py` | Seed a fresh `recipes.db` from the historical curated JSON |
+| `scripts/build_db.py` | Rebuild `ingredients.db` from USDA / FAO sources |
+| `docs/design/full-catalog.md` | Active design doc (Phase 5) |
+| `docs/design/recipe-scraping.md` | Historical Phase 1-4 design |
 
 ## Quick start
 
 ```bash
-# install the Python package (and CLI entry points) in editable mode
+# Python package (extraction pipeline + diagnostics) in editable mode
 python3 -m pip install -e .
 
-# average a set of recipes at 1000g total, merging 'water' into 'milk'
-rr-stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water
-
-# compare two recipe sets and show per-ingredient percentage differences
-rr-diff sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv
-
-# discover common dish names in a RecipeNLG corpus (see 'Scrape pipeline' below)
-python3 scripts/explore_groups.py pannkak --l1-min=1 --l2-min=1
+# PWA dev loop
+cd web
+npm install
+npm run dev
 ```
 
 Run any CLI with `--help` for the full option set.
 
-## The three CLIs
+## Extraction pipeline
 
-### `rr-stats` — central-tendency recipe from a CSV
-
-```
- $ rr-stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water
-
-Recipe ratio in units of weight is 1.00:3.56:1.02:0.17:0.02 (all purpose flour:milk:egg:butter:salt)
-
-1000g Recipe
-------------
-173g or 329ml all purpose flour
-618g or 618ml milk
-177g, 150ml or 3 egg(s) where each egg is 53g
-29g or 29ml butter
-3g or 2ml salt
-
-Note: these calculations are based on 200 distinct recipe proportions. Duplicates have been removed.
-```
-
-`-v` additionally prints 95% confidence intervals for each proportion and the
-minimum sample size needed to reach a given interval width — useful when
-deciding whether a dataset is "enough."
-
-### `rr-diff` — per-ingredient comparison of two recipe sets
-
-```
- $ rr-diff sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv
-
-Ratio for data set 1 in units of weight is 1.00:1.86:0.12:0.75:0.18:0.01 (all purpose flour:milk:water:egg:butter:salt)
-Ratio for data set 2 in units of weight is 1.00:2.17:0.22:1.17:0.23:0.01 (all purpose flour:milk:water:egg:butter:salt)
-
-Percentage difference between salt proportions 58%
-Percentage difference between water proportions 40%
-...
-Overall percentage difference = 25%
-```
-
-### `rr-discover` — find common dishes in a RecipeNLG corpus
-
-Streams a RecipeNLG CSV, counts normalized title forms, and ranks the most
-common dishes. With `--variants` it makes a second pass and splits each dish
-into L2 buckets by ingredient set — useful for spotting polyglot groups
-(e.g. 'pancakes' splits into American / Swedish / other variants).
-
-## CSV input format
-
-`rr-stats` and `rr-diff` accept CSVs where the header row is ingredient
-names and each data row is `value unit` pairs. Weight and volume units may
-be mixed freely.
-
-```
-Flour, Egg, Milk, Butter, Salt
-1c, 1 large, 3 cups, 2 tbsp, 0.5 tsp
-200g, 55gram, 0.7l, 0, 1 pinch
-16oz, 2.5 medium, 2.5c, 1 stick, 0
-```
-
-Missing ingredients are written as `0`. Unit synonyms (`c`, `cup`, `cups`)
-resolve through the unit registry in `src/rational_recipes/units.py`.
-
-## Scrape pipeline
-
-CSVs for individual dishes can be produced by hand, or by running the scrape
-pipeline against one of the bundled corpus loaders. The pipeline:
-
-1. Streams a recipe corpus (RecipeNLG CSV or Web Data Commons Schema.org
-   archive).
-2. Groups candidate recipes by normalized title (L1) and by ingredient set
-   (L2), so that genuinely different dishes sharing a name end up in
-   separate groups.
-3. Parses each ingredient line via a local Ollama model (`parse.py`),
-   extracting `quantity`, `unit`, `ingredient`, `preparation`.
-4. Normalizes everything to grams using the ingredient database (USDA
-   FoodData Central + FAO/INFOODS densities + supplementary entries in
-   `src/rational_recipes/data/ingredients.db`).
-5. Emits a per-group CSV in the same format as the hand-curated inputs.
+`scripts/scrape_catalog.py` is the canonical extraction driver. It streams
+both corpora end to end, auto-discovers dish families, groups candidates
+by title (L1) and ingredient set (L2), parses ingredient lines through a
+local Ollama model, normalizes each line to grams via the ingredient
+database, and writes per-variant statistics directly into `recipes.db`.
 
 ```bash
-# explore what dish groups exist for a prefix (fast, no LLM)
-python3 scripts/explore_groups.py pannkak --l1-min=1 --l2-min=1
-
-# full scrape → CSV (slow — one LLM call per ingredient line)
-python3 scripts/scrape_to_csv.py pannkak --l1-min=1 --l2-min=1 \
-    --ollama-url http://localhost:11434 -v
+python3 scripts/scrape_catalog.py \
+    --ollama-url http://remote-ollama:11434 \
+    --output output/catalog/recipes.db
 ```
 
-Run `scripts/scrape_to_csv.py --help` to see the default Ollama model and
-override flags.
+The run is resumable — re-invoking with the same `--output` picks up
+where the previous invocation left off. Expect a full run to take hours;
+see `docs/design/full-catalog.md` for the cost model and the corpus-first
+rationale.
+
+### `rr-discover` — title-frequency diagnostic
+
+`rr-discover` streams a RecipeNLG CSV, counts normalized title forms,
+and ranks the most common dishes. With `--variants` it makes a second
+pass and splits each dish into L2 buckets by ingredient set — useful
+for spotting polyglot groups (e.g. 'pancakes' splits into American /
+Swedish / other variants) and for picking grouping thresholds before a
+full extraction run.
 
 Scrape scripts need RecipeNLG at `dataset/full_dataset.csv` (2.2 GB,
 gitignored) and a running Ollama instance. See
-[`docs/design/recipe-scraping.md`](docs/design/recipe-scraping.md) for the
-full design rationale and the corpus-first, structured-first approach.
+[`docs/design/recipe-scraping.md`](docs/design/recipe-scraping.md) for
+the full Phase 1-4 design rationale and
+[`docs/design/full-catalog.md`](docs/design/full-catalog.md) for the
+current Phase 5 direction.
 
 ## PWA
 
 `web/` is a fully client-side recipe browser built with Vite, vanilla
-TypeScript, and sql.js. It loads a prebuilt SQLite database into the
-browser and serves a curated catalog of averaged recipes — no backend, no
-API, just static hosting. See epic **RationalRecipes-f85** (tracked in
-beads) for the MVP scope and progress.
+TypeScript, and sql.js. It fetches the prebuilt `recipes.db` over
+static hosting, loads it into the browser via sql.js, and renders a
+catalog view with filters (sample size, variant count, ingredient set)
+plus a detail view that produces a scaled recipe at any target weight.
+No backend, no API.
 
 ```bash
 cd web
 npm install
 npm run dev
+# or: npm test (Vitest), npm run build
 ```
+
+See epic **RationalRecipes-vwt** (tracked in beads) for the catalog MVP
+scope and progress.
 
 ## Ingredient database
 

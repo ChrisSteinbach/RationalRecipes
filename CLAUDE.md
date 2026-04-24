@@ -15,7 +15,7 @@ RationalRecipes averages many independent recipes for the same dish into one "ce
 ## Scope guidance
 
 - **Primary UI is the PWA** (`web/`). Everything user-facing happens there.
-- **The CSV-CLI pipeline (`rr-stats`, `rr-diff`, `read.py`, `columns.py`, `merge.py`, `sample_input/`) is deprecated** and scheduled for removal. Don't build against it, don't fix it, don't maintain its tests. Cleanup tracked in bead `RationalRecipes-vwt.8`. (`rr-discover` stays — it's the diagnostic for threshold-picking under bead `vwt.1`.)
+- **The CSV-CLI pipeline (`rr-stats`, `rr-diff`, `read.py`, `merge.py`, `sample_input/`) was removed in vwt.8.** `rr-discover` stays — it's the diagnostic for threshold-picking under bead `vwt.1`. The math modules (`statistics.py`, `ratio.py`, `ratio_format.py`, `normalize.py`) remain as the reference implementation the TS port in `web/src/` was derived from.
 - **Maintainer review is CLI-only.** `scripts/review_variants.py` is the review tool. The PWA is read-only for end users — it consumes the post-review `recipes.db`. Bead `RationalRecipes-vwt.9` tracks porting the review tool from its current `manifest.json` sidecar to `recipes.db`.
 - **Historical design doc `docs/design/recipe-scraping.md`** captures Phase 1-4 rationale. Read for context, but where it conflicts with `full-catalog.md` the newer doc wins.
 
@@ -50,7 +50,6 @@ The `scrape/` submodule (`src/rational_recipes/scrape/`) handles loaders (Recipe
 | `output/catalog/` | Pipeline output, including `recipes.db` (gitignored — planned) |
 | `docs/design/full-catalog.md` | **Live design doc** |
 | `docs/design/recipe-scraping.md` | Historical Phase 1-4 design |
-| `src/rational_recipes/{read,columns,merge,stats_main,diff_main,*_cli}.py`, `sample_input/` | **Deprecated CSV-CLI path (vwt.7 cleanup)** |
 
 ## Git workflow
 
