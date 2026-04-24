@@ -31,8 +31,7 @@ threshold-picking aid for the extraction pipeline.
 | `web/` | Client-side PWA (Vite + TS + sql.js) — primary UI |
 | `src/rational_recipes/scrape/` | RecipeNLG + WDC loaders, dish grouping, LLM parse, extraction pipeline |
 | `src/rational_recipes/catalog_db.py` | SQLite schema + reader/writer (the `recipes.db` contract) |
-| `src/rational_recipes/ingredient.py`, `units.py`, `normalize.py` | Ingredient/unit normalization primitives used by the pipeline |
-| `src/rational_recipes/statistics.py`, `ratio.py`, `ratio_format.py` | Reference implementation of the central-tendency math (ported to TS for the PWA) |
+| `src/rational_recipes/ingredient.py`, `units.py` | Ingredient + unit primitives used by the pipeline |
 | `src/rational_recipes/discover_cli.py` | `rr-discover` — extraction-pipeline threshold diagnostic |
 | `scripts/scrape_catalog.py` | Whole-corpus batch extraction driver (LLM, resumable) |
 | `scripts/review_variants.py` | Maintainer CLI review tool (variant accept/drop/annotate) |

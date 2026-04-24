@@ -71,3 +71,4 @@ nosetests.xml
 # Playwright MCP session artifacts (accessibility snapshots, screenshots)
 .playwright-mcp/
 /rationalrecipes-*.png
+/.claude/
