@@ -281,7 +281,9 @@ The e4b model OOMs on a 16 GB local machine with typical desktop workload,
 so a remote Ollama host is required. Gemma 4 e4b handles straightforward
 English ingredient lines at 100% accuracy on the Phase 0 sample and
 extracts cleanly across Swedish, German, Russian, and Japanese when paired
-with the language-neutral prompt described below.
+with the language-neutral prompt described below. The current production
+model (post-swap) is tracked under § Exploration plan / Phase 4 and in
+`RationalRecipes-1z2`.
 
 **Prompt strategy:** a **language-neutral prompt** that instructs the model
 to keep ingredient names in the original language. Reference implementation
@@ -633,10 +635,14 @@ Productionize the review UI if it's getting heavy use.
    dedup (§ Deduplication) runs within-variant after normalization; its
    fingerprint coarseness is still open and tuned in the same bead
    (`RationalRecipes-toj`).
-7. ~~**Gemma 4 e4b accuracy ceiling**~~ **PARTIALLY ANSWERED** — e4b OOMs
-   on 16 GB; e2b is the de facto local ceiling. Measured on Swedish at
-   F1≈0.84 (spike `RationalRecipes-a1k`). Full English A/B measurement
-   tracked in `RationalRecipes-5i1`.
+7. ~~**Gemma 4 e4b accuracy ceiling**~~ **RESOLVED** — e4b OOMs on 16 GB;
+   e2b is the de facto local ceiling (F1≈0.84 Swedish, spike
+   `RationalRecipes-a1k`). English A/B measurement closed in
+   `RationalRecipes-5i1`. The accuracy-ceiling question itself was
+   superseded by the v2 head-to-head sweep (`RationalRecipes-jpp`) across
+   14 remote-hosted candidates (1–35B); local-ceiling constraints no
+   longer bind the production choice because the scrape pipeline runs
+   against a remote Ollama host.
 8. **Non-English recipes** — **PARTIALLY RESOLVED.** The original
    question ("can the LLM handle non-English lines?") split into two
    subproblems, solved separately:
