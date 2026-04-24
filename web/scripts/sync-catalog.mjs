@@ -1,28 +1,51 @@
-// Copy the canonical CuratedRecipeCatalog JSON from artifacts/ into the
-// Vite public/ directory so `npm run dev` and `npm run build` can serve
-// it at /curated_recipes.json.
+// Copy the catalog artifact(s) from artifacts/ into the Vite public/
+// directory so `npm run dev` and `npm run build` can serve them.
 //
-// The source of truth lives outside web/ because the Python pipeline
-// emits it (scripts/export_curated_recipes.py or merged_to_catalog.py)
-// and the PWA is a consumer. Re-run this after regenerating the
-// artifact.
+// Default source is SQLite: artifacts/recipes.db → public/recipes.db.
+// The JSON file (curated_recipes.json) ships as a dev fallback for
+// ?source=json. Pass --source=json to copy only the JSON path.
+//
+// The artifacts live outside web/ because the Python side owns them
+// (scripts/migrate_curated_to_db.py writes recipes.db from the
+// historical curated_recipes.json seed). Re-run this after rebuilding.
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const src = join(__dirname, "..", "..", "artifacts", "curated_recipes.json");
+const repoRoot = join(__dirname, "..", "..");
 const destDir = join(__dirname, "..", "public");
-const dest = join(destDir, "curated_recipes.json");
+mkdirSync(destDir, { recursive: true });
 
-if (!existsSync(src)) {
-  console.error(`Catalog not found at ${src}`);
-  console.error(
-    "Run `python3 scripts/export_curated_recipes.py` from the repo root first.",
-  );
-  process.exit(1);
+const args = new Set(process.argv.slice(2));
+const source = [...args]
+  .find((a) => a.startsWith("--source="))
+  ?.split("=")[1] ?? "db";
+
+function copy(srcName, destName, options = {}) {
+  const src = join(repoRoot, "artifacts", srcName);
+  const dest = join(destDir, destName);
+  if (!existsSync(src)) {
+    if (options.optional) {
+      console.warn(`Optional source missing: ${src} (skipping)`);
+      return false;
+    }
+    console.error(`Required source not found: ${src}`);
+    if (srcName === "recipes.db") {
+      console.error(
+        "Run `python3 scripts/migrate_curated_to_db.py` from the repo root first.",
+      );
+    }
+    process.exit(1);
+  }
+  copyFileSync(src, dest);
+  console.log(`Copied ${src} → ${dest}`);
+  return true;
 }
 
-mkdirSync(destDir, { recursive: true });
-copyFileSync(src, dest);
-console.log(`Copied ${src} → ${dest}`);
+if (source === "json") {
+  copy("curated_recipes.json", "curated_recipes.json");
+} else {
+  copy("recipes.db", "recipes.db");
+  copy("curated_recipes.json", "curated_recipes.json", { optional: true });
+}

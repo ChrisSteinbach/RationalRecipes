@@ -1,9 +1,11 @@
-// CuratedRecipeCatalog types and loader.
+// CuratedRecipe types and catalog-loading façade.
 //
-// Schema source of truth: schema/curated_recipes.schema.json (at the
-// repo root). Populated by the Python pipeline — scripts/export_curated_recipes.py
-// for hand-curated inputs, scripts/merged_to_catalog.py for pipeline
-// output. Synced into /curated_recipes.json by web/scripts/sync-catalog.mjs.
+// Data source since bead vwt.6: SQLite (recipes.db) via sql.js, wrapped
+// by CatalogRepo (catalog_repo.ts). The historical JSON source
+// (curated_recipes.json) is a dev fallback behind ?source=json.
+//
+// The types CuratedRecipe / CatalogIngredient / CatalogSource stay
+// stable: catalog_view.ts and detail_view.ts consume them unchanged.
 
 import { Ratio, type RatioIngredient, type WholeUnit } from "./ratio.ts";
 
@@ -53,13 +55,16 @@ export interface Catalog {
   recipes: CuratedRecipe[];
 }
 
-const CATALOG_FILE = "curated_recipes.json";
+const JSON_CATALOG_FILE = "curated_recipes.json";
 
-/** Resolved default path (Vite base + filename); works at any deploy base. */
-export const CATALOG_PATH = `${import.meta.env.BASE_URL}${CATALOG_FILE}`;
+/** Legacy JSON path kept for the dev fallback and validation tests. */
+export const JSON_CATALOG_PATH = `${import.meta.env.BASE_URL}${JSON_CATALOG_FILE}`;
 
-/** Fetch the catalog from the static asset path and sanity-check its shape. */
-export async function loadCatalog(path: string = CATALOG_PATH): Promise<Catalog> {
+/** Back-compat alias — some code paths still import CATALOG_PATH. */
+export const CATALOG_PATH = JSON_CATALOG_PATH;
+
+/** Fetch the JSON catalog (dev fallback). Prefer loadCatalogFromDb. */
+export async function loadCatalog(path: string = JSON_CATALOG_PATH): Promise<Catalog> {
   const response = await fetch(path);
   if (!response.ok) {
     throw new Error(
@@ -68,6 +73,13 @@ export async function loadCatalog(path: string = CATALOG_PATH): Promise<Catalog>
   }
   const data = (await response.json()) as unknown;
   return validateCatalog(data);
+}
+
+/** Hydrate a full Catalog from recipes.db via sql.js. */
+export async function loadCatalogFromDb(): Promise<Catalog> {
+  const { loadCatalogRepo } = await import("./catalog_repo.ts");
+  const repo = await loadCatalogRepo();
+  return repo.toCatalog();
 }
 
 /** Minimal runtime shape check — full validation lives in the JSON schema. */
@@ -88,10 +100,9 @@ export function validateCatalog(data: unknown): Catalog {
 /**
  * Convert a catalog entry into a Ratio model.
  *
- * Uses baker's percentages (the `ratio` field on each CatalogIngredient),
- * which are pre-computed by the Python pipeline so the base ingredient is
- * 1.0. The in-browser Ratio math uses these directly — it doesn't need
- * proportions for scaling.
+ * Uses baker's percentages (the `ratio` field on each CatalogIngredient).
+ * The Python side pre-computes these so the base ingredient is 1.0; the
+ * in-browser Ratio math consumes them directly.
  */
 export function toRatio(recipe: CuratedRecipe): Ratio {
   const values = recipe.ingredients.map((i) => i.ratio);

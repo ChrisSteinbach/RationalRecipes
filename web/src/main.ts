@@ -6,7 +6,12 @@
 //   #/recipe/<id>   → detail
 
 import "./styles.css";
-import { type Catalog, type CuratedRecipe, loadCatalog } from "./catalog.ts";
+import {
+  type Catalog,
+  type CuratedRecipe,
+  loadCatalog,
+  loadCatalogFromDb,
+} from "./catalog.ts";
 import {
   type CatalogViewState,
   initialCatalogState,
@@ -91,9 +96,10 @@ async function main(): Promise<void> {
   if (!app) return;
   app.innerHTML = `<p class="app-loading">Loading catalog…</p>`;
 
+  const useJson = new URLSearchParams(location.search).get("source") === "json";
   let catalog: Catalog;
   try {
-    catalog = await loadCatalog();
+    catalog = useJson ? await loadCatalog() : await loadCatalogFromDb();
   } catch (err) {
     app.innerHTML = `<p class="app-error">Failed to load catalog: ${(err as Error).message}</p>`;
     throw err;
