@@ -178,6 +178,64 @@ class TestMergeCorpora:
         assert stats.url_duplicates == 1
         assert stats.near_dup_duplicates == 0
 
+    def test_near_dup_gate_strips_translation_suffix(self) -> None:
+        """RationalRecipes-cw1: RecipeNLG's ``" - English translation"``
+        suffix shouldn't prevent the near-dup comparison with a WDC row
+        under the base Swedish title."""
+        shared = ("flour", "milk", "egg", "salt", "sugar")
+        r = _rnlg(
+            "Pannkaka - Swedish Pancakes",
+            "https://a.com/r/1",
+            shared,
+            ner=shared,
+        )
+        w = _wdc("Pannkaka", "https://b.se/r/2", shared, names=frozenset(shared))
+
+        _, stats = merge_corpora([r], [w])
+
+        assert stats.near_dup_duplicates == 1
+
+    def test_near_dup_gate_compacts_whitespace(self) -> None:
+        """RationalRecipes-cw1: compound-word Swedish dish names (WDC
+        ``Fläskpannkaka``) must gate-match the space-separated RecipeNLG
+        form (``Fläsk Pannkaka``), or pairs like the documented bead-3cu
+        fläskpannkaka pair (Jaccard 0.57, four shared canonical
+        ingredients) never get compared."""
+        shared = ("bacon", "egg", "flour", "milk")
+        rnlg_extra = (*shared, "syrup", "butter")
+        wdc_extra = (*shared, "salt")
+        r = _rnlg(
+            "Fläsk Pannkaka - Pork Pancake",
+            "https://a.com/r/1",
+            rnlg_extra,
+            ner=rnlg_extra,
+        )
+        w = _wdc(
+            "Fläskpannkaka",
+            "https://b.se/r/2",
+            wdc_extra,
+            names=frozenset(wdc_extra),
+        )
+
+        _, stats = merge_corpora([r], [w])
+
+        # Jaccard = 4/7 ≈ 0.57 — above the 0.3 default after the
+        # compound-word gate lines the two titles up.
+        assert stats.near_dup_duplicates == 1
+
+    def test_near_dup_gate_keeps_distinct_dishes_separate(self) -> None:
+        """Stricter gate must not merge dishes whose compacted titles
+        genuinely differ. ``amerikanskpannkaka`` vs ``pannkaka`` stay
+        in separate buckets even though they share the base set."""
+        shared = ("flour", "milk", "egg", "salt", "sugar")
+        r = _rnlg("Amerikansk Pannkaka", "https://a.com/r/1", shared, ner=shared)
+        w = _wdc("Pannkaka", "https://b.se/r/2", shared, names=frozenset(shared))
+
+        merged, stats = merge_corpora([r], [w])
+
+        assert stats.near_dup_duplicates == 0
+        assert len(merged) == 2
+
 
 class TestProportionBucketDedup:
     def test_empty_input(self) -> None:

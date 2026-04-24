@@ -662,10 +662,13 @@ ica.se slice (`RationalRecipes-toj`):
 Phase 2 acceptance (run on 10 RecipeNLG + 33 WDC ica.se pannkak rows,
 the slice that contains the 3cu-documented cross-corpus pairs):
 (a) URL + near-dup merge fires on the saffranspannkaka pair at the
-new 0.3 default; the fläskpannkaka pair stays missed because
-RecipeNLG title `Fläsk Pannkaka - Pork Pancake` doesn't normalize to
-WDC's `fläskpannkaka` (the title-gating step never compares them —
-tracked as `RationalRecipes-cw1`);
+new 0.3 default; the fläskpannkaka pair (RecipeNLG `Fläsk Pannkaka -
+Pork Pancake` vs WDC `Fläskpannkaka`) is also now caught — the
+cross-corpus near-dup gate uses a stricter title key
+(`_merge_title_key`) that strips RecipeNLG's
+`" - English translation"` suffix and compacts whitespace, so
+compound-word Swedish dish names line up with their space-separated
+RecipeNLG counterparts (`RationalRecipes-cw1`);
 (b) within-variant proportion-bucket dedup did not fire on this slice
 because each variant is singleton — the dedup mechanism stays unit-
 tested in `test_dedup_in_place_collapses_identical_proportions`,

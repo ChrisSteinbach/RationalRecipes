@@ -4,10 +4,14 @@ Two distinct dedup steps live here, because they solve different problems:
 
 1. ``merge_corpora()`` runs at corpus-merge time. It joins RecipeNLG
    rows against WDC rows via URL first, then by ingredient-set Jaccard
-   near-dup at a threshold of 0.5 (midpoint of the 0.4-0.6 range
-   measured by bead 3cu on real saffranspannkaka / fläskpannkaka pairs;
-   see docs/design/recipe-scraping.md § Deduplication). On a match, WDC
-   is preferred because it carries richer structured fields
+   near-dup at a threshold of 0.3 (see ``DEFAULT_NEAR_DUP_THRESHOLD``
+   for why), gated by a stricter title key than L1 grouping uses:
+   ``_merge_title_key`` additionally strips RecipeNLG's common
+   ``" - English translation"`` suffix and compacts whitespace so
+   compound-word Swedish titles like WDC ``Fläskpannkaka`` line up
+   with space-separated RecipeNLG forms like ``Fläsk Pannkaka - Pork
+   Pancake``. See docs/design/recipe-scraping.md § Deduplication. On a
+   match, WDC is preferred because it carries richer structured fields
    (cookingMethod, durations, yield, keywords). Unmatched rows from
    either corpus pass through.
 
@@ -21,6 +25,7 @@ Two distinct dedup steps live here, because they solve different problems:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -46,6 +51,31 @@ showed no false positives at 0.3. Matches the bottom of the
 0.3-0.5 range documented by ``RationalRecipes-3cu``. Source-level
 default; not yet a CLI flag.
 """
+
+
+_TRANSLATION_SUFFIX_RE = re.compile(r"\s+-\s+.*$")
+
+
+def _merge_title_key(title: str) -> str:
+    """Stricter title key for the cross-corpus near-dup gate.
+
+    Layers two steps on top of ``normalize_title`` to close the
+    orthography gap between RecipeNLG and WDC titles for the same
+    Swedish dish (``RationalRecipes-cw1``):
+
+    1. Strip RecipeNLG's ``" - English translation/description"``
+       suffix (``Fläsk Pannkaka - Pork Pancake`` → ``Fläsk Pannkaka``).
+    2. Remove remaining whitespace so the space-separated RecipeNLG
+       form ``fläsk pannkaka`` collapses to the compound-word WDC form
+       ``fläskpannkaka``.
+
+    Used only inside ``merge_corpora``. L1 grouping keeps the
+    conservative ``normalize_title``: merge decides cross-corpus
+    identity, L1 decides variants within the merged stream.
+    """
+    t = normalize_title(title)
+    t = _TRANSLATION_SUFFIX_RE.sub("", t)
+    return "".join(t.split())
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,9 +159,12 @@ def merge_corpora(
     link matches a WDC row's page_url, the WDC copy wins (richer
     structured fields) and the RecipeNLG copy is dropped.
 
-    Step 2 — ingredient-set Jaccard near-dup within the same normalized
-    title group, among rows not already URL-matched. Pairs at or above
-    ``near_dup_threshold`` are declared duplicates; WDC wins on match.
+    Step 2 — ingredient-set Jaccard near-dup within the same merge
+    title key (``_merge_title_key``, stricter than L1's normalizer —
+    strips RecipeNLG translation suffixes and compacts whitespace so
+    compound-word Swedish titles align), among rows not already URL-
+    matched. Pairs at or above ``near_dup_threshold`` are declared
+    duplicates; WDC wins on match.
 
     Step 3 — emit everything that survived, WDC-preferred, in a stable
     order (WDC first, then RecipeNLG). Callers may re-order.
@@ -154,20 +187,22 @@ def merge_corpora(
                 url_matched_wdc.add(id(w))
             url_duplicates += 1
 
-    # Step 2: near-dup within normalized title groups, only among
-    # rows not already URL-matched.
+    # Step 2: near-dup within merge-title-key groups, only among rows
+    # not already URL-matched. The stricter key (vs L1's
+    # ``normalize_title``) closes the Swedish compound-word gap
+    # between RecipeNLG and WDC titles; see ``_merge_title_key``.
     unmatched_rnlg = [r for r in recipenlg_recipes if id(r) not in url_matched_rnlg]
     unmatched_wdc = [w for w in wdc_recipes if id(w) not in url_matched_wdc]
 
     rnlg_by_title: dict[str, list[Recipe]] = {}
     for r in unmatched_rnlg:
-        key = normalize_title(r.title)
+        key = _merge_title_key(r.title)
         if key:
             rnlg_by_title.setdefault(key, []).append(r)
 
     wdc_by_title: dict[str, list[WDCRecipe]] = {}
     for w in unmatched_wdc:
-        key = normalize_title(w.title)
+        key = _merge_title_key(w.title)
         if key:
             wdc_by_title.setdefault(key, []).append(w)
 
