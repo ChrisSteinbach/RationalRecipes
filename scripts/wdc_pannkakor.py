@@ -35,7 +35,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--model",
-        default="gemma3n:e2b",
+        default="qwen3.6:35b-a3b",
         help="LLM model name",
     )
     parser.add_argument(

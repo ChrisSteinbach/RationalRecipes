@@ -35,7 +35,7 @@ python3 scripts/explore_groups.py pannkak --l1-min=1 --l2-min=1
 
 # Full scrape pipeline → CSV (slow — one LLM call per ingredient line)
 python3 scripts/scrape_to_csv.py pannkak --l1-min=1 --l2-min=1 \
-    --ollama-url http://localhost:11434 --model gemma4:e2b -v
+    --ollama-url http://localhost:11434 --model qwen3.6:35b-a3b -v
 ```
 
 Scrape scripts need RecipeNLG at `dataset/full_dataset.csv` (2.2 GB, gitignored) and a running Ollama instance.
