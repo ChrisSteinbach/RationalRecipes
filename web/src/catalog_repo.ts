@@ -14,19 +14,20 @@ import type {
   CuratedRecipe,
 } from "./catalog.ts";
 
+export type CatalogOrderBy = "sample_size" | "title";
+
 export interface ListFilters {
   minSampleSize?: number;
   category?: string;
   titleSearch?: string;
-  orderBy?: "n_recipes_desc" | "n_recipes_asc" | "title_asc" | "title_desc";
+  orderBy?: CatalogOrderBy;
   includeDropped?: boolean;
 }
 
-const ORDER_BY_SQL: Record<NonNullable<ListFilters["orderBy"]>, string> = {
-  n_recipes_desc: "n_recipes DESC, normalized_title ASC",
-  n_recipes_asc: "n_recipes ASC, normalized_title ASC",
-  title_asc: "normalized_title ASC",
-  title_desc: "normalized_title DESC",
+// Stable secondary key so ORDER BY sample_size is deterministic under ties.
+const ORDER_BY_SQL: Record<CatalogOrderBy, string> = {
+  sample_size: "n_recipes DESC, normalized_title ASC",
+  title: "normalized_title ASC",
 };
 
 export interface VariantSummary {
@@ -65,7 +66,7 @@ export class CatalogRepo {
     if (!filters.includeDropped) {
       where.push("(review_status IS NULL OR review_status != 'drop')");
     }
-    const orderBy = ORDER_BY_SQL[filters.orderBy ?? "n_recipes_desc"];
+    const orderBy = ORDER_BY_SQL[filters.orderBy ?? "sample_size"];
     let sql =
       "SELECT variant_id, normalized_title, display_title, category," +
       " description, base_ingredient, n_recipes, confidence_level" +
@@ -302,13 +303,17 @@ export class CatalogRepo {
     }
   }
 
-  toCatalog(metadata?: CatalogMetadata): Catalog {
+  listRecipes(filters: ListFilters = {}): CuratedRecipe[] {
     const recipes: CuratedRecipe[] = [];
-    for (const summary of this.listVariants()) {
+    for (const summary of this.listVariants(filters)) {
       const recipe = this.getVariant(summary.id);
       if (recipe !== null) recipes.push(recipe);
     }
-    const catalog: Catalog = { version: 1, recipes };
+    return recipes;
+  }
+
+  toCatalog(metadata?: CatalogMetadata): Catalog {
+    const catalog: Catalog = { version: 1, recipes: this.listRecipes() };
     if (metadata) catalog.metadata = metadata;
     return catalog;
   }

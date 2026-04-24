@@ -349,6 +349,29 @@ describe("CatalogRepo.listVariants", () => {
     ]);
   });
 
+  it("filters by minSampleSize=10 cutoff", () => {
+    const variants = [
+      ...sampleVariants(),
+      {
+        id: "tiny-vid",
+        normalizedTitle: "tiny",
+        category: "crepes",
+        baseIngredient: "flour",
+        sampleSize: 5,
+        ingredients: [
+          { name: "flour", proportion: 0.5, ratio: 1.0, min_sample_size: 4 },
+        ],
+      },
+    ];
+    const repo = new CatalogRepo(seedDb(variants));
+    const listed = repo.listVariants({ minSampleSize: 10 });
+    const titles = listed.map((v) => v.normalizedTitle);
+    expect(titles).toContain("swedish-pancakes");
+    expect(titles).toContain("french-crepes");
+    expect(titles).toContain("sourdough-boule");
+    expect(titles).not.toContain("tiny");
+  });
+
   it("filters by category", () => {
     const repo = new CatalogRepo(seedDb(sampleVariants()));
     const listed = repo.listVariants({ category: "bread" });
@@ -367,17 +390,66 @@ describe("CatalogRepo.listVariants", () => {
     expect(listed.map((v) => v.normalizedTitle)).toEqual(["swedish-pancakes"]);
   });
 
+  it("composes category + titleSearch + minSampleSize additively", () => {
+    const repo = new CatalogRepo(seedDb(sampleVariants()));
+    const listed = repo.listVariants({
+      category: "crepes",
+      titleSearch: "pancakes",
+      minSampleSize: 50,
+    });
+    expect(listed.map((v) => v.normalizedTitle)).toEqual(["swedish-pancakes"]);
+  });
+
   it("includes drop-reviewed when includeDropped=true", () => {
     const repo = new CatalogRepo(seedDb(sampleVariants()));
     const listed = repo.listVariants({ includeDropped: true });
     expect(listed.map((v) => v.normalizedTitle)).toContain("dropped");
   });
 
-  it("orders by n_recipes desc by default", () => {
+  it("orders by sample_size desc by default", () => {
     const repo = new CatalogRepo(seedDb(sampleVariants()));
     const listed = repo.listVariants();
     const sizes = listed.map((v) => v.sampleSize);
     expect(sizes).toEqual([...sizes].sort((a, b) => b - a));
+  });
+
+  it("orders by title alphabetically with orderBy='title'", () => {
+    const repo = new CatalogRepo(seedDb(sampleVariants()));
+    const listed = repo.listVariants({ orderBy: "title" });
+    expect(listed.map((v) => v.normalizedTitle)).toEqual([
+      "french-crepes",
+      "sourdough-boule",
+      "swedish-pancakes",
+    ]);
+  });
+
+  it("orders by sample_size desc with explicit orderBy", () => {
+    const repo = new CatalogRepo(seedDb(sampleVariants()));
+    const listed = repo.listVariants({ orderBy: "sample_size" });
+    expect(listed.map((v) => v.sampleSize)).toEqual([200, 119, 30]);
+  });
+});
+
+describe("CatalogRepo.listRecipes", () => {
+  it("returns hydrated CuratedRecipes matching filters", () => {
+    const repo = new CatalogRepo(seedDb(sampleVariants()));
+    const recipes = repo.listRecipes({ minSampleSize: 100 });
+    expect(recipes.map((r) => r.id)).toEqual([
+      "swedish-pancakes",
+      "french-crepes",
+    ]);
+    expect(recipes[0].ingredients).toHaveLength(2);
+    expect(recipes[0].ingredients[0].name).toBe("flour");
+  });
+
+  it("honors orderBy='title'", () => {
+    const repo = new CatalogRepo(seedDb(sampleVariants()));
+    const recipes = repo.listRecipes({ orderBy: "title" });
+    expect(recipes.map((r) => r.id)).toEqual([
+      "french-crepes",
+      "sourdough-boule",
+      "swedish-pancakes",
+    ]);
   });
 });
 
