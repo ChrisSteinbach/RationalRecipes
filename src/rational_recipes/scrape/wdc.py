@@ -155,9 +155,10 @@ class WDCLoader:
                         row = json.loads(line)
                         yield _parse_row(row, host)
 
-    def iter_all(self) -> Iterator[WDCRecipe]:
-        """Yield all recipes across every host in the zip."""
-        for host in self.list_hosts():
+    def iter_all(self, hosts: Sequence[str] | None = None) -> Iterator[WDCRecipe]:
+        """Yield all recipes across the zip, optionally filtered to *hosts*."""
+        selected = list(hosts) if hosts is not None else self.list_hosts()
+        for host in selected:
             yield from self.iter_host(host)
 
     def search_title(
@@ -167,11 +168,7 @@ class WDCLoader:
     ) -> Iterator[WDCRecipe]:
         """Yield recipes whose title contains *query* (case-insensitive)."""
         q = query.lower()
-        if hosts is not None:
-            source: Iterator[WDCRecipe] = (r for h in hosts for r in self.iter_host(h))
-        else:
-            source = self.iter_all()
-        for recipe in source:
+        for recipe in self.iter_all(hosts=hosts):
             if q in recipe.title.lower():
                 yield recipe
 
