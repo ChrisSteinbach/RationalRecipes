@@ -150,11 +150,13 @@ def run(
     if extract_fn is None:
 
         def default_extract(recipes: Sequence[WDCRecipe]) -> list[WDCRecipe]:
-            return extract_batch(
-                recipes,
-                model=args.model,
-                base_url=args.ollama_url,
-                cache=cache,
+            return list(
+                extract_batch(
+                    recipes,
+                    model=args.model,
+                    base_url=args.ollama_url,
+                    cache=cache,
+                )
             )
 
         extract_fn = default_extract
