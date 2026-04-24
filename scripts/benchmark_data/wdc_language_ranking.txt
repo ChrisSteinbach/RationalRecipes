@@ -1,0 +1,180 @@
+======================================================================
+WDC top-100 hosts by language (recipe count)
+======================================================================
+Language                Hosts    Recipes  Cumulative
+----------------------------------------------------------------------
+English                    28     235937       38.1%
+Multi/brand                12      79021       50.9%
+German                      7      53892       59.6%
+French                      8      37922       65.8%
+Russian                     8      31882       70.9%
+Italian                     5      31224       76.0%
+Japanese                    3      19160       79.1%
+Swedish                     3      18890       82.1%
+Spanish                     4      13289       84.3%
+Romanian                    4      12625       86.3%
+Dutch                       3      11274       88.1%
+Czech                       1       8337       89.5%
+Chinese                     1       8178       90.8%
+Portuguese                  2       7928       92.1%
+Arabic                      2       7898       93.3%
+Serbian                     1       7012       94.5%
+Indonesian                  1       6551       95.5%
+Polish                      1       6118       96.5%
+Slovak                      1       5991       97.5%
+Turkish                     2       5815       98.4%
+Finnish                     1       3434       99.0%
+Danish                      1       3302       99.5%
+Croatian                    1       2935      100.0%
+----------------------------------------------------------------------
+TOTAL                     100     618615
+
+======================================================================
+Per-host detail (grouped by language)
+======================================================================
+
+[English]
+  yummly.com                                  48245  (generic)
+  relish.com                                  18993  (generic)
+  food.com                                    18210  (generic)
+  bigoven.com                                 15632  (generic)
+  brewersfriend.com                           11190  (generic)
+  justapinch.com                               9913  (generic)
+  tasteofhome.com                              9672  (generic)
+  ckbk.com                                     8869  (generic)
+  foodnetwork.com                              8670  (generic)
+  food52.com                                   7586  (generic)
+  stevehacks.com                               7027  (generic)
+  bbcgoodfood.com                              7024  (generic)
+  waitrose.com                                 6208  (generic)
+  americastestkitchen.com                      6190  (generic)
+  bakespace.com                                5911  (generic)
+  bettycrocker.com                             5131  (generic)
+  vegetariantimes.com                          4298  (generic)
+  blueapron.com                                4291  (generic)
+  ifood.tv                                     3628  (generic)
+  recipes.net                                  3605  (generic)
+  keyingredient.com                            3555  (generic)
+  bawarchi.com                                 3390  (generic)
+  cookmonkeys.com                              3336  (generic)
+  completerecipes.com                          3152  (generic)
+  readersdigest.ca                             3128  (generic)
+  insanelygoodrecipes.com                      3046  (generic)
+  archanaskitchen.com                          3020  (generic)
+  cooksmarts.com                               3017  (generic)
+
+[Multi/brand]
+  azureedge.net                               14268  (generic)
+  weightwatchers.com                          10626  (generic)
+  migros.ch                                   10110  (generic)
+  pinterest.com                                7943  (generic)
+  thermomix.com                                7674  (generic)
+  knorr.com                                    7138  (generic)
+  inspiced.co                                  6045  (generic)
+  bakeitwithlove.com                           3445  (generic)
+  worldrecipes.eu                              3077  (generic)
+  carrefour.be                                 2913  (generic)
+  weber.com                                    2906  (generic)
+  mccormick.com                                2876  (generic)
+
+[German]
+  kochbar.de                                  10452  (tld)
+  essen-und-trinken.de                         9924  (tld)
+  kuechengoetter.de                            8169  (tld)
+  chefkoch.de                                  8155  (tld)
+  eatsmarter.de                                7697  (tld)
+  cookidoo.de                                  6558  (tld)
+  daskochrezept.de                             2937  (tld)
+
+[French]
+  journaldesfemmes.fr                          9909  (tld)
+  notrefamille.com                             6996  (generic)
+  marieclaire.fr                               5999  (tld)
+  cuisineaz.com                                3448  (generic)
+  cuisineactuelle.fr                           3059  (tld)
+  chefsimon.com                                2958  (generic)
+  larecette.net                                2797  (generic)
+  marmiton.org                                 2756  (generic)
+
+[Russian]
+  webspoon.ru                                  7750  (tld)
+  edimdoma.ru                                  5161  (tld)
+  koolinar.ru                                  3518  (tld)
+  povar.ru                                     3368  (tld)
+  vkys.info                                    3207  (content)
+  1001eda.com                                  3073  (generic)
+  iamcook.ru                                   2934  (tld)
+  the-challenger.ru                            2871  (tld)
+
+[Italian]
+  donnamoderna.com                            12521  (generic)
+  giallozafferano.it                           7105  (tld)
+  galbani.it                                   5233  (tld)
+  cucchiaio.it                                 3330  (tld)
+  prodottitipicitoscani.it                     3035  (tld)
+
+[Japanese]
+  delishkitchen.tv                             7948  (generic)
+  cookpad.com                                  6372  (generic)
+  macaro-ni.jp                                 4840  (generic)
+
+[Swedish]
+  expressen.se                                 7837  (tld)
+  tasteline.com                                7795  (generic)
+  ica.se                                       3258  (tld)
+
+[Spanish]
+  kiwilimon.com                                3708  (generic)
+  comoquiero.net                               3543  (generic)
+  recetasgratis.net                            3300  (generic)
+  hazteveg.com                                 2738  (generic)
+
+[Romanian]
+  bucataras.ro                                 3587  (tld)
+  gustos.ro                                    3192  (tld)
+  reteteculinare.ro                            3016  (tld)
+  culinar.ro                                   2830  (tld)
+
+[Dutch]
+  ah.nl                                        4540  (generic)
+  kookjij.nl                                   3660  (generic)
+  vtm.be                                       3074  (generic)
+
+[Czech]
+  iprima.cz                                    8337  (tld)
+
+[Chinese]
+  icook.tw                                     8178  (tld)
+
+[Portuguese]
+  globo.com                                    4752  (generic)
+  tudoreceitas.com                             3176  (generic)
+
+[Arabic]
+  sayidaty.net                                 4694  (generic)
+  newsabah.com                                 3204  (generic)
+
+[Serbian]
+  blic.rs                                      7012  (tld)
+
+[Indonesian]
+  yummy.co.id                                  6551  (generic)
+
+[Polish]
+  smaker.pl                                    6118  (tld)
+
+[Slovak]
+  pravda.sk                                    5991  (tld)
+
+[Turkish]
+  lezizyemeklerim.com                          2940  (generic)
+  nefisyemektarifleri.com                      2875  (generic)
+
+[Finnish]
+  valio.fi                                     3434  (tld)
+
+[Danish]
+  spisbedre.dk                                 3302  (tld)
+
+[Croatian]
+  recepti.com                                  2935  (generic)
