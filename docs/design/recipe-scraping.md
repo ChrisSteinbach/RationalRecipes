@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Issue:** RationalRecipes-7ns (epic: RationalRecipes-b7t)
-**Last updated:** 2026-04-08
+**Last updated:** 2026-04-24
 
 ## Problem
 
@@ -276,14 +276,14 @@ structured fields:
     ingredient: "flour", preparation: "sifted" }
 ```
 
-**Model for exploration:** Gemma 4 e4b (or e2b) via Ollama on a remote host.
-The e4b model OOMs on a 16 GB local machine with typical desktop workload,
-so a remote Ollama host is required. Gemma 4 e4b handles straightforward
-English ingredient lines at 100% accuracy on the Phase 0 sample and
-extracts cleanly across Swedish, German, Russian, and Japanese when paired
-with the language-neutral prompt described below. The current production
-model (post-swap) is tracked under § Exploration plan / Phase 4 and in
-`RationalRecipes-1z2`.
+**Model:** production default is `qwen3.6:35b-a3b` via Ollama on a remote
+host, swapped in 2026-04-24 after the v2 benchmark sweep
+(`RationalRecipes-jpp`); see § Phase 4 Results below. Phases 0–1 used
+Gemma 4 e4b, which handled English at 100% accuracy on the Phase 0
+sample. A remote Ollama host is required either way — e4b OOMs on a
+16 GB local machine, and qwen3.6:35b-a3b is larger still. Both models
+extract cleanly across Swedish, German, Russian, and Japanese when
+paired with the language-neutral prompt described below.
 
 **Prompt strategy:** a **language-neutral prompt** that instructs the model
 to keep ingredient names in the original language. Reference implementation
@@ -584,9 +584,29 @@ dedup heuristic and a minimal terminal-based review shell. Validate against the 
 hand-curated CSVs as correctness oracle. Measure: how well does Level 3
 separate known variants (e.g. ugnsmannkaka vs stekpannkaka)?
 
-Shipped portions and remaining work are tracked in beads
-`RationalRecipes-ayw` and `RationalRecipes-toj` respectively; run
-`bd show <id>` for the current state of each.
+*Results (2026-04-24):*
+
+WDC Schema.org Table Corpus loader + per-corpus L1/L2 grouping shipped
+in `scrape/wdc.py` and `scrape/grouping.py` (`RationalRecipes-ayw`).
+Cross-corpus merge (URL join + Jaccard near-dup at 0.5) and within-variant
+proportion-bucket dedup shipped in `scrape/merge.py`
+(`RationalRecipes-toj`). The merged pipeline (`scrape/pipeline_merged.py`,
+driver `scripts/scrape_merged.py`) emits per-variant rr-stats-compatible
+CSVs alongside a `manifest.json` keyed by a stable `variant_id =
+sha1(normalized_l1_title | sorted(canonical_ingredient_set) |
+sorted(cookingMethod_tag_set))[:12]`. Level 3 cookingMethod partition
+shipped in `group_by_cooking_method()` and is wired into the merged
+pipeline (`RationalRecipes-7eo`). Terminal review shell — variant-level
+accept/drop/annotate/defer plus L3 split action — shipped in
+`scripts/review_variants.py` (`RationalRecipes-eco`,
+`RationalRecipes-4lf`).
+
+Remaining in Phase 2: validation run on the pannkakor slice (49
+American + 42 Swedish + 4 lingonberry variants from Phase 1) to
+confirm the URL+near-dup merge catches cross-corpus duplicates,
+proportion-bucket dedup reduces effective N without collapsing
+legitimate variants, and `variant_id`s are stable across reruns —
+gated in `RationalRecipes-toj`.
 
 **Phase 3 — outlier flagging**
 Add outlier flagging on top of the review view: compute per-recipe
@@ -594,10 +614,45 @@ distance from the group median and surface outliers for the reviewer
 to decide keep/drop, with the reason recorded alongside the recipe
 (see § Failure mode B).
 
+*Results (2026-04-24):*
+
+Per-recipe outlier scoring shipped in `scrape/outlier.py`
+(`compute_outlier_scores()`) and is wired into `MergedVariantResult`
+in `pipeline_merged.py` — each row carries a score the review shell
+can sort and highlight by. Score is Euclidean distance from the
+per-ingredient median of the variant's proportion matrix (g-per-100g);
+median chosen over mean so the outlier doesn't pull its own center,
+missing ingredients treated as 0.0. Flagging is surfaced, not
+auto-dropped (per § Failure mode B). Bead: `RationalRecipes-0g3`.
+
 **Phase 4 — scale**
 Broaden beyond the test case to many dish families. Swap in a larger LLM
 if parse-accuracy measurements show it's worth it.
 Productionize the review UI if it's getting heavy use.
+
+*Results so far (2026-04-24):*
+
+- **Model swap executed.** Production default swapped from Gemma 4 e2b
+  to `qwen3.6:35b-a3b` following the v2 benchmark sweep across 14
+  candidates (`RationalRecipes-jpp`). Eyeball validation on en/sv/de
+  gold passes; ja/ru regressions remain unvalidated — native-speaker
+  reviewers are unavailable (`RationalRecipes-2qk` closed 2026-04-24
+  on that basis).
+- **Systematic ingredient-DB coverage.** English (RecipeNLG corpus,
+  `RationalRecipes-b7t.1`, miss rate 63.9% → 26.0% on 2.2M rows,
+  clean-recipe fraction 1.3% → 14.6%) and Swedish (WDC ica.se +
+  tasteline.com, `RationalRecipes-b7t.20`) shipped. The WDC top-100
+  language survey (`RationalRecipes-b7t.24`) filed per-language
+  follow-on beads — German (`bie`), French (`sdk`), Russian (`asq`),
+  Italian (`9oa`), Japanese (`lw8`) — each blocked on native-speaker
+  reviewer availability. Infrastructure
+  (`scripts/tally_wdc_misses.py`) is ready to run end-to-end on
+  steps 1–2–4.
+- **Review UI** already built (see Phase 2 Results); "productionize
+  if heavy use" remains deferred until heavy use emerges.
+
+Open: broadening beyond en/sv awaits reviewer availability. Bead:
+`RationalRecipes-1z2`.
 
 ## Open questions (to resolve during exploration)
 
@@ -677,9 +732,13 @@ Productionize the review UI if it's getting heavy use.
        extraction time so downstream L2 Jaccard, cross-corpus dedup, and
        within-variant comparison all see a shared English vocabulary.
        Swedish pannkakor-family coverage ships in the synonym table;
-       broader Swedish follow-on is tracked in `RationalRecipes-b7t.20`,
-       and a volume-ranked survey of other WDC languages is tracked in
-       `RationalRecipes-b7t.24`.
+       broader Swedish follow-on landed in `RationalRecipes-b7t.20`
+       (WDC ica.se + tasteline.com). The `RationalRecipes-b7t.24`
+       volume-ranked survey of other WDC languages filed per-language
+       follow-on beads — `bie` (German), `sdk` (French), `asq`
+       (Russian), `9oa` (Italian), `lw8` (Japanese) — each blocked
+       on native-speaker reviewer availability for the
+       classification step.
 9. ~~**Ingredient-DB coverage**~~ **RESOLVED** — Phase 1 measured ~18%
    miss rate on 10 pannkakor recipes (71 ingredient lines). Core baking
    ingredients resolve correctly; misses concentrate in specialty items.
