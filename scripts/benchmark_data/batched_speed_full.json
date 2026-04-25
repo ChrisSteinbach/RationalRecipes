@@ -1,0 +1,54 @@
+[
+  {
+    "model": "qwen3.6:35b-a3b",
+    "skipped": false,
+    "total_recipes": 20,
+    "total_lines": 221,
+    "total_wallclock_s": 1046.24,
+    "lines_per_second": 0.21,
+    "qty_accuracy": 0.941,
+    "unit_accuracy": 0.801,
+    "ingredient_accuracy": 0.91,
+    "parse_failure_rate": 0.0
+  },
+  {
+    "model": "qwen2.5:3b",
+    "skipped": false,
+    "total_recipes": 20,
+    "total_lines": 221,
+    "total_wallclock_s": 233.47,
+    "lines_per_second": 0.95,
+    "qty_accuracy": 0.824,
+    "unit_accuracy": 0.629,
+    "ingredient_accuracy": 0.729,
+    "parse_failure_rate": 0.014
+  },
+  {
+    "model": "gemma4:e2b",
+    "skipped": false,
+    "total_recipes": 20,
+    "total_lines": 221,
+    "total_wallclock_s": 81.7,
+    "lines_per_second": 2.7,
+    "qty_accuracy": 0.941,
+    "unit_accuracy": 0.566,
+    "ingredient_accuracy": 0.683,
+    "parse_failure_rate": 0.0
+  },
+  {
+    "model": "gemma4:e4b",
+    "skipped": true
+  },
+  {
+    "model": "nemotron-3-nano:4b",
+    "skipped": false,
+    "total_recipes": 20,
+    "total_lines": 221,
+    "total_wallclock_s": 98.59,
+    "lines_per_second": 2.24,
+    "qty_accuracy": 0.959,
+    "unit_accuracy": 0.661,
+    "ingredient_accuracy": 0.67,
+    "parse_failure_rate": 0.0
+  }
+]
