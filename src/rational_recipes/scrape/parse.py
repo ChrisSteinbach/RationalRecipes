@@ -74,6 +74,33 @@ Output: {"quantity": 1.0, "unit": "tbsp", "ingredient": "margarine", "preparatio
 """
 
 
+_BATCH_SYSTEM_PROMPT = (
+    _SYSTEM_PROMPT
+    + """
+When given multiple lines as a JSON array, return an object with a single
+key "results" whose value is a JSON array of parsed objects in the SAME
+ORDER as the input. The output array MUST have exactly the same length as
+the input array — one parsed object per input line, no skips, no merges.
+
+Example:
+Input: ["1 c. flour", "2 large eggs"]
+Output: {"results": [
+  {"quantity": 1.0, "unit": "cup", "ingredient": "flour", "preparation": ""},
+  {"quantity": 2.0, "unit": "LARGE", "ingredient": "egg", "preparation": ""}
+]}
+"""
+)
+
+# Cap batch size to avoid prompts that strain the model's reliable
+# array-tracking. 30 lines covers >99% of real recipes; larger batches
+# get split and merged.
+_MAX_BATCH_SIZE = 30
+# Token budget per parsed line (JSON object), with a safety floor for
+# per-call overhead (the "results" wrapper, brackets, commas).
+_TOKENS_PER_LINE = 80
+_BATCH_OVERHEAD_TOKENS = 50
+
+
 @dataclass(frozen=True, slots=True)
 class ParsedIngredient:
     """Structured representation of a parsed ingredient line."""
@@ -227,7 +254,70 @@ def parse_ingredient_lines(
     timeout: float = 120.0,
     num_predict: int = 256,
 ) -> list[ParsedIngredient | None]:
-    """Parse multiple ingredient lines. Returns a list parallel to the input."""
+    """Parse multiple ingredient lines in one batched LLM call where possible.
+
+    Sends all N lines as a single prompt (one round-trip instead of N).
+    Falls back to per-line parsing if the batched response is malformed
+    (wrong length, JSON parse failure, missing key) so callers always
+    get a list of length N.
+
+    Returns a list parallel to the input — index i is the parse for
+    line i, or None on failure.
+    """
+    if not lines:
+        return []
+    if len(lines) == 1:
+        return [
+            parse_ingredient_line(
+                lines[0],
+                model=model,
+                base_url=base_url,
+                system_prompt=system_prompt,
+                timeout=timeout,
+                num_predict=num_predict,
+            )
+        ]
+
+    results: list[ParsedIngredient | None] = []
+    for i in range(0, len(lines), _MAX_BATCH_SIZE):
+        chunk = lines[i : i + _MAX_BATCH_SIZE]
+        results.extend(
+            _parse_batch_with_fallback(
+                chunk,
+                model=model,
+                base_url=base_url,
+                system_prompt=system_prompt,
+                timeout=timeout,
+                num_predict=num_predict,
+            )
+        )
+    return results
+
+
+def _parse_batch_with_fallback(
+    lines: list[str],
+    *,
+    model: str,
+    base_url: str,
+    system_prompt: str | None,
+    timeout: float,
+    num_predict: int,
+) -> list[ParsedIngredient | None]:
+    """Try one batched call; on failure, fall back to per-line for safety."""
+    batched = _parse_batch(
+        lines,
+        model=model,
+        base_url=base_url,
+        system_prompt=system_prompt,
+        timeout=timeout,
+        num_predict=num_predict,
+    )
+    if batched is not None:
+        return batched
+
+    logger.warning(
+        "Batched parse failed for %d lines; falling back to per-line", len(lines)
+    )
     return [
         parse_ingredient_line(
             line,
@@ -239,3 +329,92 @@ def parse_ingredient_lines(
         )
         for line in lines
     ]
+
+
+def _parse_batch(
+    lines: list[str],
+    *,
+    model: str,
+    base_url: str,
+    system_prompt: str | None,
+    timeout: float,
+    num_predict: int,
+) -> list[ParsedIngredient | None] | None:
+    """One batched LLM call. Returns None on any structural failure."""
+    # Scale num_predict with batch size so the model isn't truncated mid-array.
+    batch_num_predict = max(num_predict, _TOKENS_PER_LINE * len(lines) + _BATCH_OVERHEAD_TOKENS)
+
+    # JSON-encode the input list so the model sees a clean array literal —
+    # numbering ("1.", "2.") confused the model into rewriting indices.
+    prompt = (
+        f'Parse these {len(lines)} ingredient lines and return one parsed '
+        f'object per input line, in input order:\nInput: {json.dumps(lines)}\nOutput:'
+    )
+
+    raw_output = _ollama_generate(
+        prompt,
+        model=model,
+        system=system_prompt or _BATCH_SYSTEM_PROMPT,
+        base_url=base_url,
+        timeout=timeout,
+        num_predict=batch_num_predict,
+    )
+    if raw_output is None:
+        return None
+
+    try:
+        data = json.loads(raw_output)
+    except json.JSONDecodeError:
+        start = raw_output.find("{")
+        end = raw_output.rfind("}") + 1
+        if start < 0 or end <= start:
+            logger.warning("No JSON object in batched output: %s", raw_output[:200])
+            return None
+        try:
+            data = json.loads(raw_output[start:end])
+        except json.JSONDecodeError:
+            logger.warning("Could not parse batched JSON: %s", raw_output[:200])
+            return None
+
+    items = data.get("results") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        logger.warning("Batched output missing 'results' array: %s", str(data)[:200])
+        return None
+    if len(items) != len(lines):
+        logger.warning(
+            "Batched output length mismatch: got %d, expected %d",
+            len(items),
+            len(lines),
+        )
+        return None
+
+    parsed: list[ParsedIngredient | None] = []
+    for line, obj in zip(lines, items, strict=True):
+        parsed.append(_dict_to_parsed(obj, line))
+    return parsed
+
+
+def _dict_to_parsed(data: object, line: str) -> ParsedIngredient | None:
+    """Turn one LLM-returned dict into a ParsedIngredient, or None on failure.
+
+    Mirrors the validation logic from parse_ingredient_line so batched and
+    per-line paths produce identical results for the same input dict.
+    """
+    if not isinstance(data, dict):
+        return None
+    ingredient_key = next(
+        (k for k in data if isinstance(k, str) and k.lower().startswith("ingr")),
+        None,
+    )
+    if ingredient_key is None:
+        return None
+    try:
+        return ParsedIngredient(
+            quantity=float(data["quantity"]),
+            unit=str(data["unit"]),
+            ingredient=str(data[ingredient_key]).lower().strip(),
+            preparation=str(data.get("preparation", "")),
+            raw=line,
+        )
+    except (KeyError, ValueError, TypeError):
+        return None

@@ -539,14 +539,23 @@ class TestNumPredictCap:
             }
 
     def test_parse_ingredient_lines_forwards_num_predict(self) -> None:
+        """Batched parse honors num_predict as a floor.
+
+        With batching, parse_ingredient_lines makes ONE call per batch (not
+        one per line), and scales num_predict up so the model can fit the
+        whole array in its budget. The user's value is the floor.
+        """
         from rational_recipes.scrape.parse import parse_ingredient_lines
 
         with patch("rational_recipes.scrape.parse._ollama_generate") as mock_gen:
             mock_gen.return_value = (
+                '{"results": ['
                 '{"quantity": 1.0, "unit": "cup",'
-                ' "ingredient": "flour", "preparation": ""}'
+                ' "ingredient": "flour", "preparation": ""},'
+                '{"quantity": 2.0, "unit": "MEDIUM",'
+                ' "ingredient": "egg", "preparation": ""}'
+                ']}'
             )
             parse_ingredient_lines(["1 cup flour", "2 eggs"], num_predict=128)
-            assert mock_gen.call_count == 2
-            for call in mock_gen.call_args_list:
-                assert call.kwargs["num_predict"] == 128
+            assert mock_gen.call_count == 1
+            assert mock_gen.call_args.kwargs["num_predict"] >= 128
