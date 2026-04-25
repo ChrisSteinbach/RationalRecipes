@@ -95,7 +95,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=LANGUAGE_FILTERS,
         default=LANGUAGE_FILTER_EN_SV,
     )
-    parser.add_argument("--model", default="qwen3.6:35b-a3b")
+    parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument(
         "--seed",
         type=int,

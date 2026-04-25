@@ -452,7 +452,7 @@ def run_merged_pipeline(
     l2_min_group_size: int = 3,
     l3_min_variant_size: int = DEFAULT_L3_MIN_VARIANT_SIZE,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
-    llm_model: str = "qwen3.6:35b-a3b",
+    llm_model: str = "gemma4:e2b",
     ollama_url: str = OLLAMA_BASE_URL,
 ) -> tuple[Manifest, PipelineRunStats]:
     """End-to-end: load both corpora, merge, LLM-parse, normalize, emit.

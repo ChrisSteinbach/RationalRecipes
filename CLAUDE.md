@@ -80,11 +80,11 @@ python3 scripts/build_db.py
 bd ready
 ```
 
-Canonical extraction: `python3 scripts/scrape_catalog.py --ollama-url <remote> --model qwen3.6:35b-a3b`. The old per-query `scripts/scrape_merged.py` path stays for dev iteration on a single dish family but is no longer the catalog-production path.
+Canonical extraction: `python3 scripts/scrape_catalog.py --ollama-url <remote> --model gemma4:e2b`. The old per-query `scripts/scrape_merged.py` path stays for dev iteration on a single dish family but is no longer the catalog-production path.
 
 ## Dependencies
 
-Python 3.12+. Runtime: `numpy`, stdlib `sqlite3`. LLM extraction: Ollama with `qwen3.6:35b-a3b` (production default since 2026-04-24, per bead `jpp`). Remote Ollama host required — the model is too large for a 16 GB local. Dev: `ruff`, `mypy`, `pytest`, `pytest-cov`, `pre-commit`. Frontend: Node 20+, `vite`, `sql.js`, `vitest`. Declared in `pyproject.toml` and `web/package.json`.
+Python 3.12+. Runtime: `numpy`, stdlib `sqlite3`. LLM extraction: Ollama with `gemma4:e2b` (production default since 2026-04-25, per bead `vwt.18` — swapped from `qwen3.6:35b-a3b` for ~10× throughput; merge gate `vwt.5` is the validation hop, re-scrape is cheap if the catalog reads wrong). Remote Ollama host still preferred. Dev: `ruff`, `mypy`, `pytest`, `pytest-cov`, `pre-commit`. Frontend: Node 20+, `vite`, `sql.js`, `vitest`. Declared in `pyproject.toml` and `web/package.json`.
 
 ## Conventions
 

@@ -174,7 +174,7 @@ def _ollama_generate(
 
 def parse_ingredient_line(
     line: str,
-    model: str = "qwen3.6:35b-a3b",
+    model: str = "gemma4:e2b",
     base_url: str = OLLAMA_BASE_URL,
     system_prompt: str | None = None,
     timeout: float = 120.0,
@@ -248,7 +248,7 @@ def parse_ingredient_line(
 
 def parse_ingredient_lines(
     lines: list[str],
-    model: str = "qwen3.6:35b-a3b",
+    model: str = "gemma4:e2b",
     base_url: str = OLLAMA_BASE_URL,
     system_prompt: str | None = None,
     timeout: float = 120.0,

@@ -8,7 +8,7 @@ name list like RecipeNLG's NER column). This script:
 
 1. Streams WDC recipes for the requested hosts.
 2. Extracts raw ingredient names via Ollama (default: production
-   extractor `qwen3.6:35b-a3b` on the remote server).
+   extractor `gemma4:e2b` on the remote server).
 3. Persists (recipe_url -> [raw_name, ...]) to a JSON cache so re-runs
    after DB additions don't re-pay the LLM cost.
 4. Tallies hit/miss against `IngredientFactory.get_by_name`.
@@ -177,8 +177,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--model",
-        default="qwen3.6:35b-a3b",
-        help="Ollama model (default: qwen3.6:35b-a3b, production extractor).",
+        default="gemma4:e2b",
+        help="Ollama model (default: gemma4:e2b, production extractor).",
     )
     parser.add_argument(
         "--ollama-url",

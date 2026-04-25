@@ -231,7 +231,7 @@ Output: {"ingredient": "smör", "quantity": 1.0, "unit": "", "preparation": ""}
 def extract_ingredient_names(
     recipe: WDCRecipe,
     *,
-    model: str = "qwen3.6:35b-a3b",
+    model: str = "gemma4:e2b",
     base_url: str = OLLAMA_BASE_URL,
 ) -> WDCRecipe:
     """Extract ingredient names from raw ingredient lines via LLM.
@@ -257,7 +257,7 @@ def extract_ingredient_names(
 def extract_batch(
     recipes: Sequence[WDCRecipe],
     *,
-    model: str = "qwen3.6:35b-a3b",
+    model: str = "gemma4:e2b",
     base_url: str = OLLAMA_BASE_URL,
     cache: dict[str, frozenset[str]] | None = None,
 ) -> list[WDCRecipe]:

@@ -41,7 +41,7 @@ def main() -> None:
     )
     parser.add_argument("--l2-min", type=int, default=3, help="Level 2 min group size")
     parser.add_argument(
-        "--model", default="qwen3.6:35b-a3b", help="Ollama model for parsing"
+        "--model", default="gemma4:e2b", help="Ollama model for parsing"
     )
     parser.add_argument(
         "--ollama-url",

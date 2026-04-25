@@ -85,7 +85,7 @@ in the public signature so existing CLI integrations don't break.
 # detection belongs elsewhere.
 _SWEDISH_DIACRITICS = frozenset("åäö")
 
-DEFAULT_PARSE_MODEL = "qwen3.6:35b-a3b"
+DEFAULT_PARSE_MODEL = "gemma4:e2b"
 """Production model name persisted in ``parsed_ingredient_lines.model``.
 
 Mirrors ``parse.py``'s default. Pass 1 records (model, seed) so a model

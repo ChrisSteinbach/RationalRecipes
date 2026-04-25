@@ -162,7 +162,7 @@ def run_pipeline(
     l1_min_group_size: int = 3,
     l2_similarity_threshold: float = 0.6,
     l2_min_group_size: int = 3,
-    llm_model: str = "qwen3.6:35b-a3b",
+    llm_model: str = "gemma4:e2b",
     ollama_url: str = OLLAMA_BASE_URL,
 ) -> list[PipelineResult]:
     """Run the full pipeline for a title query.

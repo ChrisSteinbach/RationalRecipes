@@ -14,7 +14,7 @@ exercising.
 Usage:
     python3 scripts/scrape_merged.py pannkak \\
         --ollama-url http://192.168.50.189:11434 \\
-        --model qwen3.6:35b-a3b \\
+        --model gemma4:e2b \\
         --l1-min=2 --l2-min=2 -v
 """
 
@@ -81,7 +81,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--model",
-        default="qwen3.6:35b-a3b",
+        default="gemma4:e2b",
         help="Ollama model for both name extraction and line parsing",
     )
     parser.add_argument(
