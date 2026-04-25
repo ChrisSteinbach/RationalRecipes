@@ -34,6 +34,7 @@ from rational_recipes.scrape.grouping import (
 )
 from rational_recipes.scrape.merge import (
     DEFAULT_BUCKET_SIZE,
+    DEFAULT_NEAR_DUP_THRESHOLD,
     merge_corpora,
 )
 from rational_recipes.scrape.parse import ParsedIngredient
@@ -161,7 +162,9 @@ def run_catalog_pipeline(
     l2_min: int = 3,
     l3_min: int = DEFAULT_L3_MIN_VARIANT_SIZE,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
+    near_dup_threshold: float = DEFAULT_NEAR_DUP_THRESHOLD,
     title_filter: str | None = None,
+    title_exact: str | None = None,
     now_fn: Callable[[], str] = _utcnow_iso,
     on_group_done: Callable[[str, list[MergedVariantResult]], None] | None = None,
 ) -> CatalogRunStats:
@@ -199,7 +202,9 @@ def run_catalog_pipeline(
     # processing groups in a deterministic order so a killed run's "next"
     # group is also the next run's "next" group.
     keys = sorted(groups.keys())
-    if title_filter:
+    if title_exact is not None:
+        keys = [k for k in keys if k == title_exact]
+    elif title_filter:
         keys = [k for k in keys if title_filter in k]
     keys = [k for k in keys if groups[k].size >= l1_min]
     stats.l1_groups_total = len(keys)
@@ -233,6 +238,7 @@ def run_catalog_pipeline(
             l2_min=l2_min,
             l3_min=l3_min,
             bucket_size=bucket_size,
+            near_dup_threshold=near_dup_threshold,
             stats=stats,
         )
 
@@ -274,6 +280,7 @@ def _process_group(
     l2_min: int,
     l3_min: int,
     bucket_size: float,
+    near_dup_threshold: float,
     stats: CatalogRunStats,
 ) -> list[MergedVariantResult]:
     """Extract → merge → L2/L3 → parse/normalize → dedup for one L1 group."""
@@ -284,7 +291,9 @@ def _process_group(
     else:
         wdc_populated = []
 
-    merged, _merge_stats = merge_corpora(group.recipenlg, wdc_populated)
+    merged, _merge_stats = merge_corpora(
+        group.recipenlg, wdc_populated, near_dup_threshold=near_dup_threshold
+    )
     if not merged:
         return []
 

@@ -34,7 +34,10 @@ from rational_recipes.scrape.catalog_pipeline import (
     compute_corpus_revisions,
     run_catalog_pipeline,
 )
-from rational_recipes.scrape.merge import DEFAULT_BUCKET_SIZE
+from rational_recipes.scrape.merge import (
+    DEFAULT_BUCKET_SIZE,
+    DEFAULT_NEAR_DUP_THRESHOLD,
+)
 from rational_recipes.scrape.parse import OLLAMA_BASE_URL, parse_ingredient_lines
 from rational_recipes.scrape.recipenlg import RecipeNLGLoader
 from rational_recipes.scrape.wdc import WDCLoader, WDCRecipe, extract_batch
@@ -70,6 +73,21 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--title-filter",
         default=None,
         help="Restrict processed L1 keys to those containing this substring.",
+    )
+    parser.add_argument(
+        "--title-exact",
+        default=None,
+        help="Restrict to exactly one L1 key (takes precedence over --title-filter).",
+    )
+    parser.add_argument(
+        "--near-dup-threshold",
+        type=float,
+        default=DEFAULT_NEAR_DUP_THRESHOLD,
+        help=(
+            "Jaccard threshold for cross-corpus near-dup collapse "
+            "(default %(default)s; raise for WDC-rich groups where basic "
+            "ingredient overlap falsely flags unique recipes)."
+        ),
     )
     parser.add_argument(
         "--language-filter",
@@ -188,7 +206,9 @@ def run(
             l2_min=args.l2_min,
             l3_min=args.l3_min,
             bucket_size=args.bucket_size,
+            near_dup_threshold=args.near_dup_threshold,
             title_filter=args.title_filter,
+            title_exact=args.title_exact,
             # Persist the cache between groups so a killed run doesn't
             # lose already-extracted names.
             on_group_done=lambda _k, _v: _save_cache(args.cache_path, cache),
