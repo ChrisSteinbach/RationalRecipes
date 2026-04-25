@@ -3,7 +3,9 @@
 Turns natural-language ingredient strings ("1 1/2 cups flour, sifted") into
 structured fields (quantity, unit, ingredient, preparation).
 
-Uses the Ollama REST API (http://localhost:11434) for reliability.
+Uses the Ollama REST API for reliability. Default points at the production
+remote (192.168.50.189:11434) since the canonical scrape runs there;
+override with `--ollama-url http://localhost:11434` for local dev.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_BASE_URL = "http://192.168.50.189:11434"
 
 _SYSTEM_PROMPT = """\
 You are an ingredient parser. Given a recipe ingredient line, extract structured fields.

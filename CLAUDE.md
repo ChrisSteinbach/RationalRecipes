@@ -80,7 +80,7 @@ python3 scripts/build_db.py
 bd ready
 ```
 
-Canonical extraction: `python3 scripts/scrape_catalog.py --ollama-url <remote> --model gemma4:e2b`. The old per-query `scripts/scrape_merged.py` path stays for dev iteration on a single dish family but is no longer the catalog-production path.
+Canonical extraction: `python3 scripts/scrape_catalog.py` (defaults: `--model gemma4:e2b`, `--ollama-url http://192.168.50.189:11434`; override either if your setup differs). The old per-query `scripts/scrape_merged.py` path stays for dev iteration on a single dish family but is no longer the catalog-production path.
 
 ## Dependencies
 

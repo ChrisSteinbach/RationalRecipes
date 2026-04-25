@@ -19,6 +19,7 @@ import re
 import sys
 from pathlib import Path
 
+from rational_recipes.scrape.parse import OLLAMA_BASE_URL
 from rational_recipes.scrape.pipeline import run_pipeline
 
 DATASET = Path("dataset/full_dataset.csv")
@@ -45,8 +46,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--ollama-url",
-        default="http://localhost:11434",
-        help="Ollama API base URL (default: http://localhost:11434)",
+        default=OLLAMA_BASE_URL,
+        help=f"Ollama API base URL (default: {OLLAMA_BASE_URL})",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()

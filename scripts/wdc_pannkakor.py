@@ -22,6 +22,7 @@ from rational_recipes.scrape.grouping import (
     group_by_title,
     normalize_title,
 )
+from rational_recipes.scrape.parse import OLLAMA_BASE_URL
 from rational_recipes.scrape.recipenlg import RecipeNLGLoader
 from rational_recipes.scrape.wdc import WDCLoader, extract_batch
 
@@ -30,8 +31,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--ollama-url",
-        default="http://localhost:11434",
-        help="Ollama server URL",
+        default=OLLAMA_BASE_URL,
+        help=f"Ollama server URL (default: {OLLAMA_BASE_URL})",
     )
     parser.add_argument(
         "--model",
