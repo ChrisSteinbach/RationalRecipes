@@ -63,6 +63,9 @@ nosetests.xml
 # Regenerable cross-corpus title-frequency survey (vwt.1)
 /artifacts/corpus_title_survey.json
 
+# Run logs from benchmark and pipeline scripts (regenerable, investigation artifacts)
+/logs/
+
 .dispatch/
 
 # JetBrains IDE files
