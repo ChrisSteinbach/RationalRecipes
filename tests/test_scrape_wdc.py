@@ -556,6 +556,12 @@ class TestNumPredictCap:
                 ' "ingredient": "egg", "preparation": ""}'
                 ']}'
             )
-            parse_ingredient_lines(["1 cup flour", "2 eggs"], num_predict=128)
+            # Pin use_regex_prefilter=False so the vwt.17 regex shortcut
+            # doesn't intercept these easy lines before they reach the LLM.
+            parse_ingredient_lines(
+                ["1 cup flour", "2 eggs"],
+                num_predict=128,
+                use_regex_prefilter=False,
+            )
             assert mock_gen.call_count == 1
             assert mock_gen.call_args.kwargs["num_predict"] >= 128

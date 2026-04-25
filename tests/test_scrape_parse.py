@@ -1,4 +1,9 @@
-"""Tests for batched ingredient-line parsing (vwt.13)."""
+"""Tests for batched ingredient-line parsing (vwt.13).
+
+Tests that exercise the LLM round-trip pin ``use_regex_prefilter=False``
+so the vwt.17 regex shortcut doesn't intercept the canned prompts before
+they hit the patched Ollama.
+"""
 
 from unittest.mock import patch
 
@@ -6,6 +11,12 @@ from rational_recipes.scrape.parse import (
     ParsedIngredient,
     parse_ingredient_lines,
 )
+
+
+def _llm_parse(*args, **kwargs):  # type: ignore[no-untyped-def]
+    """Wrap parse_ingredient_lines with use_regex_prefilter=False."""
+    kwargs.setdefault("use_regex_prefilter", False)
+    return parse_ingredient_lines(*args, **kwargs)
 
 
 class TestBatchedParseHappyPath:
@@ -19,7 +30,7 @@ class TestBatchedParseHappyPath:
                 '{"quantity": 1.0, "unit": "cup",'
                 ' "ingredient": "flour", "preparation": ""}'
             )
-            results = parse_ingredient_lines(["1 cup flour"])
+            results = _llm_parse(["1 cup flour"])
             assert mock_gen.call_count == 1
             assert results == [
                 ParsedIngredient(
@@ -44,7 +55,7 @@ class TestBatchedParseHappyPath:
                 ' "ingredient": "salt", "preparation": ""}'
                 "]}"
             )
-            results = parse_ingredient_lines(
+            results = _llm_parse(
                 ["1 cup flour", "2 eggs", "1/2 tsp salt"]
             )
             assert mock_gen.call_count == 1
@@ -64,7 +75,7 @@ class TestBatchedParseHappyPath:
                 ' "ingredient": "egg", "preparation": ""}'
                 "]}"
             )
-            results = parse_ingredient_lines(["LINE_A", "LINE_B"])
+            results = _llm_parse(["LINE_A", "LINE_B"])
             assert results[0] is not None and results[0].raw == "LINE_A"
             assert results[1] is not None and results[1].raw == "LINE_B"
 
@@ -89,7 +100,7 @@ class TestBatchedParseFallback:
             "rational_recipes.scrape.parse._ollama_generate",
             side_effect=lambda *a, **kw: next(responses),
         ) as mock_gen:
-            results = parse_ingredient_lines(["1 cup flour", "2 eggs"])
+            results = _llm_parse(["1 cup flour", "2 eggs"])
             # 1 batched call + 2 per-line calls = 3
             assert mock_gen.call_count == 3
             assert len(results) == 2
@@ -114,7 +125,7 @@ class TestBatchedParseFallback:
             "rational_recipes.scrape.parse._ollama_generate",
             side_effect=lambda *a, **kw: next(responses),
         ):
-            results = parse_ingredient_lines(["1 cup flour", "2 eggs"])
+            results = _llm_parse(["1 cup flour", "2 eggs"])
             assert len(results) == 2
             assert all(r is not None for r in results)
 
@@ -131,7 +142,7 @@ class TestBatchedParseFallback:
             "rational_recipes.scrape.parse._ollama_generate",
             side_effect=lambda *a, **kw: next(responses),
         ):
-            results = parse_ingredient_lines(["1 cup flour", "2 eggs"])
+            results = _llm_parse(["1 cup flour", "2 eggs"])
             assert len(results) == 2
             assert results[0] is not None
             assert results[1] is None  # parse failure preserved
@@ -151,7 +162,7 @@ class TestBatchedParseFallback:
             "rational_recipes.scrape.parse._ollama_generate",
             side_effect=lambda *a, **kw: next(responses),
         ):
-            results = parse_ingredient_lines(["1 cup flour", "2 eggs"])
+            results = _llm_parse(["1 cup flour", "2 eggs"])
             assert len(results) == 2
             assert all(r is not None for r in results)
 
@@ -179,7 +190,7 @@ class TestBatchedParseChunking:
             side_effect=fake_generate,
         ) as mock_gen:
             lines = [f"line {i}" for i in range(31)]
-            results = parse_ingredient_lines(lines)
+            results = _llm_parse(lines)
             # 30 + 1 = 2 batched calls
             assert mock_gen.call_count == 2
             assert len(results) == 31
@@ -202,7 +213,7 @@ class TestBatchedParseChunking:
             "rational_recipes.scrape.parse._ollama_generate",
             side_effect=fake_generate,
         ):
-            parse_ingredient_lines(
+            _llm_parse(
                 [f"line {i}" for i in range(10)], num_predict=64
             )
             # User asked for 64; 10 lines × 80 + 50 = 850 floor.

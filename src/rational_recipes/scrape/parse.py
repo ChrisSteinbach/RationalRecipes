@@ -253,17 +253,74 @@ def parse_ingredient_lines(
     system_prompt: str | None = None,
     timeout: float = 120.0,
     num_predict: int = 256,
+    *,
+    use_regex_prefilter: bool = True,
 ) -> list[ParsedIngredient | None]:
-    """Parse multiple ingredient lines in one batched LLM call where possible.
+    """Parse multiple ingredient lines, regex-first then LLM (vwt.17).
 
-    Sends all N lines as a single prompt (one round-trip instead of N).
-    Falls back to per-line parsing if the batched response is malformed
-    (wrong length, JSON parse failure, missing key) so callers always
-    get a list of length N.
+    Hybrid path: each line is first run through ``regex_parse_line``
+    (microseconds, deterministic, USDA-confidence-gated). Lines the
+    regex declines fall through to the existing batched LLM parse. The
+    contract is unchanged: returns a list parallel to the input — index
+    i is the parse for line i, or None on failure.
 
-    Returns a list parallel to the input — index i is the parse for
-    line i, or None on failure.
+    ``use_regex_prefilter=False`` reverts to LLM-only behavior — handy
+    for shadow A/B comparisons against the pre-vwt.17 baseline.
     """
+    if not lines:
+        return []
+
+    if use_regex_prefilter:
+        # Local import to avoid a hard dep cycle; regex_parse imports
+        # ParsedIngredient from this module.
+        from rational_recipes.scrape.regex_parse import regex_parse_line
+
+        results: list[ParsedIngredient | None] = [None] * len(lines)
+        residue_indices: list[int] = []
+        residue_lines: list[str] = []
+        for i, line in enumerate(lines):
+            hit = regex_parse_line(line)
+            if hit is not None:
+                results[i] = hit.parsed
+            else:
+                residue_indices.append(i)
+                residue_lines.append(line)
+
+        if not residue_lines:
+            return results
+
+        llm_results = _llm_parse_lines(
+            residue_lines,
+            model=model,
+            base_url=base_url,
+            system_prompt=system_prompt,
+            timeout=timeout,
+            num_predict=num_predict,
+        )
+        for idx, parsed in zip(residue_indices, llm_results, strict=True):
+            results[idx] = parsed
+        return results
+
+    return _llm_parse_lines(
+        lines,
+        model=model,
+        base_url=base_url,
+        system_prompt=system_prompt,
+        timeout=timeout,
+        num_predict=num_predict,
+    )
+
+
+def _llm_parse_lines(
+    lines: list[str],
+    *,
+    model: str,
+    base_url: str,
+    system_prompt: str | None,
+    timeout: float,
+    num_predict: int,
+) -> list[ParsedIngredient | None]:
+    """LLM-only parse path: one batched call per ``_MAX_BATCH_SIZE`` chunk."""
     if not lines:
         return []
     if len(lines) == 1:
