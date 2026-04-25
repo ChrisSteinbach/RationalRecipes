@@ -30,6 +30,7 @@ percent-form ``MergedNormalizedRow.proportions`` by 100 before writing.
 
 from __future__ import annotations
 
+import json
 import math
 import sqlite3
 from collections.abc import Iterable, Sequence
@@ -38,6 +39,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from rational_recipes.scrape.parse import ParsedIngredient
 from rational_recipes.scrape.pipeline_merged import (
     MergedNormalizedRow,
     MergedVariantResult,
@@ -147,6 +149,26 @@ _SCHEMA: tuple[str, ...] = (
                         CHECK(dry IN (0, 1))
     )
     """,
+    # vwt.16 Pass-1 sink. One row per (corpus, recipe_id, line_index) so
+    # re-runs are idempotent at the recipe-line grain. parsed_json is
+    # NULL when the LLM (or regex fallback) failed; callers treat that
+    # as "tried, gave up". The (raw_line, model, seed) index supports
+    # vwt.16 option-2 line-text dedup: same line text in another recipe
+    # reuses the cached parse instead of paying the LLM cost again.
+    """
+    CREATE TABLE IF NOT EXISTS parsed_ingredient_lines (
+      corpus      TEXT NOT NULL,
+      recipe_id   TEXT NOT NULL,
+      line_index  INTEGER NOT NULL,
+      raw_line    TEXT NOT NULL,
+      parsed_json TEXT,
+      model       TEXT NOT NULL,
+      seed        INTEGER NOT NULL,
+      PRIMARY KEY (corpus, recipe_id, line_index)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_parsed_lines_text "
+    "ON parsed_ingredient_lines(raw_line, model, seed)",
 )
 
 
@@ -542,6 +564,189 @@ class CatalogDB:
                 (l1_key, run_at, corpus_revisions, variants_produced, 1 if dry else 0),
             )
 
+    # --- Parsed-line cache (vwt.16 Pass 1) ---
+
+    def upsert_parsed_lines(
+        self,
+        rows: Iterable[ParsedLineRow],
+    ) -> None:
+        """Persist a batch of parsed ingredient lines in one transaction.
+
+        ``parsed_json=None`` records a parse attempt that returned no
+        usable structure; callers should not retry these on resume.
+        """
+        with self._conn:
+            self._conn.executemany(
+                """
+                INSERT OR REPLACE INTO parsed_ingredient_lines (
+                  corpus, recipe_id, line_index, raw_line,
+                  parsed_json, model, seed
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        r.corpus,
+                        r.recipe_id,
+                        r.line_index,
+                        r.raw_line,
+                        r.parsed_json,
+                        r.model,
+                        r.seed,
+                    )
+                    for r in rows
+                ],
+            )
+
+    def get_parsed_lines_for_recipe(
+        self,
+        corpus: str,
+        recipe_id: str,
+    ) -> list[ParsedLineRow]:
+        """All parsed-line rows for one recipe, ordered by line_index."""
+        cursor = self._conn.execute(
+            """
+            SELECT corpus, recipe_id, line_index, raw_line,
+                   parsed_json, model, seed
+            FROM parsed_ingredient_lines
+            WHERE corpus = ? AND recipe_id = ?
+            ORDER BY line_index
+            """,
+            (corpus, recipe_id),
+        )
+        return [
+            ParsedLineRow(
+                corpus=r[0],
+                recipe_id=r[1],
+                line_index=r[2],
+                raw_line=r[3],
+                parsed_json=r[4],
+                model=r[5],
+                seed=r[6],
+            )
+            for r in cursor
+        ]
+
+    def has_parsed_lines_for_recipe(
+        self,
+        corpus: str,
+        recipe_id: str,
+        *,
+        model: str | None = None,
+        seed: int | None = None,
+    ) -> bool:
+        """True iff any parsed_ingredient_lines row exists for this recipe.
+
+        ``model``/``seed`` narrow the check to that specific (model, seed)
+        — a swap of either invalidates resumability for that recipe and
+        forces re-parse.
+        """
+        sql = (
+            "SELECT 1 FROM parsed_ingredient_lines "
+            "WHERE corpus = ? AND recipe_id = ?"
+        )
+        params: list[Any] = [corpus, recipe_id]
+        if model is not None:
+            sql += " AND model = ?"
+            params.append(model)
+        if seed is not None:
+            sql += " AND seed = ?"
+            params.append(seed)
+        sql += " LIMIT 1"
+        return self._conn.execute(sql, params).fetchone() is not None
+
+    def lookup_cached_parse(
+        self,
+        raw_line: str,
+        model: str,
+        seed: int,
+    ) -> tuple[bool, str | None]:
+        """Return cached parse for ``(raw_line, model, seed)``.
+
+        Tuple return distinguishes the three cases without sentinels:
+          * ``(False, None)`` — no row matches; caller must call the LLM.
+          * ``(True, None)`` — cached failure (NULL parsed_json); caller
+            should record a failure without retrying.
+          * ``(True, "<json>")`` — cached successful parse payload.
+
+        Determinism (parse.py pins temperature=0, seed=42) lets us reuse
+        any prior parse with the same ``(raw_line, model, seed)`` even
+        if it came from a different recipe — line-text dedup baked into
+        Pass 1 (vwt.16 option 2).
+        """
+        row = self._conn.execute(
+            """
+            SELECT parsed_json
+            FROM parsed_ingredient_lines
+            WHERE raw_line = ? AND model = ? AND seed = ?
+            LIMIT 1
+            """,
+            (raw_line, model, seed),
+        ).fetchone()
+        if row is None:
+            return (False, None)
+        return (True, row[0])
+
+    def count_parsed_lines(
+        self,
+        *,
+        corpus: str | None = None,
+        model: str | None = None,
+        seed: int | None = None,
+    ) -> int:
+        """Row count in ``parsed_ingredient_lines`` with optional filters."""
+        sql = "SELECT COUNT(*) FROM parsed_ingredient_lines"
+        clauses: list[str] = []
+        params: list[Any] = []
+        if corpus is not None:
+            clauses.append("corpus = ?")
+            params.append(corpus)
+        if model is not None:
+            clauses.append("model = ?")
+            params.append(model)
+        if seed is not None:
+            clauses.append("seed = ?")
+            params.append(seed)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        row = self._conn.execute(sql, params).fetchone()
+        return int(row[0]) if row else 0
+
+    def iter_parsed_lines(
+        self,
+        *,
+        corpus: str | None = None,
+        model: str | None = None,
+        seed: int | None = None,
+    ) -> Iterable[ParsedLineRow]:
+        """Stream parsed-line rows; for warming an in-memory dedup cache."""
+        sql = (
+            "SELECT corpus, recipe_id, line_index, raw_line, "
+            "parsed_json, model, seed FROM parsed_ingredient_lines"
+        )
+        clauses: list[str] = []
+        params: list[Any] = []
+        if corpus is not None:
+            clauses.append("corpus = ?")
+            params.append(corpus)
+        if model is not None:
+            clauses.append("model = ?")
+            params.append(model)
+        if seed is not None:
+            clauses.append("seed = ?")
+            params.append(seed)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        for r in self._conn.execute(sql, params):
+            yield ParsedLineRow(
+                corpus=r[0],
+                recipe_id=r[1],
+                line_index=r[2],
+                raw_line=r[3],
+                parsed_json=r[4],
+                model=r[5],
+                seed=r[6],
+            )
+
     def is_l1_fresh(self, l1_key: str, corpus_revisions: str | None) -> bool:
         """True when ``l1_key`` has a run row matching ``corpus_revisions``.
 
@@ -673,6 +878,69 @@ class ParsedIngredientRow:
     unit: str | None = None
     grams: float | None = None
     preparation: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedLineRow:
+    """One row for the ``parsed_ingredient_lines`` table (vwt.16 Pass 1)."""
+
+    corpus: str
+    recipe_id: str
+    line_index: int
+    raw_line: str
+    parsed_json: str | None
+    model: str
+    seed: int
+
+    def to_parsed(self) -> ParsedIngredient | None:
+        """Decode ``parsed_json`` back into a ``ParsedIngredient``.
+
+        Returns ``None`` for a cached failure (NULL parsed_json) or a
+        malformed payload — callers see "no parse" either way.
+        """
+        return parsed_from_json(self.parsed_json, self.raw_line)
+
+
+def parsed_to_json(parsed: ParsedIngredient | None) -> str | None:
+    """Serialize a ParsedIngredient for the parsed_ingredient_lines table.
+
+    ``raw`` is excluded because it's the lookup key (``raw_line`` column).
+    Returns ``None`` for a None parse so callers can pass through the
+    cached-failure sentinel.
+    """
+    if parsed is None:
+        return None
+    return json.dumps(
+        {
+            "quantity": parsed.quantity,
+            "unit": parsed.unit,
+            "ingredient": parsed.ingredient,
+            "preparation": parsed.preparation,
+        },
+        ensure_ascii=False,
+    )
+
+
+def parsed_from_json(payload: str | None, raw: str) -> ParsedIngredient | None:
+    """Inverse of ``parsed_to_json``. Tolerates malformed payloads."""
+    if payload is None:
+        return None
+    try:
+        d = json.loads(payload)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(d, dict):
+        return None
+    try:
+        return ParsedIngredient(
+            quantity=float(d["quantity"]),
+            unit=str(d["unit"]),
+            ingredient=str(d["ingredient"]),
+            preparation=str(d.get("preparation", "")),
+            raw=raw,
+        )
+    except (KeyError, ValueError, TypeError):
+        return None
 
 
 @dataclass(frozen=True, slots=True)

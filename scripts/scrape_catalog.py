@@ -29,6 +29,7 @@ from rational_recipes.corpus_title_survey import (
     LANGUAGE_FILTERS,
 )
 from rational_recipes.scrape.catalog_pipeline import (
+    DEFAULT_PARSE_SEED,
     ExtractFn,
     ParseFn,
     compute_corpus_revisions,
@@ -95,11 +96,40 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=LANGUAGE_FILTER_EN_SV,
     )
     parser.add_argument("--model", default="qwen3.6:35b-a3b")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=DEFAULT_PARSE_SEED,
+        help=(
+            "LLM seed recorded in parsed_ingredient_lines.seed. Mismatch "
+            "with prior runs invalidates the cache for that recipe."
+        ),
+    )
     parser.add_argument("--ollama-url", default=OLLAMA_BASE_URL)
     parser.add_argument(
         "--skip-preflight",
         action="store_true",
         help="Skip the Ollama reachability check (test-only)",
+    )
+    pass_group = parser.add_mutually_exclusive_group()
+    pass_group.add_argument(
+        "--pass1-only",
+        action="store_true",
+        help=(
+            "vwt.16: parse + persist ingredient lines into the cache "
+            "table; skip clustering + variant write. Use to warm the "
+            "cache before a series of threshold-sweep Pass 2 runs."
+        ),
+    )
+    pass_group.add_argument(
+        "--pass2-only",
+        action="store_true",
+        help=(
+            "vwt.16: cluster + write variants from the existing cache "
+            "table; skip parsing. Re-runnable in seconds for "
+            "threshold sweeps. Will produce empty variants for any "
+            "L1 group whose recipes weren't covered by an earlier Pass 1."
+        ),
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser.parse_args(argv)
@@ -154,7 +184,16 @@ def run(
         print(f"WDC zip not found: {args.wdc_zip}", file=sys.stderr)
         return 1
 
-    if parse_fn is None and extract_fn is None and not args.skip_preflight:
+    do_pass1 = not args.pass2_only
+    do_pass2 = not args.pass1_only
+
+    # Ollama is only needed when Pass 1 will run with the live LLM.
+    if (
+        do_pass1
+        and parse_fn is None
+        and extract_fn is None
+        and not args.skip_preflight
+    ):
         if not _preflight_ollama(args.ollama_url):
             print(
                 f"Ollama unreachable at {args.ollama_url}; "
@@ -209,6 +248,10 @@ def run(
             near_dup_threshold=args.near_dup_threshold,
             title_filter=args.title_filter,
             title_exact=args.title_exact,
+            model=args.model,
+            seed=args.seed,
+            do_pass1=do_pass1,
+            do_pass2=do_pass2,
             # Persist the cache between groups so a killed run doesn't
             # lose already-extracted names.
             on_group_done=lambda _k, _v: _save_cache(args.cache_path, cache),
@@ -226,6 +269,13 @@ def run(
     print(
         f"variants produced: {stats.variants_produced}  "
         f"LLM calls: parse={stats.llm_parse_calls} extract={stats.llm_extract_calls}"
+    )
+    print(
+        f"pass 1: recipes_seen={stats.pass1_recipes_seen} "
+        f"recipes_skipped={stats.pass1_recipes_skipped} "
+        f"lines_parsed={stats.pass1_lines_parsed} "
+        f"line_cache_hits={stats.pass1_lines_cache_hits} "
+        f"llm_batches={stats.pass1_llm_batches}"
     )
     print(f"wallclock: {stats.wallclock_seconds:.1f}s")
     return 0

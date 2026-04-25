@@ -10,7 +10,11 @@ from rational_recipes.catalog_db import (
     CatalogDB,
     ListFilters,
     ParsedIngredientRow,
+    ParsedLineRow,
+    parsed_from_json,
+    parsed_to_json,
 )
+from rational_recipes.scrape.parse import ParsedIngredient
 from rational_recipes.scrape.pipeline_merged import (
     MergedNormalizedRow,
     MergedVariantResult,
@@ -77,6 +81,7 @@ class TestSchema:
             "variant_ingredient_stats",
             "variant_sources",
             "query_runs",
+            "parsed_ingredient_lines",
         }.issubset(names)
 
     def test_open_is_idempotent(self, tmp_path: Path) -> None:
@@ -412,6 +417,176 @@ class TestUpdateReviewStatus:
         db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
         with pytest.raises(ValueError, match="invalid review status"):
             db.update_review_status(v.variant_id, "bogus")  # type: ignore[arg-type]
+
+
+class TestParsedLineCache:
+    """vwt.16: parsed_ingredient_lines schema + reader/writer."""
+
+    def _row(
+        self,
+        *,
+        corpus: str = "wdc",
+        recipe_id: str = "https://example.com/r/1",
+        line_index: int = 0,
+        raw_line: str = "1 cup flour",
+        parsed_json: str | None = '{"quantity": 1.0, "unit": "cup", '
+        '"ingredient": "flour", "preparation": ""}',
+        model: str = "qwen3.6:35b-a3b",
+        seed: int = 42,
+    ) -> ParsedLineRow:
+        return ParsedLineRow(
+            corpus=corpus,
+            recipe_id=recipe_id,
+            line_index=line_index,
+            raw_line=raw_line,
+            parsed_json=parsed_json,
+            model=model,
+            seed=seed,
+        )
+
+    def test_upsert_and_read_back(self) -> None:
+        db = CatalogDB.in_memory()
+        rows = [
+            self._row(line_index=0, raw_line="1 cup flour"),
+            self._row(
+                line_index=1,
+                raw_line="2 eggs",
+                parsed_json='{"quantity": 2.0, "unit": "MEDIUM", '
+                '"ingredient": "egg", "preparation": ""}',
+            ),
+        ]
+        db.upsert_parsed_lines(rows)
+
+        fetched = db.get_parsed_lines_for_recipe(
+            "wdc", "https://example.com/r/1"
+        )
+        assert [r.line_index for r in fetched] == [0, 1]
+        assert fetched[0].raw_line == "1 cup flour"
+
+    def test_upsert_replaces_existing_row(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines([self._row(line_index=0, raw_line="orig")])
+        db.upsert_parsed_lines(
+            [self._row(line_index=0, raw_line="overwritten")]
+        )
+
+        fetched = db.get_parsed_lines_for_recipe(
+            "wdc", "https://example.com/r/1"
+        )
+        assert len(fetched) == 1
+        assert fetched[0].raw_line == "overwritten"
+
+    def test_lookup_cached_parse_hit(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines([self._row(raw_line="1 cup flour")])
+
+        found, payload = db.lookup_cached_parse(
+            "1 cup flour", "qwen3.6:35b-a3b", 42
+        )
+        assert found is True
+        assert payload is not None
+        assert "flour" in payload
+
+    def test_lookup_cached_parse_miss(self) -> None:
+        db = CatalogDB.in_memory()
+        found, payload = db.lookup_cached_parse(
+            "never seen", "qwen3.6:35b-a3b", 42
+        )
+        assert found is False
+        assert payload is None
+
+    def test_lookup_distinguishes_cached_failure_from_miss(self) -> None:
+        db = CatalogDB.in_memory()
+        # NULL parsed_json = cached failure; should NOT trigger LLM retry.
+        db.upsert_parsed_lines(
+            [self._row(raw_line="garbled line", parsed_json=None)]
+        )
+        found, payload = db.lookup_cached_parse(
+            "garbled line", "qwen3.6:35b-a3b", 42
+        )
+        assert found is True
+        assert payload is None
+
+    def test_lookup_respects_model_and_seed(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines([self._row(model="qwen3.6:35b-a3b", seed=42)])
+
+        # Different model — must miss.
+        assert db.lookup_cached_parse("1 cup flour", "gemma4:e2b", 42) == (
+            False,
+            None,
+        )
+        # Different seed — must miss.
+        assert db.lookup_cached_parse("1 cup flour", "qwen3.6:35b-a3b", 99) == (
+            False,
+            None,
+        )
+
+    def test_has_parsed_lines_for_recipe(self) -> None:
+        db = CatalogDB.in_memory()
+        assert not db.has_parsed_lines_for_recipe("wdc", "rid-1")
+
+        db.upsert_parsed_lines(
+            [
+                self._row(
+                    corpus="wdc",
+                    recipe_id="rid-1",
+                    raw_line="x",
+                    parsed_json=None,
+                )
+            ]
+        )
+        assert db.has_parsed_lines_for_recipe("wdc", "rid-1")
+        assert not db.has_parsed_lines_for_recipe(
+            "wdc", "rid-1", model="other-model"
+        )
+
+    def test_count_parsed_lines_with_filters(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines(
+            [
+                self._row(
+                    corpus="wdc", recipe_id="r1", line_index=0, raw_line="a"
+                ),
+                self._row(
+                    corpus="wdc", recipe_id="r1", line_index=1, raw_line="b"
+                ),
+                self._row(
+                    corpus="recipenlg", recipe_id="r2", line_index=0, raw_line="c"
+                ),
+            ]
+        )
+        assert db.count_parsed_lines() == 3
+        assert db.count_parsed_lines(corpus="wdc") == 2
+        assert db.count_parsed_lines(corpus="recipenlg") == 1
+
+
+class TestParsedSerialization:
+    """vwt.16: parsed_to_json / parsed_from_json round-trip."""
+
+    def test_round_trip_preserves_fields(self) -> None:
+        original = ParsedIngredient(
+            quantity=1.5,
+            unit="cup",
+            ingredient="all-purpose flour",
+            preparation="sifted",
+            raw="1 1/2 cups all-purpose flour, sifted",
+        )
+        payload = parsed_to_json(original)
+        assert payload is not None
+        recovered = parsed_from_json(payload, original.raw)
+        assert recovered == original
+
+    def test_none_round_trips_to_none(self) -> None:
+        assert parsed_to_json(None) is None
+        assert parsed_from_json(None, "1 cup flour") is None
+
+    def test_malformed_json_yields_none(self) -> None:
+        assert parsed_from_json("not-json", "1 cup flour") is None
+
+    def test_missing_required_keys_yields_none(self) -> None:
+        # Missing "quantity".
+        assert parsed_from_json('{"unit": "cup"}', "1 cup flour") is None
 
 
 class TestVariantSources:
