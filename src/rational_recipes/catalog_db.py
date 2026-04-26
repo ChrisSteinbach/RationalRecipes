@@ -328,6 +328,19 @@ class CatalogDB:
         stats = _compute_ingredient_stats(variant, base_ingredient)
         outlier_scores = variant.outlier_scores()
 
+        # WDC pages can host multiple JSON-LD Recipe entities under one
+        # page_url with identical title, which collide on
+        # _recipe_id_for_row's sha1(url|title) hash. Dedupe here so the
+        # variant_members PK doesn't fire; first occurrence wins.
+        seen_ids: set[str] = set()
+        unique_rows: list[tuple[MergedNormalizedRow, str, float]] = []
+        for row, score in zip(variant.normalized_rows, outlier_scores, strict=True):
+            rid = _recipe_id_for_row(row)
+            if rid in seen_ids:
+                continue
+            seen_ids.add(rid)
+            unique_rows.append((row, rid, score))
+
         with conn:
             conn.execute(
                 "DELETE FROM variant_ingredient_stats WHERE variant_id = ?",
@@ -358,13 +371,12 @@ class CatalogDB:
                     base_ingredient,
                     ",".join(sorted(variant.cooking_methods)),
                     ",".join(sorted(variant.canonical_ingredients)),
-                    len(variant.normalized_rows),
+                    len(unique_rows),
                     confidence_level,
                 ),
             )
 
-            for row, score in zip(variant.normalized_rows, outlier_scores, strict=True):
-                recipe_id = _recipe_id_for_row(row)
+            for row, recipe_id, score in unique_rows:
                 _upsert_recipe_row(conn, recipe_id, row, language=language)
                 conn.execute(
                     """
