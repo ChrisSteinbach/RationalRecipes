@@ -24,6 +24,10 @@ dev = [
 
 [project.scripts]
 rr-discover = "rational_recipes.discover_cli:run"
+rr-scrape-catalog = "rational_recipes.cli.scrape_catalog:run"
+rr-review-variants = "rational_recipes.cli.review_variants:main"
+rr-corpus-title-survey = "rational_recipes.cli.corpus_title_survey:run"
+rr-migrate-curated = "rational_recipes.cli.migrate_curated_to_db:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

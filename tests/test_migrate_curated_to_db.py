@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from migrate_curated_to_db import migrate
-
 from rational_recipes.catalog_db import CatalogDB
+from rational_recipes.cli.migrate_curated_to_db import migrate
 
 
 def _minimal_curated() -> dict[str, object]:
