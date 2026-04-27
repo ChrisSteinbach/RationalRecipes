@@ -574,14 +574,8 @@ class TestThresholdSweep:
 
 class TestCliFlags:
     def _import_cli(self):
-        import sys
+        from rational_recipes.cli import scrape_catalog as cli
 
-        scripts_dir = Path(__file__).resolve().parents[2] / "scripts"
-        sys.path.insert(0, str(scripts_dir))
-        try:
-            import scrape_catalog as cli
-        finally:
-            sys.path.pop(0)
         return cli
 
     def test_pass1_only_warms_cache_no_variants(

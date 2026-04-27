@@ -6,7 +6,6 @@ import csv
 import gzip
 import io
 import json
-import sys
 import zipfile
 from collections.abc import Sequence
 from dataclasses import replace
@@ -15,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from rational_recipes.catalog_db import CatalogDB
+from rational_recipes.cli import scrape_catalog as cli
 from rational_recipes.scrape.canonical import canonicalize_names
 from rational_recipes.scrape.catalog_pipeline import (
     CatalogRunStats,
@@ -574,13 +574,6 @@ class TestCli:
         csv_path, zip_path = synthetic_corpora
         out_db = tmp_path / "out" / "recipes.db"
 
-        scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
-        sys.path.insert(0, str(scripts_dir))
-        try:
-            import scrape_catalog as cli
-        finally:
-            sys.path.pop(0)
-
         def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
             return _default_parse(lines)
 
@@ -631,13 +624,6 @@ class TestCli:
     def test_missing_corpus_file_exits_1(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
-        sys.path.insert(0, str(scripts_dir))
-        try:
-            import scrape_catalog as cli
-        finally:
-            sys.path.pop(0)
-
         rc = cli.run(
             [
                 "--recipenlg",
