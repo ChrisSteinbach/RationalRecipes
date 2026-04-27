@@ -2,6 +2,7 @@ import initSqlJs, { type Database } from "sql.js";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   type Catalog,
+  type CuratedRecipe,
   categoriesOf,
   filterRecipes,
   toRatio,
@@ -72,6 +73,51 @@ interface SeedVariant {
   sources?: Array<{ type: "url" | "book" | "text"; title?: string; ref: string }>;
 }
 
+// ----- Builders (Object Mother avoidance) -----
+//
+// Defaults are deliberately uninteresting (id="v", sampleSize=10, single
+// flour ingredient). Every test passes the fields that matter for the
+// behaviour under test, so the test reads in isolation.
+
+function aSeedVariant(overrides: Partial<SeedVariant> = {}): SeedVariant {
+  return {
+    id: "v",
+    normalizedTitle: "v",
+    category: "cat",
+    baseIngredient: "flour",
+    sampleSize: 10,
+    ingredients: [
+      { name: "flour", proportion: 0.5, ratio: 1.0, min_sample_size: 5 },
+    ],
+    ...overrides,
+  };
+}
+
+function aRecipe(overrides: Partial<CuratedRecipe> = {}): CuratedRecipe {
+  return {
+    id: "r",
+    title: "r",
+    category: "cat",
+    base_ingredient: "flour",
+    sample_size: 10,
+    ingredients: [
+      {
+        name: "flour",
+        ratio: 1.0,
+        proportion: 0.5,
+        std_deviation: 0.05,
+        ci_lower: 0.45,
+        ci_upper: 0.55,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function aCatalog(recipes: CuratedRecipe[]): Catalog {
+  return { version: 1, recipes };
+}
+
 function seedDb(variants: SeedVariant[]): Database {
   const db = new SQL.Database();
   db.exec(SCHEMA);
@@ -131,158 +177,10 @@ function seedDb(variants: SeedVariant[]): Database {
   return db;
 }
 
-function sampleVariants(): SeedVariant[] {
-  return [
-    {
-      id: "swedish-pancakes-vid",
-      normalizedTitle: "swedish-pancakes",
-      displayTitle: "Swedish Pancakes (Pannkakor)",
-      category: "crepes",
-      description: "Thin, eggy Scandinavian pancakes.",
-      baseIngredient: "flour",
-      sampleSize: 200,
-      confidenceLevel: 0.95,
-      ingredients: [
-        {
-          name: "flour",
-          proportion: 0.1673,
-          ratio: 1.0,
-          min_sample_size: 116,
-          density: 0.5283,
-        },
-        {
-          name: "milk",
-          proportion: 0.6019,
-          ratio: 3.6,
-          min_sample_size: 36,
-          density: 1.0313,
-        },
-      ],
-      sources: [
-        {
-          type: "text",
-          title: "Aggregated Swedish recipes",
-          ref: "Swedish pannkakor.",
-        },
-      ],
-    },
-    {
-      id: "french-crepes-vid",
-      normalizedTitle: "french-crepes",
-      displayTitle: "French Crêpes",
-      category: "crepes",
-      description: "Classic thin crêpes.",
-      baseIngredient: "flour",
-      sampleSize: 119,
-      ingredients: [
-        { name: "flour", proportion: 0.2473, ratio: 1.0, min_sample_size: 113 },
-      ],
-    },
-    {
-      id: "boule-vid",
-      normalizedTitle: "sourdough-boule",
-      displayTitle: "Sourdough Boule",
-      category: "bread",
-      baseIngredient: "flour",
-      sampleSize: 30,
-      ingredients: [
-        { name: "flour", proportion: 0.6, ratio: 1.0, min_sample_size: 25 },
-      ],
-    },
-    {
-      id: "dropped-vid",
-      normalizedTitle: "dropped",
-      displayTitle: "Dropped",
-      category: "bread",
-      baseIngredient: "flour",
-      sampleSize: 100,
-      reviewStatus: "drop",
-      ingredients: [
-        { name: "flour", proportion: 0.5, ratio: 1.0, min_sample_size: 20 },
-      ],
-    },
-  ];
-}
-
-function sampleCatalog(): Catalog {
-  return {
-    version: 1,
-    recipes: [
-      {
-        id: "swedish-pancakes",
-        title: "Swedish Pancakes (Pannkakor)",
-        category: "crepes",
-        description: "Thin, eggy Scandinavian pancakes.",
-        base_ingredient: "flour",
-        sample_size: 200,
-        confidence_level: 0.95,
-        ingredients: [
-          {
-            name: "flour",
-            ratio: 1.0,
-            proportion: 0.1673,
-            std_deviation: 0.05,
-            ci_lower: 0.16,
-            ci_upper: 0.17,
-            density_g_per_ml: 0.5283,
-            whole_unit: null,
-          },
-          {
-            name: "milk",
-            ratio: 3.6,
-            proportion: 0.6019,
-            std_deviation: 0.05,
-            ci_lower: 0.59,
-            ci_upper: 0.61,
-            density_g_per_ml: 1.0313,
-            whole_unit: null,
-          },
-        ],
-      },
-      {
-        id: "french-crepes",
-        title: "French Crêpes",
-        category: "crepes",
-        description: "Classic thin crêpes.",
-        base_ingredient: "flour",
-        sample_size: 50,
-        ingredients: [
-          {
-            name: "flour",
-            ratio: 1.0,
-            proportion: 0.2,
-            std_deviation: 0.05,
-            ci_lower: 0.18,
-            ci_upper: 0.22,
-          },
-        ],
-      },
-      {
-        id: "sourdough-boule",
-        title: "Sourdough Boule",
-        category: "bread",
-        base_ingredient: "flour",
-        sample_size: 30,
-        ingredients: [
-          {
-            name: "flour",
-            ratio: 1.0,
-            proportion: 0.6,
-            std_deviation: 0.05,
-            ci_lower: 0.55,
-            ci_upper: 0.65,
-          },
-        ],
-      },
-    ],
-  };
-}
-
 describe("validateCatalog", () => {
   it("accepts a well-formed catalog", () => {
-    const c = sampleCatalog();
-    const validated = validateCatalog(c);
-    expect(validated).toBe(c);
+    const c = aCatalog([aRecipe()]);
+    expect(validateCatalog(c)).toBe(c);
   });
 
   it("rejects non-object root", () => {
@@ -299,23 +197,39 @@ describe("validateCatalog", () => {
 
 describe("categoriesOf", () => {
   it("returns unique categories in first-seen order", () => {
-    expect(categoriesOf(sampleCatalog())).toEqual(["crepes", "bread"]);
+    const catalog = aCatalog([
+      aRecipe({ id: "a", category: "crepes" }),
+      aRecipe({ id: "b", category: "crepes" }),
+      aRecipe({ id: "c", category: "bread" }),
+    ]);
+    expect(categoriesOf(catalog)).toEqual(["crepes", "bread"]);
   });
 });
 
 describe("filterRecipes", () => {
-  const catalog = sampleCatalog();
-
   it("returns all recipes with empty query + all category", () => {
+    const catalog = aCatalog([
+      aRecipe({ id: "a" }),
+      aRecipe({ id: "b" }),
+      aRecipe({ id: "c" }),
+    ]);
     expect(filterRecipes(catalog, "", "all")).toHaveLength(3);
   });
 
   it("filters by title substring case-insensitively", () => {
+    const catalog = aCatalog([
+      aRecipe({ id: "swedish", title: "Swedish Pancakes (Pannkakor)" }),
+      aRecipe({ id: "other", title: "Other" }),
+    ]);
     const result = filterRecipes(catalog, "pannkakor", "all");
-    expect(result.map((r) => r.id)).toEqual(["swedish-pancakes"]);
+    expect(result.map((r) => r.id)).toEqual(["swedish"]);
   });
 
   it("combines query and category", () => {
+    const catalog = aCatalog([
+      aRecipe({ id: "french-crepes", title: "French Crêpes", category: "crepes" }),
+      aRecipe({ id: "french-bread", title: "French Bread", category: "bread" }),
+    ]);
     const result = filterRecipes(catalog, "french", "crepes");
     expect(result.map((r) => r.id)).toEqual(["french-crepes"]);
   });
@@ -323,7 +237,28 @@ describe("filterRecipes", () => {
 
 describe("toRatio", () => {
   it("produces a Ratio with baker's percentage values", () => {
-    const recipe = sampleCatalog().recipes[0];
+    const recipe = aRecipe({
+      ingredients: [
+        {
+          name: "flour",
+          ratio: 1.0,
+          proportion: 0.1673,
+          std_deviation: 0.05,
+          ci_lower: 0.16,
+          ci_upper: 0.17,
+          density_g_per_ml: 0.5283,
+        },
+        {
+          name: "milk",
+          ratio: 3.6,
+          proportion: 0.6019,
+          std_deviation: 0.05,
+          ci_lower: 0.59,
+          ci_upper: 0.61,
+          density_g_per_ml: 1.0313,
+        },
+      ],
+    });
     const ratio = toRatio(recipe);
     expect(ratio.values()).toEqual([1.0, 3.6]);
     expect(ratio.ingredients[0].densityGPerMl).toBe(0.5283);
@@ -332,118 +267,227 @@ describe("toRatio", () => {
 
 describe("CatalogRepo.listVariants", () => {
   it("returns all variants except drop-reviewed by default", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
-    const listed = repo.listVariants();
-    expect(listed.map((v) => v.normalizedTitle)).toEqual([
-      "swedish-pancakes",
-      "french-crepes",
-      "sourdough-boule",
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({ id: "kept-1", normalizedTitle: "kept-1", sampleSize: 30 }),
+        aSeedVariant({ id: "kept-2", normalizedTitle: "kept-2", sampleSize: 20 }),
+        aSeedVariant({
+          id: "dropped",
+          normalizedTitle: "dropped",
+          sampleSize: 100,
+          reviewStatus: "drop",
+        }),
+      ]),
+    );
+    expect(repo.listVariants().map((v) => v.normalizedTitle)).toEqual([
+      "kept-1",
+      "kept-2",
     ]);
   });
 
   it("filters by minSampleSize", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
-    const listed = repo.listVariants({ minSampleSize: 150 });
-    expect(listed.map((v) => v.normalizedTitle)).toEqual([
-      "swedish-pancakes",
-    ]);
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({ id: "big", normalizedTitle: "big", sampleSize: 200 }),
+        aSeedVariant({ id: "small", normalizedTitle: "small", sampleSize: 100 }),
+      ]),
+    );
+    expect(
+      repo.listVariants({ minSampleSize: 150 }).map((v) => v.normalizedTitle),
+    ).toEqual(["big"]);
   });
 
   it("filters by minSampleSize=10 cutoff", () => {
-    const variants = [
-      ...sampleVariants(),
-      {
-        id: "tiny-vid",
-        normalizedTitle: "tiny",
-        category: "crepes",
-        baseIngredient: "flour",
-        sampleSize: 5,
-        ingredients: [
-          { name: "flour", proportion: 0.5, ratio: 1.0, min_sample_size: 4 },
-        ],
-      },
-    ];
-    const repo = new CatalogRepo(seedDb(variants));
-    const listed = repo.listVariants({ minSampleSize: 10 });
-    const titles = listed.map((v) => v.normalizedTitle);
-    expect(titles).toContain("swedish-pancakes");
-    expect(titles).toContain("french-crepes");
-    expect(titles).toContain("sourdough-boule");
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({ id: "above", normalizedTitle: "above", sampleSize: 30 }),
+        aSeedVariant({ id: "tiny", normalizedTitle: "tiny", sampleSize: 5 }),
+      ]),
+    );
+    const titles = repo
+      .listVariants({ minSampleSize: 10 })
+      .map((v) => v.normalizedTitle);
+    expect(titles).toContain("above");
     expect(titles).not.toContain("tiny");
   });
 
   it("filters by category", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
-    const listed = repo.listVariants({ category: "bread" });
-    expect(listed.map((v) => v.normalizedTitle)).toEqual(["sourdough-boule"]);
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({ id: "boule", normalizedTitle: "sourdough-boule", category: "bread" }),
+        aSeedVariant({ id: "crepe", normalizedTitle: "crepe", category: "crepes" }),
+      ]),
+    );
+    expect(
+      repo.listVariants({ category: "bread" }).map((v) => v.normalizedTitle),
+    ).toEqual(["sourdough-boule"]);
   });
 
   it("filters by case-insensitive titleSearch", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
-    const listed = repo.listVariants({ titleSearch: "PANCAKES" });
-    expect(listed.map((v) => v.normalizedTitle)).toEqual(["swedish-pancakes"]);
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({ id: "swedish", normalizedTitle: "swedish-pancakes" }),
+        aSeedVariant({ id: "boule", normalizedTitle: "sourdough-boule" }),
+      ]),
+    );
+    expect(
+      repo.listVariants({ titleSearch: "PANCAKES" }).map((v) => v.normalizedTitle),
+    ).toEqual(["swedish-pancakes"]);
   });
 
-  it("combines filters", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
-    const listed = repo.listVariants({ category: "crepes", minSampleSize: 150 });
-    expect(listed.map((v) => v.normalizedTitle)).toEqual(["swedish-pancakes"]);
+  it("combines category and minSampleSize", () => {
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({
+          id: "big-crepe",
+          normalizedTitle: "big-crepe",
+          category: "crepes",
+          sampleSize: 200,
+        }),
+        aSeedVariant({
+          id: "small-crepe",
+          normalizedTitle: "small-crepe",
+          category: "crepes",
+          sampleSize: 100,
+        }),
+        aSeedVariant({
+          id: "big-bread",
+          normalizedTitle: "big-bread",
+          category: "bread",
+          sampleSize: 200,
+        }),
+      ]),
+    );
+    expect(
+      repo
+        .listVariants({ category: "crepes", minSampleSize: 150 })
+        .map((v) => v.normalizedTitle),
+    ).toEqual(["big-crepe"]);
   });
 
   it("composes category + titleSearch + minSampleSize additively", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
-    const listed = repo.listVariants({
-      category: "crepes",
-      titleSearch: "pancakes",
-      minSampleSize: 50,
-    });
-    expect(listed.map((v) => v.normalizedTitle)).toEqual(["swedish-pancakes"]);
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({
+          id: "swedish",
+          normalizedTitle: "swedish-pancakes",
+          category: "crepes",
+          sampleSize: 200,
+        }),
+        aSeedVariant({
+          id: "tiny-pancakes",
+          normalizedTitle: "tiny-pancakes",
+          category: "crepes",
+          sampleSize: 30,
+        }),
+        aSeedVariant({
+          id: "french",
+          normalizedTitle: "french-crepes",
+          category: "crepes",
+          sampleSize: 100,
+        }),
+      ]),
+    );
+    expect(
+      repo
+        .listVariants({
+          category: "crepes",
+          titleSearch: "pancakes",
+          minSampleSize: 50,
+        })
+        .map((v) => v.normalizedTitle),
+    ).toEqual(["swedish-pancakes"]);
   });
 
   it("includes drop-reviewed when includeDropped=true", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
-    const listed = repo.listVariants({ includeDropped: true });
-    expect(listed.map((v) => v.normalizedTitle)).toContain("dropped");
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({ id: "kept", normalizedTitle: "kept" }),
+        aSeedVariant({
+          id: "dropped",
+          normalizedTitle: "dropped",
+          reviewStatus: "drop",
+        }),
+      ]),
+    );
+    expect(
+      repo.listVariants({ includeDropped: true }).map((v) => v.normalizedTitle),
+    ).toContain("dropped");
   });
 
   it("orders by sample_size desc by default", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
-    const listed = repo.listVariants();
-    const sizes = listed.map((v) => v.sampleSize);
-    expect(sizes).toEqual([...sizes].sort((a, b) => b - a));
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({ id: "small", normalizedTitle: "small", sampleSize: 30 }),
+        aSeedVariant({ id: "big", normalizedTitle: "big", sampleSize: 200 }),
+        aSeedVariant({ id: "mid", normalizedTitle: "mid", sampleSize: 119 }),
+      ]),
+    );
+    expect(repo.listVariants().map((v) => v.sampleSize)).toEqual([200, 119, 30]);
   });
 
   it("orders by title alphabetically with orderBy='title'", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
-    const listed = repo.listVariants({ orderBy: "title" });
-    expect(listed.map((v) => v.normalizedTitle)).toEqual([
-      "french-crepes",
-      "sourdough-boule",
-      "swedish-pancakes",
-    ]);
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({ id: "swedish", normalizedTitle: "swedish-pancakes" }),
+        aSeedVariant({ id: "boule", normalizedTitle: "sourdough-boule" }),
+        aSeedVariant({ id: "french", normalizedTitle: "french-crepes" }),
+      ]),
+    );
+    expect(
+      repo.listVariants({ orderBy: "title" }).map((v) => v.normalizedTitle),
+    ).toEqual(["french-crepes", "sourdough-boule", "swedish-pancakes"]);
   });
 
   it("orders by sample_size desc with explicit orderBy", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
-    const listed = repo.listVariants({ orderBy: "sample_size" });
-    expect(listed.map((v) => v.sampleSize)).toEqual([200, 119, 30]);
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({ id: "a", normalizedTitle: "a", sampleSize: 200 }),
+        aSeedVariant({ id: "b", normalizedTitle: "b", sampleSize: 119 }),
+        aSeedVariant({ id: "c", normalizedTitle: "c", sampleSize: 30 }),
+      ]),
+    );
+    expect(
+      repo.listVariants({ orderBy: "sample_size" }).map((v) => v.sampleSize),
+    ).toEqual([200, 119, 30]);
   });
 });
 
 describe("CatalogRepo.listRecipes", () => {
   it("returns hydrated CuratedRecipes matching filters", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({
+          id: "swedish-vid",
+          normalizedTitle: "swedish-pancakes",
+          sampleSize: 200,
+          ingredients: [
+            { name: "flour", proportion: 0.17, ratio: 1.0, min_sample_size: 116 },
+            { name: "milk", proportion: 0.6, ratio: 3.6, min_sample_size: 36 },
+          ],
+        }),
+        aSeedVariant({
+          id: "french-vid",
+          normalizedTitle: "french-crepes",
+          sampleSize: 119,
+        }),
+        aSeedVariant({ id: "tiny", normalizedTitle: "tiny", sampleSize: 30 }),
+      ]),
+    );
     const recipes = repo.listRecipes({ minSampleSize: 100 });
-    expect(recipes.map((r) => r.id)).toEqual([
-      "swedish-pancakes",
-      "french-crepes",
-    ]);
+    expect(recipes.map((r) => r.id)).toEqual(["swedish-pancakes", "french-crepes"]);
     expect(recipes[0].ingredients).toHaveLength(2);
     expect(recipes[0].ingredients[0].name).toBe("flour");
   });
 
   it("honors orderBy='title'", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({ id: "a", normalizedTitle: "swedish-pancakes" }),
+        aSeedVariant({ id: "b", normalizedTitle: "sourdough-boule" }),
+        aSeedVariant({ id: "c", normalizedTitle: "french-crepes" }),
+      ]),
+    );
     const recipes = repo.listRecipes({ orderBy: "title" });
     expect(recipes.map((r) => r.id)).toEqual([
       "french-crepes",
@@ -455,7 +499,43 @@ describe("CatalogRepo.listRecipes", () => {
 
 describe("CatalogRepo.getVariant", () => {
   it("hydrates a full CuratedRecipe", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({
+          id: "swedish-pancakes-vid",
+          normalizedTitle: "swedish-pancakes",
+          displayTitle: "Swedish Pancakes (Pannkakor)",
+          category: "crepes",
+          description: "Thin, eggy Scandinavian pancakes.",
+          baseIngredient: "flour",
+          sampleSize: 200,
+          confidenceLevel: 0.95,
+          ingredients: [
+            {
+              name: "flour",
+              proportion: 0.1673,
+              ratio: 1.0,
+              min_sample_size: 116,
+              density: 0.5283,
+            },
+            {
+              name: "milk",
+              proportion: 0.6019,
+              ratio: 3.6,
+              min_sample_size: 36,
+              density: 1.0313,
+            },
+          ],
+          sources: [
+            {
+              type: "text",
+              title: "Aggregated Swedish recipes",
+              ref: "Swedish pannkakor.",
+            },
+          ],
+        }),
+      ]),
+    );
     const recipe = repo.getVariant("swedish-pancakes-vid");
     expect(recipe).not.toBeNull();
     expect(recipe!.id).toBe("swedish-pancakes");
@@ -474,14 +554,36 @@ describe("CatalogRepo.getVariant", () => {
   });
 
   it("returns null for missing id", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
+    const repo = new CatalogRepo(seedDb([aSeedVariant()]));
     expect(repo.getVariant("xxx")).toBeNull();
   });
 });
 
 describe("CatalogRepo.toCatalog", () => {
   it("hydrates a full catalog consumable by filterRecipes/categoriesOf", () => {
-    const repo = new CatalogRepo(seedDb(sampleVariants()));
+    const repo = new CatalogRepo(
+      seedDb([
+        aSeedVariant({
+          id: "swedish",
+          normalizedTitle: "swedish-pancakes",
+          displayTitle: "Swedish Pancakes (Pannkakor)",
+          category: "crepes",
+          sampleSize: 200,
+        }),
+        aSeedVariant({
+          id: "french",
+          normalizedTitle: "french-crepes",
+          category: "crepes",
+          sampleSize: 100,
+        }),
+        aSeedVariant({
+          id: "boule",
+          normalizedTitle: "sourdough-boule",
+          category: "bread",
+          sampleSize: 30,
+        }),
+      ]),
+    );
     const catalog = repo.toCatalog();
     expect(catalog.version).toBe(1);
     expect(catalog.recipes.map((r) => r.id)).toEqual([
