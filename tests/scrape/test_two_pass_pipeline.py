@@ -15,6 +15,7 @@ import json
 import zipfile
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -139,6 +140,37 @@ def _open_db(tmp_path: Path, name: str = "recipes.db") -> CatalogDB:
     return CatalogDB.open(tmp_path / name)
 
 
+def _run_pipeline(
+    db: CatalogDB,
+    csv_path: Path,
+    zip_path: Path,
+    parse_fn: Any,
+    **overrides: Any,
+) -> Any:
+    """Drive run_catalog_pipeline with the standard fixture defaults.
+
+    Tests express only what differs (e.g. ``do_pass2=False`` for a
+    Pass-1-only run, or ``model="model-b"`` for a model-swap test).
+    Defaults match the fixture corpora — three recipenlg rows + two
+    WDC rows under one L1 group, l2 threshold 0.3, both passes on.
+    """
+    kwargs: dict[str, Any] = dict(
+        db=db,
+        rnlg_loader=RecipeNLGLoader(path=csv_path),
+        wdc_loader=WDCLoader(zip_path=zip_path),
+        parse_fn=parse_fn,
+        corpus_revisions="rev-1",
+        l1_min=3,
+        l2_threshold=0.3,
+        l2_min=2,
+        l3_min=2,
+        do_pass1=True,
+        do_pass2=True,
+    )
+    kwargs.update(overrides)
+    return run_catalog_pipeline(**kwargs)
+
+
 # --- Pass 1 behavior ---
 
 
@@ -193,18 +225,8 @@ class TestPass1WritesCache:
         db = _open_db(tmp_path)
         calls: list[list[str]] = []
 
-        run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=_make_parse_fn(calls),
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
-            do_pass1=True,
-            do_pass2=False,
+        _run_pipeline(
+            db, csv_path, zip_path, _make_parse_fn(calls), do_pass2=False
         )
         # 3 rnlg rows × 2 lines + 2 wdc rows × 2 lines = 10 line rows.
         assert db.count_parsed_lines() == 10
@@ -220,18 +242,8 @@ class TestPass1WritesCache:
         db = _open_db(tmp_path)
         calls: list[list[str]] = []
 
-        run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=_make_parse_fn(calls),
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
-            do_pass1=True,
-            do_pass2=False,
+        _run_pipeline(
+            db, csv_path, zip_path, _make_parse_fn(calls), do_pass2=False
         )
         # Every raw_line text the LLM saw must appear in at most one
         # call; later occurrences hit the in-process line_text_cache or
@@ -248,35 +260,15 @@ class TestPass1WritesCache:
         db = _open_db(tmp_path)
 
         first_calls: list[list[str]] = []
-        run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=_make_parse_fn(first_calls),
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
-            do_pass1=True,
-            do_pass2=False,
+        _run_pipeline(
+            db, csv_path, zip_path, _make_parse_fn(first_calls), do_pass2=False
         )
         rows_before = db.count_parsed_lines()
 
         # Re-run Pass 1 on the same DB → no LLM calls, no new rows.
         second_calls: list[list[str]] = []
-        run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=_make_parse_fn(second_calls),
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
-            do_pass1=True,
-            do_pass2=False,
+        _run_pipeline(
+            db, csv_path, zip_path, _make_parse_fn(second_calls), do_pass2=False
         )
         assert second_calls == [], "Pass 1 re-call should hit cache 100%"
         assert db.count_parsed_lines() == rows_before
@@ -287,34 +279,22 @@ class TestPass1WritesCache:
         csv_path, zip_path = synthetic_corpora
         db = _open_db(tmp_path)
 
-        run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=_make_parse_fn([]),
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
+        _run_pipeline(
+            db,
+            csv_path,
+            zip_path,
+            _make_parse_fn([]),
             model="model-a",
-            do_pass1=True,
             do_pass2=False,
         )
         # New model → must re-parse every recipe, write new rows.
         second_calls: list[list[str]] = []
-        run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=_make_parse_fn(second_calls),
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
+        _run_pipeline(
+            db,
+            csv_path,
+            zip_path,
+            _make_parse_fn(second_calls),
             model="model-b",
-            do_pass1=True,
             do_pass2=False,
         )
         assert second_calls != [], "model swap should re-LLM the lines"
@@ -352,18 +332,8 @@ class TestPass1WritesCache:
         )
 
         calls: list[list[str]] = []
-        run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=_make_parse_fn(calls),
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
-            do_pass1=True,
-            do_pass2=False,
+        _run_pipeline(
+            db, csv_path, zip_path, _make_parse_fn(calls), do_pass2=False
         )
         # The LLM never sees "200 g flour" — it was a cached failure.
         all_lines = {line for batch in calls for line in batch}
@@ -380,19 +350,7 @@ class TestPass2NoLLM:
         csv_path: Path,
         zip_path: Path,
     ) -> None:
-        run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=_make_parse_fn([]),
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
-            do_pass1=True,
-            do_pass2=False,
-        )
+        _run_pipeline(db, csv_path, zip_path, _make_parse_fn([]), do_pass2=False)
 
     def test_pass2_only_writes_variants_without_llm_calls(
         self, synthetic_corpora: tuple[Path, Path], tmp_path: Path
@@ -409,18 +367,8 @@ class TestPass2NoLLM:
                 "Pass 2 must not call parse_fn (LLM); cache was warmed"
             )
 
-        stats = run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=trip_wire,
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
-            do_pass1=False,
-            do_pass2=True,
+        stats = _run_pipeline(
+            db, csv_path, zip_path, trip_wire, do_pass1=False
         )
         assert calls == []
         assert stats.variants_produced >= 1
@@ -436,52 +384,36 @@ class TestPass2NoLLM:
         same clustering thresholds, same outputs.
         """
         csv_path, zip_path = synthetic_corpora
+        fixed_now = lambda: "2026-04-25T00:00:00+00:00"  # noqa: E731
 
         def variants_after(do_split: bool) -> list[tuple[str, str, int]]:
             db_path = tmp_path / ("split.db" if do_split else "single.db")
             db = CatalogDB.open(db_path)
             try:
                 if do_split:
-                    run_catalog_pipeline(
-                        db=db,
-                        rnlg_loader=RecipeNLGLoader(path=csv_path),
-                        wdc_loader=WDCLoader(zip_path=zip_path),
-                        parse_fn=_make_parse_fn([]),
-                        corpus_revisions="rev-1",
-                        l1_min=3,
-                        l2_threshold=0.3,
-                        l2_min=2,
-                        l3_min=2,
-                        do_pass1=True,
+                    _run_pipeline(
+                        db,
+                        csv_path,
+                        zip_path,
+                        _make_parse_fn([]),
                         do_pass2=False,
-                        now_fn=lambda: "2026-04-25T00:00:00+00:00",
+                        now_fn=fixed_now,
                     )
-                    run_catalog_pipeline(
-                        db=db,
-                        rnlg_loader=RecipeNLGLoader(path=csv_path),
-                        wdc_loader=WDCLoader(zip_path=zip_path),
-                        parse_fn=_make_parse_fn([]),
-                        corpus_revisions="rev-1",
-                        l1_min=3,
-                        l2_threshold=0.3,
-                        l2_min=2,
-                        l3_min=2,
+                    _run_pipeline(
+                        db,
+                        csv_path,
+                        zip_path,
+                        _make_parse_fn([]),
                         do_pass1=False,
-                        do_pass2=True,
-                        now_fn=lambda: "2026-04-25T00:00:00+00:00",
+                        now_fn=fixed_now,
                     )
                 else:
-                    run_catalog_pipeline(
-                        db=db,
-                        rnlg_loader=RecipeNLGLoader(path=csv_path),
-                        wdc_loader=WDCLoader(zip_path=zip_path),
-                        parse_fn=_make_parse_fn([]),
-                        corpus_revisions="rev-1",
-                        l1_min=3,
-                        l2_threshold=0.3,
-                        l2_min=2,
-                        l3_min=2,
-                        now_fn=lambda: "2026-04-25T00:00:00+00:00",
+                    _run_pipeline(
+                        db,
+                        csv_path,
+                        zip_path,
+                        _make_parse_fn([]),
+                        now_fn=fixed_now,
                     )
                 return [
                     (v.variant_id, v.normalized_title, v.n_recipes)
@@ -500,18 +432,8 @@ class TestPass2NoLLM:
         db = _open_db(tmp_path)
 
         calls: list[list[str]] = []
-        stats = run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=_make_parse_fn(calls),
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
-            do_pass1=False,
-            do_pass2=True,
+        stats = _run_pipeline(
+            db, csv_path, zip_path, _make_parse_fn(calls), do_pass1=False
         )
         assert calls == []
         assert stats.variants_produced == 0
@@ -531,18 +453,8 @@ class TestThresholdSweep:
 
         # Warm the cache.
         warm_calls: list[list[str]] = []
-        run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=_make_parse_fn(warm_calls),
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
-            do_pass1=True,
-            do_pass2=False,
+        _run_pipeline(
+            db, csv_path, zip_path, _make_parse_fn(warm_calls), do_pass2=False
         )
         assert warm_calls != []
 
@@ -551,18 +463,14 @@ class TestThresholdSweep:
             sweep_calls: list[list[str]] = []
             # Each sweep run gets a fresh corpus_revisions so query_runs
             # doesn't short-circuit Pass 2 on the L1 group.
-            run_catalog_pipeline(
-                db=db,
-                rnlg_loader=RecipeNLGLoader(path=csv_path),
-                wdc_loader=WDCLoader(zip_path=zip_path),
-                parse_fn=_make_parse_fn(sweep_calls),
+            _run_pipeline(
+                db,
+                csv_path,
+                zip_path,
+                _make_parse_fn(sweep_calls),
                 corpus_revisions=f"rev-{threshold}",
-                l1_min=3,
                 l2_threshold=threshold,
-                l2_min=2,
-                l3_min=2,
                 do_pass1=False,
-                do_pass2=True,
             )
             assert sweep_calls == [], (
                 f"Pass 2 sweep at threshold={threshold} should not LLM"
@@ -785,17 +693,8 @@ class TestBackwardCompat:
             called["n"] += 1
             return list(recipes)
 
-        run_catalog_pipeline(
-            db=db,
-            rnlg_loader=RecipeNLGLoader(path=csv_path),
-            wdc_loader=WDCLoader(zip_path=zip_path),
-            parse_fn=_make_parse_fn([]),
-            extract_fn=counting,
-            corpus_revisions="rev-1",
-            l1_min=3,
-            l2_threshold=0.3,
-            l2_min=2,
-            l3_min=2,
+        _run_pipeline(
+            db, csv_path, zip_path, _make_parse_fn([]), extract_fn=counting
         )
         # extract_fn was passed in but never invoked — Pass 2 derives
         # ingredient_names from the parsed_ingredient_lines cache.
