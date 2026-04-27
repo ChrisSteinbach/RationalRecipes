@@ -256,16 +256,9 @@ class TestCliRoundtrip:
     def test_byte_identical_reruns(
         self, tiny_corpora: tuple[Path, Path], tmp_path: Path
     ) -> None:
-        # Import inside the test so script-import side effects (argparse
-        # construction, etc.) are isolated per run.
         import sys
 
-        scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
-        sys.path.insert(0, str(scripts_dir))
-        try:
-            import corpus_title_survey as cli
-        finally:
-            sys.path.pop(0)
+        from rational_recipes.cli import corpus_title_survey as cli
 
         csv_path, zip_path = tiny_corpora
         out_a = tmp_path / "a.json"
