@@ -64,26 +64,6 @@ def _variant(
 
 
 class TestSchema:
-    def test_open_creates_expected_tables(self, tmp_path: Path) -> None:
-        db = CatalogDB.open(tmp_path / "recipes.db")
-        names = {
-            r[0]
-            for r in db.connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-        }
-        assert {
-            "recipes",
-            "raw_ingredients",
-            "parsed_ingredients",
-            "variants",
-            "variant_members",
-            "variant_ingredient_stats",
-            "variant_sources",
-            "query_runs",
-            "parsed_ingredient_lines",
-        }.issubset(names)
-
     def test_open_is_idempotent(self, tmp_path: Path) -> None:
         path = tmp_path / "recipes.db"
         CatalogDB.open(path).close()
@@ -91,17 +71,38 @@ class TestSchema:
         db = CatalogDB.open(path)
         db.close()
 
-    def test_indexes_on_variants(self, tmp_path: Path) -> None:
-        db = CatalogDB.open(tmp_path / "recipes.db")
-        names = {
-            r[0]
-            for r in db.connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='index'"
+    def test_min_sample_size_filter_uses_index(self) -> None:
+        db = CatalogDB.in_memory()
+        plan = list(
+            db.connection.execute(
+                "EXPLAIN QUERY PLAN"
+                " SELECT * FROM variants WHERE n_recipes >= ?"
+                " ORDER BY n_recipes DESC",
+                (10,),
             )
-        }
-        assert "idx_variants_nrecipes" in names
-        assert "idx_variants_category" in names
-        assert "idx_variants_title" in names
+        )
+        assert any("USING INDEX" in row[3] for row in plan), plan
+
+    def test_category_filter_uses_index(self) -> None:
+        db = CatalogDB.in_memory()
+        plan = list(
+            db.connection.execute(
+                "EXPLAIN QUERY PLAN"
+                " SELECT * FROM variants WHERE category = ?",
+                ("crepes",),
+            )
+        )
+        assert any("USING INDEX" in row[3] for row in plan), plan
+
+    def test_title_order_uses_index(self) -> None:
+        db = CatalogDB.in_memory()
+        plan = list(
+            db.connection.execute(
+                "EXPLAIN QUERY PLAN"
+                " SELECT * FROM variants ORDER BY normalized_title ASC"
+            )
+        )
+        assert any("USING INDEX" in row[3] for row in plan), plan
 
 
 class TestUpsertVariant:
