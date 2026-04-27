@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 from rich.console import Console
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-
-import review_variants as rv  # noqa: E402
-
-from rational_recipes.catalog_db import (  # noqa: E402
+from rational_recipes.catalog_db import (
     CatalogDB,
     ListFilters,
 )
-from rational_recipes.scrape.pipeline_merged import (  # noqa: E402
+from rational_recipes.cli import review_variants as rv
+from rational_recipes.scrape.pipeline_merged import (
     MergedNormalizedRow,
     MergedVariantResult,
 )
