@@ -11,12 +11,16 @@
 // metadata (categories, total count).
 
 import "./styles.css";
-import { type Catalog, type CuratedRecipe, loadCatalog } from "./catalog.ts";
 import {
-  type CatalogRepo,
-  type ListFilters,
-  loadCatalogRepo,
-} from "./catalog_repo.ts";
+  type Route,
+  findRecipe,
+  inMemoryFilter,
+  parseRoute,
+  routeToHash,
+  viewStateToFilters,
+} from "./app_routing.ts";
+import { type Catalog, type CuratedRecipe, loadCatalog } from "./catalog.ts";
+import { type CatalogRepo, loadCatalogRepo } from "./catalog_repo.ts";
 import {
   type CatalogViewState,
   initialCatalogState,
@@ -37,56 +41,9 @@ interface AppState {
   route: Route;
 }
 
-type Route = { kind: "catalog" } | { kind: "detail"; recipeId: string };
-
-function parseRoute(hash: string): Route {
-  const m = /^#\/recipe\/([^/]+)\/?$/.exec(hash);
-  if (m) return { kind: "detail", recipeId: decodeURIComponent(m[1]) };
-  return { kind: "catalog" };
-}
-
-function routeToHash(route: Route): string {
-  if (route.kind === "detail") return `#/recipe/${encodeURIComponent(route.recipeId)}`;
-  return "#/";
-}
-
-function findRecipe(catalog: Catalog, id: string): CuratedRecipe | null {
-  return catalog.recipes.find((r) => r.id === id) ?? null;
-}
-
-function viewStateToFilters(state: CatalogViewState): ListFilters {
-  const filters: ListFilters = { orderBy: state.orderBy };
-  if (state.minSampleSize > 0) filters.minSampleSize = state.minSampleSize;
-  if (state.category !== "all") filters.category = state.category;
-  const q = state.query.trim();
-  if (q) filters.titleSearch = q;
-  return filters;
-}
-
 function filteredRecipes(state: AppState): CuratedRecipe[] {
   if (state.repo) return state.repo.listRecipes(viewStateToFilters(state.catalogView));
   return inMemoryFilter(state.catalog, state.catalogView);
-}
-
-// JSON fallback (?source=json) — keeps the in-browser filter path alive
-// for dev without a recipes.db. Title-only LIKE semantics intentionally
-// mirror the SQL path so behavior is consistent.
-function inMemoryFilter(catalog: Catalog, view: CatalogViewState): CuratedRecipe[] {
-  const q = view.query.trim().toLowerCase();
-  const filtered = catalog.recipes.filter((r) => {
-    if (view.category !== "all" && r.category !== view.category) return false;
-    if (view.minSampleSize > 0 && r.sample_size < view.minSampleSize) return false;
-    if (q && !r.title.toLowerCase().includes(q)) return false;
-    return true;
-  });
-  if (view.orderBy === "title") {
-    filtered.sort((a, b) => a.title.localeCompare(b.title));
-  } else {
-    filtered.sort(
-      (a, b) => b.sample_size - a.sample_size || a.title.localeCompare(b.title),
-    );
-  }
-  return filtered;
 }
 
 function render(container: HTMLElement, state: AppState): void {
