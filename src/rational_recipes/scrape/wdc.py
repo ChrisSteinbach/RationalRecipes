@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from rational_recipes.scrape.canonical import canonicalize_names
+from rational_recipes.scrape.loaders import filter_ingredient_lines
 from rational_recipes.scrape.parse import (
     OLLAMA_BASE_URL,
     ParsedIngredient,  # noqa: F401 — used by callers
@@ -140,7 +141,9 @@ def _parse_row(row: dict[str, Any], host: str) -> WDCRecipe:
         row_id=row.get("row_id", 0),
         host=host,
         title=title_raw if isinstance(title_raw, str) else "",
-        ingredients=tuple(str(i) for i in ingredients_raw),
+        ingredients=filter_ingredient_lines(
+            tuple(str(i) for i in ingredients_raw)
+        ),
         page_url=page_url_raw if isinstance(page_url_raw, str) else "",
         cooking_methods=frozenset(
             part.strip() for part in cooking_raw.split(",") if part.strip()

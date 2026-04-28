@@ -288,5 +288,5 @@ class TestBatchedParseChunking:
             _llm_parse(
                 [f"line {i}" for i in range(10)], num_predict=64
             )
-            # User asked for 64; 10 lines × 80 + 50 = 850 floor.
-            assert captured == [850]
+            # User asked for 64; 10 lines × 80 + 100 = 900 floor.
+            assert captured == [900]

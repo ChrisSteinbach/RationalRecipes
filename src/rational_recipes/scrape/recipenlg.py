@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from rational_recipes.scrape.canonical import canonicalize_names
+from rational_recipes.scrape.loaders import filter_ingredient_lines
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +67,9 @@ class RecipeNLGLoader:
                 yield Recipe(
                     row_index=row_index,
                     title=row.get("title", "").strip(),
-                    ingredients=_parse_string_list(row.get("ingredients", "[]")),
+                    ingredients=filter_ingredient_lines(
+                        _parse_string_list(row.get("ingredients", "[]"))
+                    ),
                     ner=_parse_string_list(row.get("NER", "[]")),
                     source=row.get("source", ""),
                     link=row.get("link", ""),

@@ -100,7 +100,7 @@ _MAX_BATCH_SIZE = 30
 # Token budget per parsed line (JSON object), with a safety floor for
 # per-call overhead (the "results" wrapper, brackets, commas).
 _TOKENS_PER_LINE = 80
-_BATCH_OVERHEAD_TOKENS = 50
+_BATCH_OVERHEAD_TOKENS = 100
 
 
 @dataclass(frozen=True, slots=True)
