@@ -558,6 +558,18 @@ class CatalogDB:
                 (status, note, reviewed_at, variant_id),
             )
 
+    def update_display_title(self, variant_id: str, display_title: str) -> None:
+        """Overwrite a variant's ``display_title`` (Pass 3, vwt.24).
+
+        Single-row UPDATE in its own transaction so a partial Pass 3
+        leaves earlier titles intact rather than rolling back wholesale.
+        """
+        with self._conn:
+            self._conn.execute(
+                "UPDATE variants SET display_title = ? WHERE variant_id = ?",
+                (display_title, variant_id),
+            )
+
     def record_l1_run(
         self,
         l1_key: str,

@@ -678,6 +678,41 @@ class TestCli:
         )
         assert rc == 1
 
+    def test_pass3_runs_after_pass2_in_orchestrator(
+        self,
+        synthetic_corpora: tuple[Path, Path],
+        tmp_path: Path,
+    ) -> None:
+        """End-to-end: --pass3-only with stub title_fn updates display_title."""
+        from rational_recipes.catalog_db import CatalogDB
+        from rational_recipes.scrape.pass3_titles import (
+            run_pass3 as _run_pass3,
+        )
+
+        # Hand-build a DB with a multi-variant L1 group, then run --pass3-only.
+        out_db = tmp_path / "out" / "recipes.db"
+        out_db.parent.mkdir(parents=True, exist_ok=True)
+
+        from tests.test_pass3_titles import _make_variant, _stub_title_fn
+
+        db = CatalogDB.open(out_db)
+        try:
+            _make_variant(
+                db,
+                l1_title="pecan pie",
+                canonical_ingredients=frozenset({"pecan", "egg", "bourbon"}),
+            )
+            _make_variant(
+                db,
+                l1_title="pecan pie",
+                canonical_ingredients=frozenset({"pecan", "egg", "maple"}),
+            )
+            _run_pass3(db=db, title_fn=_stub_title_fn())
+            titles = sorted({v.display_title for v in db.list_variants()})
+            assert titles == ["Bourbon Pecan Pie", "Maple Pecan Pie"]
+        finally:
+            db.close()
+
 
 class TestCatalogRunStatsDefaults:
     def test_zero_init(self) -> None:

@@ -39,6 +39,7 @@ from rational_recipes.scrape.merge import (
     DEFAULT_NEAR_DUP_THRESHOLD,
 )
 from rational_recipes.scrape.parse import OLLAMA_BASE_URL, parse_ingredient_lines
+from rational_recipes.scrape.pass3_titles import TitleFn, build_default_title_fn
 from rational_recipes.scrape.recipenlg import RecipeNLGLoader
 from rational_recipes.scrape.wdc import WDCLoader, WDCRecipe, extract_batch
 
@@ -130,6 +131,40 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "L1 group whose recipes weren't covered by an earlier Pass 1."
         ),
     )
+    pass_group.add_argument(
+        "--pass3-only",
+        action="store_true",
+        help=(
+            "vwt.24: regenerate distinctive display_titles for every "
+            "variant in the existing DB; skip Pass 1 + Pass 2."
+        ),
+    )
+    parser.add_argument(
+        "--skip-pass3",
+        action="store_true",
+        help=(
+            "vwt.24: skip the Pass 3 title-generation step (default: "
+            "run after Pass 2)."
+        ),
+    )
+    parser.add_argument(
+        "--pass3-force",
+        action="store_true",
+        help=(
+            "vwt.24: re-title every variant even if display_title is "
+            "already distinct from normalized_title (default: skip "
+            "already-titled variants)."
+        ),
+    )
+    parser.add_argument(
+        "--pass3-workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help=(
+            "Thread-pool size for Pass 3 title generation. Default: 1."
+        ),
+    )
     parser.add_argument(
         "--pass1-workers",
         type=int,
@@ -179,8 +214,10 @@ def run(
     *,
     parse_fn: ParseFn | None = None,
     extract_fn: ExtractFn | None = None,
+    title_fn: TitleFn | None = None,
 ) -> int:
-    """CLI entrypoint. ``parse_fn``/``extract_fn`` let tests bypass Ollama."""
+    """CLI entrypoint. ``parse_fn``/``extract_fn``/``title_fn`` let tests
+    bypass Ollama."""
     args = _parse_args(argv)
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,
@@ -194,16 +231,20 @@ def run(
         print(f"WDC zip not found: {args.wdc_zip}", file=sys.stderr)
         return 1
 
-    do_pass1 = not args.pass2_only
-    do_pass2 = not args.pass1_only
+    if args.pass3_only:
+        do_pass1 = False
+        do_pass2 = False
+        do_pass3 = True
+    else:
+        do_pass1 = not args.pass2_only
+        do_pass2 = not args.pass1_only
+        do_pass3 = not (args.pass1_only or args.pass2_only or args.skip_pass3)
 
-    # Ollama is only needed when Pass 1 will run with the live LLM.
-    if (
-        do_pass1
-        and parse_fn is None
-        and extract_fn is None
-        and not args.skip_preflight
-    ):
+    # Ollama is only needed when Pass 1 or Pass 3 will run with the live LLM.
+    needs_live_llm = (do_pass1 and parse_fn is None and extract_fn is None) or (
+        do_pass3 and title_fn is None
+    )
+    if needs_live_llm and not args.skip_preflight:
         if not _preflight_ollama(args.ollama_url):
             print(
                 f"Ollama unreachable at {args.ollama_url}; "
@@ -237,6 +278,9 @@ def run(
 
         parse_fn = default_parse
 
+    if title_fn is None:
+        title_fn = build_default_title_fn(args.model, base_url=args.ollama_url)
+
     args.output_db.parent.mkdir(parents=True, exist_ok=True)
     db = CatalogDB.open(args.output_db)
     try:
@@ -262,7 +306,11 @@ def run(
             seed=args.seed,
             do_pass1=do_pass1,
             do_pass2=do_pass2,
+            do_pass3=do_pass3,
             pass1_workers=args.pass1_workers,
+            pass3_workers=args.pass3_workers,
+            pass3_force=args.pass3_force,
+            title_fn=title_fn,
             # Persist the cache between groups so a killed run doesn't
             # lose already-extracted names.
             on_group_done=lambda _k, _v: _save_cache(args.cache_path, cache),
@@ -287,6 +335,14 @@ def run(
         f"lines_parsed={stats.pass1_lines_parsed} "
         f"line_cache_hits={stats.pass1_lines_cache_hits} "
         f"llm_batches={stats.pass1_llm_batches}"
+    )
+    print(
+        f"pass 3: variants_total={stats.pass3.variants_total} "
+        f"singletons={stats.pass3.variants_singleton} "
+        f"titled={stats.pass3.variants_titled} "
+        f"skipped={stats.pass3.variants_skipped} "
+        f"llm_calls={stats.pass3.llm_calls} "
+        f"llm_failures={stats.pass3.llm_failures}"
     )
     print(f"wallclock: {stats.wallclock_seconds:.1f}s")
     return 0

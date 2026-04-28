@@ -58,6 +58,12 @@ from rational_recipes.scrape.merge import (
     merge_corpora,
 )
 from rational_recipes.scrape.parse import ParsedIngredient
+from rational_recipes.scrape.pass3_titles import (
+    Pass3Stats,
+    TitleFn,
+    build_default_title_fn,
+    run_pass3,
+)
 from rational_recipes.scrape.pipeline_merged import (
     MergedVariantResult,
     build_variants,
@@ -210,6 +216,8 @@ class CatalogRunStats:
     pass1_lines_parsed: int = 0
     pass1_lines_cache_hits: int = 0
     pass1_llm_batches: int = 0
+    # vwt.24 Pass 3 counters.
+    pass3: Pass3Stats = field(default_factory=Pass3Stats)
     wallclock_seconds: float = 0.0
 
 
@@ -579,7 +587,11 @@ def run_catalog_pipeline(
     seed: int = DEFAULT_PARSE_SEED,
     do_pass1: bool = True,
     do_pass2: bool = True,
+    do_pass3: bool = True,
     pass1_workers: int = 1,
+    pass3_workers: int = 1,
+    pass3_force: bool = False,
+    title_fn: TitleFn | None = None,
     now_fn: Callable[[], str] = _utcnow_iso,
     on_group_done: Callable[[str, list[MergedVariantResult]], None] | None = None,
 ) -> CatalogRunStats:
@@ -609,8 +621,10 @@ def run_catalog_pipeline(
             f"Unknown language_filter {language_filter!r}; "
             f"expected one of {sorted(LANGUAGE_FILTER_PREDICATES)}"
         )
-    if not (do_pass1 or do_pass2):
-        raise ValueError("at least one of do_pass1, do_pass2 must be True")
+    if not (do_pass1 or do_pass2 or do_pass3):
+        raise ValueError(
+            "at least one of do_pass1, do_pass2, do_pass3 must be True"
+        )
     accept = LANGUAGE_FILTER_PREDICATES[language_filter]
     # extract_fn signature is preserved for backward compat; suppress
     # unused-arg lint.
@@ -671,6 +685,17 @@ def run_catalog_pipeline(
             now_fn=now_fn,
             on_group_done=on_group_done,
             stats=stats,
+        )
+
+    if do_pass3:
+        logger.info("Pass 3: generating distinctive variant titles")
+        resolved_title_fn = title_fn or build_default_title_fn(model)
+        run_pass3(
+            db=db,
+            title_fn=resolved_title_fn,
+            max_workers=pass3_workers,
+            force=pass3_force,
+            stats=stats.pass3,
         )
 
     stats.wallclock_seconds = time.monotonic() - start_t
