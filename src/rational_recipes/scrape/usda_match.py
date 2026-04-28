@@ -15,6 +15,7 @@ statistics; an LLM cost is cheap by comparison (vwt.17 acceptance note).
 from __future__ import annotations
 
 import sqlite3
+import threading
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -112,9 +113,8 @@ def _candidate_synonyms(name: str, *, limit: int) -> list[str]:
 
     Returns a tight candidate set so SequenceMatcher only runs on
     plausible matches — full-table scoring would be too slow for the
-    per-line hot path.
+    per-line hot path. Thread-safe via ``_DB_LOCK``.
     """
-    conn = _open_db()
     words = [w for w in name.split() if w]
     if not words:
         return []
@@ -124,15 +124,18 @@ def _candidate_synonyms(name: str, *, limit: int) -> list[str]:
     conditions = " AND ".join("LOWER(name) LIKE ?" for _ in words)
     params: list[object] = [f"%{w}%" for w in words]
     params.append(limit)
-    rows = conn.execute(
-        f"SELECT name FROM synonym WHERE {conditions} "
-        f"ORDER BY length(name) ASC LIMIT ?",
-        params,
-    ).fetchall()
+    with _DB_LOCK:
+        conn = _open_db()
+        rows = conn.execute(
+            f"SELECT name FROM synonym WHERE {conditions} "
+            f"ORDER BY length(name) ASC LIMIT ?",
+            params,
+        ).fetchall()
     return [r[0] for r in rows]
 
 
 _CACHED_CONN: sqlite3.Connection | None = None
+_DB_LOCK = threading.Lock()
 
 
 def _open_db() -> sqlite3.Connection:
