@@ -86,21 +86,26 @@ def synthetic_corpora(tmp_path: Path) -> tuple[Path, Path]:
     """
     csv_path = tmp_path / "recipenlg.csv"
     rows: list[RecipeRow] = []
+    # Vary quantities so proportion-bucket dedup doesn't collapse all rows.
     for i in range(3):
+        flour_g = 200 + i * 50
+        milk_ml = 400 - i * 50
         rows.append(
             {
                 "title": "Pannkakor",
                 "link": f"https://a.example/p/{i}",
-                "ingredients": ("200 g flour", "400 ml milk"),
+                "ingredients": (f"{flour_g} g flour", f"{milk_ml} ml milk"),
                 "ner": ("flour", "milk"),
             }
         )
     for i in range(4):
+        flour_g = 200 + i * 50
+        sugar_g = 100 + i * 30
         rows.append(
             {
                 "title": "Chocolate Cake",
                 "link": f"https://a.example/c/{i}",
-                "ingredients": ("200 g flour", "100 g sugar"),
+                "ingredients": (f"{flour_g} g flour", f"{sugar_g} g sugar"),
                 "ner": ("flour", "sugar"),
             }
         )
@@ -110,7 +115,7 @@ def synthetic_corpora(tmp_path: Path) -> tuple[Path, Path]:
             {
                 "title": "Banana Bread",
                 "link": f"https://a.example/b/{i}",
-                "ingredients": ("200 g flour",),
+                "ingredients": (f"{200 + i * 50} g flour",),
                 "ner": ("flour",),
             }
         )
@@ -124,7 +129,10 @@ def synthetic_corpora(tmp_path: Path) -> tuple[Path, Path]:
                     "row_id": i,
                     "name": "Pannkakor",
                     "page_url": f"https://example.com/p/{i}",
-                    "recipeingredient": ["3 dl vetemjöl", "5 dl mjölk"],
+                    "recipeingredient": [
+                        f"{150 + i * 50} g flour",
+                        f"{500 - i * 50} ml milk",
+                    ],
                     "cookingmethod": "stekt",
                 }
                 for i in range(3)

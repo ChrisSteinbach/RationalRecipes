@@ -399,7 +399,7 @@ def build_variants(
                     canonical_ingredients.update(row.cells.keys())
                     rows_normalized += 1
 
-                if not normalized_rows:
+                if len(normalized_rows) < l3_min_variant_size:
                     continue
 
                 # Header: ingredients present in at least half the rows.
@@ -423,7 +423,7 @@ def build_variants(
                 )
                 dropped = variant.dedup_in_place(bucket_size=bucket_size)
                 rows_dedup_dropped += dropped
-                if variant.normalized_rows:
+                if len(variant.normalized_rows) >= l3_min_variant_size:
                     variants.append(variant)
 
     stats = PipelineRunStats(

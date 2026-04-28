@@ -75,11 +75,14 @@ def synthetic_corpora(tmp_path: Path) -> tuple[Path, Path]:
     csv_path = tmp_path / "rnlg.csv"
     rows: list[dict[str, object]] = []
     for i in range(3):
+        # Vary quantities so proportion-bucket dedup doesn't collapse all rows.
+        flour_g = 200 + i * 50
+        milk_ml = 400 - i * 50
         rows.append(
             {
                 "title": "Pannkakor",
                 "link": f"https://a.example/p/{i}",
-                "ingredients": ["200 g flour", "400 ml milk"],
+                "ingredients": [f"{flour_g} g flour", f"{milk_ml} ml milk"],
                 "ner": ["flour", "milk"],
             }
         )
@@ -94,7 +97,10 @@ def synthetic_corpora(tmp_path: Path) -> tuple[Path, Path]:
                     "row_id": i,
                     "name": "Pannkakor",
                     "page_url": f"https://example.com/p/{i}",
-                    "recipeingredient": ["200 g flour", "300 ml milk"],
+                    "recipeingredient": [
+                        f"{150 + i * 50} g flour",
+                        f"{300 - i * 50} ml milk",
+                    ],
                     "cookingmethod": "stekt",
                 }
                 for i in range(2)

@@ -439,7 +439,8 @@ class TestBuildVariants:
         )
         assert variants == []
 
-    def test_builds_variant_from_homogeneous_group(self) -> None:
+    def test_identical_rows_deduped_below_min_are_dropped(self) -> None:
+        """3 identical recipes dedup to 1 unique row — below l3_min."""
         lines = ("200 g flour", "200 ml milk")
         merged = [
             _make_merged(
@@ -461,14 +462,41 @@ class TestBuildVariants:
             l2_similarity_threshold=0.6,
             l2_min_group_size=2,
         )
-        assert len(variants) == 1
-        v = variants[0]
-        # 3 identical rows → 2 should be dedup'd.
+        # 3 identical rows dedup to 1 — below the default l3_min of 3.
         assert stats.rows_parsed == 3
         assert stats.rows_dedup_dropped == 2
-        # After dedup, one survivor.
-        assert len(v.normalized_rows) == 1
-        assert set(v.header_ingredients) == {"flour", "milk"}
+        assert len(variants) == 0
+
+    def test_builds_variant_from_distinct_rows(self) -> None:
+        """3 recipes with varied proportions survive dedup and produce a variant."""
+        merged = [
+            _make_merged(
+                "pannkakor",
+                (f"{200 + i * 10} g flour", f"{200 - i * 10} ml milk"),
+                frozenset({"flour", "milk"}),
+                url=f"https://x/{i}",
+            )
+            for i in range(3)
+        ]
+
+        def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            parts = lines[0].split()
+            qty = float(parts[0])
+            return [
+                _parsed("flour", qty, "g"),
+                _parsed("milk", 400 - qty, "g"),
+            ]
+
+        variants, stats = build_variants(
+            merged,
+            parse_fn=fake_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+        )
+        assert len(variants) == 1
+        assert stats.rows_parsed == 3
+        assert set(variants[0].header_ingredients) == {"flour", "milk"}
 
     def test_parse_failure_skipped(self) -> None:
         merged = [
@@ -524,10 +552,12 @@ class TestBuildVariants:
 
     def test_l3_splits_l2_group_by_cooking_method(self) -> None:
         """Two cooking_methods at sufficient size → two separate variants."""
+        # Quantities vary by 50g per recipe so dedup buckets don't collide
+        # (bucket width is 2 g-per-100g; 50g shift in a ~400g recipe ≈ 12%).
         fried = [
             _make_merged(
                 "pannkakor",
-                ("200 g flour", "200 ml milk"),
+                (f"{200 + i * 50} g flour", f"{200 - i * 50} ml milk"),
                 frozenset({"flour", "milk"}),
                 url=f"https://x/fried/{i}",
                 corpus="wdc",
@@ -538,7 +568,7 @@ class TestBuildVariants:
         baked = [
             _make_merged(
                 "pannkakor",
-                ("150 g flour", "300 ml milk"),  # distinct proportions
+                (f"{150 + i * 50} g flour", f"{300 - i * 50} ml milk"),
                 frozenset({"flour", "milk"}),
                 url=f"https://x/baked/{i}",
                 corpus="wdc",
@@ -548,7 +578,6 @@ class TestBuildVariants:
         ]
 
         def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
-            # Use the line text to differentiate flour/milk per recipe.
             out: list[ParsedIngredient | None] = []
             for line in lines:
                 parts = line.split()
@@ -570,16 +599,16 @@ class TestBuildVariants:
         assert len(variants) == 2
         method_sets = {v.cooking_methods for v in variants}
         assert method_sets == {frozenset({"stekt"}), frozenset({"i ugn"})}
-        # Variant ids differ because method-set enters the hash.
         assert variants[0].variant_id != variants[1].variant_id
 
     def test_l3_noop_on_pure_recipenlg_stream(self) -> None:
         """RecipeNLG rows carry no cooking_methods — all in unknown bucket."""
+        # Two ingredients with varying proportions so dedup doesn't collapse.
         rows = [
             _make_merged(
                 "pannkakor",
-                ("200 g flour",),
-                frozenset({"flour"}),
+                (f"{200 + i * 50} g flour", f"{300 - i * 50} g milk"),
+                frozenset({"flour", "milk"}),
                 url=f"https://x/{i}",
                 corpus="recipenlg",
                 cooking_methods=frozenset(),
@@ -588,7 +617,11 @@ class TestBuildVariants:
         ]
 
         def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
-            return [_parsed("flour", 200, "g")]
+            out: list[ParsedIngredient | None] = []
+            for line in lines:
+                parts = line.split()
+                out.append(_parsed(parts[-1], float(parts[0]), "g"))
+            return out
 
         variants, _stats = build_variants(
             rows,
