@@ -45,6 +45,13 @@ from rational_recipes.scrape.pipeline_merged import (
     MergedVariantResult,
 )
 
+# Ingredient frequency filter (vwt.26): drop ingredients that appear
+# in fewer than this fraction of a variant's source recipes.  Only
+# applied when the variant has at least _INGREDIENT_FREQ_MIN_N recipes
+# so that tiny variants aren't over-pruned.
+INGREDIENT_FREQ_THRESHOLD: float = 0.10
+_INGREDIENT_FREQ_MIN_N: int = 5
+
 _SCHEMA: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS recipes (
@@ -1021,6 +1028,16 @@ def _compute_ingredient_stats(
             stddev = None
             ci_lower = None
             ci_upper = None
+        min_sample = sum(
+            1 for row in rows if row.proportions.get(name, 0.0) > 0.0
+        )
+
+        # vwt.26: drop low-frequency noise ingredients.  The filter
+        # only fires when the variant is large enough that a 10 %
+        # threshold is meaningful.
+        if n >= _INGREDIENT_FREQ_MIN_N and min_sample / n < INGREDIENT_FREQ_THRESHOLD:
+            continue
+
         fallback_ordinal = len(header_order) + canonicals.index(name)
         stats.append(
             _ComputedStat(
@@ -1031,9 +1048,7 @@ def _compute_ingredient_stats(
                 ci_lower=ci_lower,
                 ci_upper=ci_upper,
                 ratio=None,
-                min_sample_size=sum(
-                    1 for row in rows if row.proportions.get(name, 0.0) > 0.0
-                ),
+                min_sample_size=min_sample,
             )
         )
 
