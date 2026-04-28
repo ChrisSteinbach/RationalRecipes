@@ -11,6 +11,7 @@ See scripts/build_db.py for the database build pipeline.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 _DB_PATH = Path(__file__).parent / "data" / "ingredients.db"
@@ -52,6 +53,7 @@ class Factory:
 
     _INGREDIENTS: dict[str, Ingredient] = {}
     _conn: sqlite3.Connection | None = None
+    _lock: threading.Lock = threading.Lock()
 
     @classmethod
     def _get_conn(cls) -> sqlite3.Connection:
@@ -73,25 +75,26 @@ class Factory:
         """Lookup an Ingredient instance by name.
 
         First checks the in-memory cache, then queries the SQLite database.
-        Raises KeyError if the ingredient is not found.
+        Thread-safe: the shared connection and cache are protected by a lock.
         """
         key = name.lower().strip()
 
-        # Check cache first
-        if key in cls._INGREDIENTS:
-            return cls._INGREDIENTS[key]
+        with cls._lock:
+            # Check cache first
+            if key in cls._INGREDIENTS:
+                return cls._INGREDIENTS[key]
 
-        # Query the database
-        ingredient = cls._load_from_db(key)
-        if ingredient is None:
-            suggestions = cls._suggest(key)
-            if suggestions:
-                hint = "\n".join(f"  - {s}" for s in suggestions)
-                raise KeyError(f"{name!r}. Did you mean:\n{hint}")
-            raise KeyError(key)
+            # Query the database
+            ingredient = cls._load_from_db(key)
+            if ingredient is None:
+                suggestions = cls._suggest(key)
+                if suggestions:
+                    hint = "\n".join(f"  - {s}" for s in suggestions)
+                    raise KeyError(f"{name!r}. Did you mean:\n{hint}")
+                raise KeyError(key)
 
-        cls._INGREDIENTS[key] = ingredient
-        return ingredient
+            cls._INGREDIENTS[key] = ingredient
+            return ingredient
 
     @classmethod
     def _suggest(cls, name: str, limit: int = 5) -> list[str]:
