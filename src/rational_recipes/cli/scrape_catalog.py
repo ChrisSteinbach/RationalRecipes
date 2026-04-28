@@ -130,6 +130,17 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "L1 group whose recipes weren't covered by an earlier Pass 1."
         ),
     )
+    parser.add_argument(
+        "--pass1-workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help=(
+            "Thread-pool size for Pass 1 recipe parsing. Each worker "
+            "sends one Ollama request at a time; tune alongside "
+            "OLLAMA_NUM_PARALLEL on the server. Default: 1 (serial)."
+        ),
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser.parse_args(argv)
 
@@ -251,6 +262,7 @@ def run(
             seed=args.seed,
             do_pass1=do_pass1,
             do_pass2=do_pass2,
+            pass1_workers=args.pass1_workers,
             # Persist the cache between groups so a killed run doesn't
             # lose already-extracted names.
             on_group_done=lambda _k, _v: _save_cache(args.cache_path, cache),

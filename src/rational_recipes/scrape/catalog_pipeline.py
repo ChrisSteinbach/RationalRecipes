@@ -25,11 +25,14 @@ WDC needs for cross-corpus dedup).
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
+import threading
 import time
 from collections import defaultdict
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -244,6 +247,7 @@ def _pass1_recipe(
     seed: int,
     line_text_cache: dict[str, str | None],
     stats: CatalogRunStats,
+    lock: threading.Lock | None = None,
 ) -> None:
     """Parse one recipe's lines and persist them, applying line-text dedup.
 
@@ -251,54 +255,66 @@ def _pass1_recipe(
     whole Pass 1 run — keyed by raw_line text (model+seed pinned by the
     surrounding call), value is the parsed_json (str) or None for a
     cached failure. Mutated in-place as new texts are parsed.
+
+    When ``lock`` is provided (thread-pool mode), shared mutable state
+    (``db``, ``line_text_cache``, ``stats``) is accessed only while the
+    lock is held. The LLM call (``parse_fn``) runs unlocked so multiple
+    recipes can have in-flight Ollama requests concurrently.
     """
     if not raw_lines:
         return
 
-    if db.has_parsed_lines_for_recipe(corpus, recipe_id, model=model, seed=seed):
-        stats.pass1_recipes_skipped += 1
-        return
+    hold: contextlib.AbstractContextManager[object] = (
+        lock if lock is not None else contextlib.nullcontext()
+    )
 
-    stats.pass1_recipes_seen += 1
-    indexed_lines = list(enumerate(raw_lines))
-    needs_llm: list[tuple[int, str]] = []
-    pre_resolved: list[ParsedLineRow] = []
+    # --- Phase 1 (locked): skip check + resolve from cache ---
+    with hold:
+        if db.has_parsed_lines_for_recipe(corpus, recipe_id, model=model, seed=seed):
+            stats.pass1_recipes_skipped += 1
+            return
 
-    for idx, line in indexed_lines:
-        # Local cache hit (already parsed during this run).
-        if line in line_text_cache:
+        stats.pass1_recipes_seen += 1
+        indexed_lines = list(enumerate(raw_lines))
+        needs_llm: list[tuple[int, str]] = []
+        pre_resolved: list[ParsedLineRow] = []
+
+        for idx, line in indexed_lines:
+            # Local cache hit (already parsed during this run).
+            if line in line_text_cache:
+                stats.pass1_lines_cache_hits += 1
+                pre_resolved.append(
+                    ParsedLineRow(
+                        corpus=corpus,
+                        recipe_id=recipe_id,
+                        line_index=idx,
+                        raw_line=line,
+                        parsed_json=line_text_cache[line],
+                        model=model,
+                        seed=seed,
+                    )
+                )
+                continue
+            # DB cache hit (line-text dedup across recipes / prior runs).
+            found, payload = db.lookup_cached_parse(line, model, seed)
+            if not found:
+                needs_llm.append((idx, line))
+                continue
             stats.pass1_lines_cache_hits += 1
+            line_text_cache[line] = payload
             pre_resolved.append(
                 ParsedLineRow(
                     corpus=corpus,
                     recipe_id=recipe_id,
                     line_index=idx,
                     raw_line=line,
-                    parsed_json=line_text_cache[line],
+                    parsed_json=payload,
                     model=model,
                     seed=seed,
                 )
             )
-            continue
-        # DB cache hit (line-text dedup across recipes / prior runs).
-        found, payload = db.lookup_cached_parse(line, model, seed)
-        if not found:
-            needs_llm.append((idx, line))
-            continue
-        stats.pass1_lines_cache_hits += 1
-        line_text_cache[line] = payload
-        pre_resolved.append(
-            ParsedLineRow(
-                corpus=corpus,
-                recipe_id=recipe_id,
-                line_index=idx,
-                raw_line=line,
-                parsed_json=payload,
-                model=model,
-                seed=seed,
-            )
-        )
 
+    # --- Phase 2 (unlocked): LLM call ---
     new_rows: list[ParsedLineRow] = []
     if needs_llm:
         # Dedup by line text for the LLM call too — same recipe can repeat
@@ -310,7 +326,6 @@ def _pass1_recipe(
                 seen.add(line)
                 unique_texts.append(line)
 
-        stats.pass1_llm_batches += 1
         results = parse_fn(unique_texts)
         if len(results) != len(unique_texts):
             # Defensive: should not happen with the documented contract,
@@ -323,7 +338,6 @@ def _pass1_recipe(
 
         for idx, line in needs_llm:
             payload = text_to_payload.get(line)
-            line_text_cache[line] = payload
             new_rows.append(
                 ParsedLineRow(
                     corpus=corpus,
@@ -336,10 +350,16 @@ def _pass1_recipe(
                 )
             )
 
+    # --- Phase 3 (locked): update cache + persist to DB ---
     all_rows = sorted(pre_resolved + new_rows, key=lambda r: r.line_index)
     if all_rows:
-        db.upsert_parsed_lines(all_rows)
-        stats.pass1_lines_parsed += len(all_rows)
+        with hold:
+            for row in new_rows:
+                line_text_cache[row.raw_line] = row.parsed_json
+            if needs_llm:
+                stats.pass1_llm_batches += 1
+            db.upsert_parsed_lines(all_rows)
+            stats.pass1_lines_parsed += len(all_rows)
 
 
 def _run_pass1(
@@ -351,36 +371,51 @@ def _run_pass1(
     model: str,
     seed: int,
     stats: CatalogRunStats,
+    max_workers: int = 1,
 ) -> None:
     """Phase 1: parse + persist every line in every recipe of the surviving
-    L1 groups. Resumable per-recipe; idempotent on re-run."""
+    L1 groups. Resumable per-recipe; idempotent on re-run.
+
+    ``max_workers > 1`` enables thread-parallel recipe processing: LLM
+    calls (the bottleneck) run concurrently while DB writes and cache
+    updates are serialized via a shared lock.
+    """
     line_text_cache: dict[str, str | None] = {}
+    lock = threading.Lock() if max_workers > 1 else None
+
+    # Flatten all recipes into a work list.
+    work: list[tuple[str, str, Sequence[str]]] = []
     for key in keys:
         group = groups[key]
         for r in group.recipenlg:
-            _pass1_recipe(
-                db=db,
-                corpus="recipenlg",
-                recipe_id=recipenlg_recipe_id(r),
-                raw_lines=r.ingredients,
-                parse_fn=parse_fn,
-                model=model,
-                seed=seed,
-                line_text_cache=line_text_cache,
-                stats=stats,
-            )
+            work.append(("recipenlg", recipenlg_recipe_id(r), r.ingredients))
         for w in group.wdc:
-            _pass1_recipe(
-                db=db,
-                corpus="wdc",
-                recipe_id=wdc_recipe_id(w),
-                raw_lines=w.ingredients,
-                parse_fn=parse_fn,
-                model=model,
-                seed=seed,
-                line_text_cache=line_text_cache,
-                stats=stats,
-            )
+            work.append(("wdc", wdc_recipe_id(w), w.ingredients))
+
+    def _process(item: tuple[str, str, Sequence[str]]) -> None:
+        corpus, recipe_id, raw_lines = item
+        _pass1_recipe(
+            db=db,
+            corpus=corpus,
+            recipe_id=recipe_id,
+            raw_lines=raw_lines,
+            parse_fn=parse_fn,
+            model=model,
+            seed=seed,
+            line_text_cache=line_text_cache,
+            stats=stats,
+            lock=lock,
+        )
+
+    if max_workers <= 1:
+        for item in work:
+            _process(item)
+    else:
+        logger.info("  pass1: %d recipes across %d workers", len(work), max_workers)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_process, item) for item in work]
+            for future in as_completed(futures):
+                future.result()
 
 
 # --- Pass 2: No-LLM clustering + variant assembly from the cache table ---
@@ -544,6 +579,7 @@ def run_catalog_pipeline(
     seed: int = DEFAULT_PARSE_SEED,
     do_pass1: bool = True,
     do_pass2: bool = True,
+    pass1_workers: int = 1,
     now_fn: Callable[[], str] = _utcnow_iso,
     on_group_done: Callable[[str, list[MergedVariantResult]], None] | None = None,
 ) -> CatalogRunStats:
@@ -615,6 +651,7 @@ def run_catalog_pipeline(
             model=model,
             seed=seed,
             stats=stats,
+            max_workers=pass1_workers,
         )
 
     if do_pass2:

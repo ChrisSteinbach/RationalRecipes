@@ -521,6 +521,47 @@ class TestRunCatalogPipeline:
 
         assert snapshot(db_a_path) == snapshot(db_b_path)
 
+    def test_parallel_pass1_matches_serial(
+        self, synthetic_corpora: tuple[Path, Path], tmp_path: Path
+    ) -> None:
+        """Thread-pool Pass 1 produces the same variants as serial."""
+        csv_path, zip_path = synthetic_corpora
+        kwargs: dict[str, object] = dict(
+            rnlg_loader=RecipeNLGLoader(path=csv_path),
+            wdc_loader=WDCLoader(zip_path=zip_path),
+            parse_fn=_default_parse,
+            extract_fn=_default_extract,
+            corpus_revisions="rev-par",
+            l1_min=3,
+            l2_threshold=0.3,
+            l2_min=2,
+            l3_min=2,
+            now_fn=lambda: "2026-04-28T00:00:00+00:00",
+        )
+
+        serial_dir = tmp_path / "serial"
+        serial_dir.mkdir()
+        db_serial = CatalogDB.open(serial_dir / "recipes.db")
+        stats_serial = run_catalog_pipeline(
+            db=db_serial, pass1_workers=1, **kwargs  # type: ignore[arg-type]
+        )
+
+        parallel_dir = tmp_path / "parallel"
+        parallel_dir.mkdir()
+        db_parallel = CatalogDB.open(parallel_dir / "recipes.db")
+        stats_parallel = run_catalog_pipeline(
+            db=db_parallel, pass1_workers=4, **kwargs  # type: ignore[arg-type]
+        )
+
+        serial_variants = {v.variant_id for v in db_serial.list_variants()}
+        parallel_variants = {v.variant_id for v in db_parallel.list_variants()}
+        assert serial_variants == parallel_variants
+        assert stats_serial.pass1_recipes_seen == stats_parallel.pass1_recipes_seen
+        assert stats_serial.variants_produced == stats_parallel.variants_produced
+
+        db_serial.close()
+        db_parallel.close()
+
     def test_rejects_unknown_language_filter(
         self, synthetic_corpora: tuple[Path, Path], tmp_path: Path
     ) -> None:

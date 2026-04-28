@@ -261,8 +261,10 @@ _ORDER_BY_SQL = {
 class CatalogDB:
     """Thin wrapper around ``sqlite3.Connection`` exposing writer + reader.
 
-    One instance owns one connection. Not thread-safe; open a fresh
-    instance per thread or serialize access.
+    One instance owns one connection. Not inherently thread-safe — callers
+    sharing a single instance across threads must serialize access (e.g.
+    via ``threading.Lock``). ``open()`` sets ``check_same_thread=False``
+    so a locked connection can be used from worker threads.
     """
 
     def __init__(self, conn: sqlite3.Connection) -> None:
@@ -275,8 +277,9 @@ class CatalogDB:
     @classmethod
     def open(cls, path: str | Path) -> CatalogDB:
         """Open or create a catalog DB at ``path`` and apply the schema."""
-        conn = sqlite3.connect(str(path))
+        conn = sqlite3.connect(str(path), check_same_thread=False)
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
         db = cls(conn)
         db._apply_schema()
         return db
@@ -284,7 +287,7 @@ class CatalogDB:
     @classmethod
     def in_memory(cls) -> CatalogDB:
         """Open an in-memory catalog DB with the schema applied."""
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
         conn.execute("PRAGMA foreign_keys = ON")
         db = cls(conn)
         db._apply_schema()
