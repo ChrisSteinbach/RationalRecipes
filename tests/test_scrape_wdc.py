@@ -244,6 +244,73 @@ class TestWDCLoader:
         assert empty.title == ""
         assert empty.row_id == 0
 
+    def test_collapses_duplicate_page_url(self, tmp_path: Path) -> None:
+        """Multiple Recipe entities at the same page_url collapse to one.
+
+        WDC pages can ship several JSON-LD Recipe entities (variations,
+        "also try" alternates, templating duplicates). Without this
+        collapse, Pass 2 hits a `variant_members` PK violation because
+        `recipe_id = sha1(url|title)[:12]` is identical across them.
+        Keeping the entity with the longest ingredient list is the
+        most-informative tie-break.
+        """
+        zip_path = tmp_path / "dupes.zip"
+        _build_wdc_zip(
+            zip_path,
+            {
+                "dupe.com": [
+                    {
+                        "row_id": 1,
+                        "name": "Pancakes",
+                        "recipeingredient": ["1 cup flour", "1 egg"],
+                        "page_url": "https://dupe.com/pancakes",
+                    },
+                    {
+                        "row_id": 2,
+                        "name": "Pancakes",
+                        "recipeingredient": [
+                            "2 cups flour",
+                            "2 eggs",
+                            "1 cup milk",
+                            "1 tbsp sugar",
+                        ],
+                        "page_url": "https://dupe.com/pancakes",
+                    },
+                    {
+                        "row_id": 3,
+                        "name": "Crepes",
+                        "recipeingredient": ["100g flour"],
+                        "page_url": "https://dupe.com/crepes",
+                    },
+                ],
+            },
+        )
+        loader = WDCLoader(zip_path)
+        recipes = list(loader.iter_host("dupe.com"))
+        # The two pancake entities collapse to one; crepes is unaffected.
+        assert len(recipes) == 2
+        by_url = {r.page_url: r for r in recipes}
+        assert by_url["https://dupe.com/pancakes"].row_id == 2
+        assert len(by_url["https://dupe.com/pancakes"].ingredients) == 4
+        assert by_url["https://dupe.com/crepes"].row_id == 3
+
+    def test_empty_page_urls_not_collapsed(self, tmp_path: Path) -> None:
+        """Empty page_url rows are passed through — no collision to resolve."""
+        zip_path = tmp_path / "no-urls.zip"
+        _build_wdc_zip(
+            zip_path,
+            {
+                "no-urls.com": [
+                    {"row_id": 1, "name": "A", "recipeingredient": ["x"]},
+                    {"row_id": 2, "name": "B", "recipeingredient": ["y"]},
+                ],
+            },
+        )
+        loader = WDCLoader(zip_path)
+        recipes = list(loader.iter_host("no-urls.com"))
+        assert len(recipes) == 2
+        assert {r.row_id for r in recipes} == {1, 2}
+
     def test_explicit_null_title_coerced_to_empty(self, tmp_path: Path) -> None:
         """JSON null in the ``name`` field becomes an empty title.
 

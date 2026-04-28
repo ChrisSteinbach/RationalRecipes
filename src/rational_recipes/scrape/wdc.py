@@ -90,6 +90,29 @@ def _comma_split(raw: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
+def _collapse_by_page_url(recipes: Sequence[WDCRecipe]) -> list[WDCRecipe]:
+    """Collapse multiple Recipe entities sharing a non-empty page_url.
+
+    WDC pages can host several JSON-LD Recipe entities under the same
+    page_url (variations, "also try" alternates, templating duplicates).
+    Keep only the entity with the longest ingredient list per page_url
+    so downstream `recipe_id = sha1(url|title)[:12]` can't collide.
+    Empty page_urls are passed through unchanged — they cannot be
+    attributed to a single page and there is no collision to resolve.
+    """
+    winners: dict[str, int] = {}
+    for i, recipe in enumerate(recipes):
+        if not recipe.page_url:
+            continue
+        existing = winners.get(recipe.page_url)
+        if existing is None or len(recipe.ingredients) > len(
+            recipes[existing].ingredients
+        ):
+            winners[recipe.page_url] = i
+    keep = set(winners.values())
+    return [r for i, r in enumerate(recipes) if not r.page_url or i in keep]
+
+
 def _parse_row(row: dict[str, Any], host: str) -> WDCRecipe:
     ingredients_raw = row.get("recipeingredient", [])
     if not isinstance(ingredients_raw, list):
@@ -146,14 +169,20 @@ class WDCLoader:
         return hosts
 
     def iter_host(self, host: str) -> Iterator[WDCRecipe]:
-        """Yield all recipes from a single host's JSON-Lines entry."""
+        """Yield all recipes from a single host's JSON-Lines entry.
+
+        Multiple Recipe entities sharing the same page_url are collapsed
+        to the one with the longest ingredient list — see
+        `_collapse_by_page_url`.
+        """
         entry_name = f"Recipe_{host}_October2023.json.gz"
+        rows: list[WDCRecipe] = []
         with zipfile.ZipFile(self.zip_path) as zf:
             with zf.open(entry_name) as raw:
                 with gzip.open(raw, "rt", encoding="utf-8") as gz:
                     for line in gz:
-                        row = json.loads(line)
-                        yield _parse_row(row, host)
+                        rows.append(_parse_row(json.loads(line), host))
+        yield from _collapse_by_page_url(rows)
 
     def iter_all(self, hosts: Sequence[str] | None = None) -> Iterator[WDCRecipe]:
         """Yield all recipes across the zip, optionally filtered to *hosts*."""
