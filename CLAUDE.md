@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 RationalRecipes averages many independent recipes for the same dish into one "central-tendency" recipe with confidence intervals. The product is a **browser-based recipe catalog** (PWA) populated by a **Python extraction pipeline** that mines public recipe corpora (RecipeNLG, Web Data Commons). The two halves meet at a **SQLite database** served client-side via `sql.js`.
 
-**Current state (2026-04-24):** Phase 5 implementation complete on branch `corpus-driven-design-update`; the only remaining bead is `vwt.5`, the merge gate (run the pipeline at scale, judge results). Shipped under Phase 5: SQLite catalog backing store (vwt.6), corpus title-frequency survey (vwt.1), whole-corpus extraction pipeline (vwt.2), PWA over recipes.db (vwt.3), SQL filters (vwt.4), legacy CSV CLI removal (vwt.8 + orphan cleanup), CLI review tool ported to recipes.db (vwt.9).
+**Current state (2026-04-28):** Phase 5 pipeline features complete on branch `corpus-driven-design-update`. The merge gate is `vwt.5` (full-corpus run, judge results, ship). Post-implementation polish beads (vwt.21–26) addressed batch-parse reliability, WDC dedup, prose-line filtering, Pass 3 distinctive titles, Swedish→English ingredient forcing, and ingredient frequency filtering. Shipped under Phase 5: SQLite catalog backing store (vwt.6), corpus title-frequency survey (vwt.1), three-pass whole-corpus extraction pipeline (vwt.2 + vwt.16), PWA over recipes.db (vwt.3), SQL filters (vwt.4), legacy CSV CLI removal (vwt.8 + orphan cleanup), CLI review tool ported to recipes.db (vwt.9).
 
 **Active epic:** `RationalRecipes-vwt`. Run `bd ready` to see unblocked work. Design: `docs/design/full-catalog.md`.
 
@@ -24,23 +24,26 @@ RationalRecipes averages many independent recipes for the same dish into one "ce
 ```
 corpora (RecipeNLG CSV, WDC top-100 zip)
    ↓
-scripts/scrape_catalog.py  (whole-corpus, LLM-driven, resumable)
+scripts/scrape_catalog.py  (three-pass, resumable)
+   ├─ Pass 1 (--pass1-only): LLM-parse ingredient lines → cache table
+   ├─ Pass 2 (--pass2-only): cluster + write variants from cache (no LLM)
+   └─ Pass 3 (--pass3-only): generate distinctive display_titles via LLM
    ↓
 recipes.db  (SQLite; schema in src/rational_recipes/catalog_db.py)
    ↓  (file copy via web/scripts/sync-catalog.mjs)
 web/public/recipes.db
    ↓  (fetched + sql.js in-browser)
-PWA catalog view + detail view + review UI
+PWA catalog view + detail view
 ```
 
-The `scrape/` submodule (`src/rational_recipes/scrape/`) handles loaders (RecipeNLG, WDC), grouping (L1 title / L2 ingredient-set / L3 cookingMethod), canonicalization, merging, deduplication, outlier scoring, and LLM calls via Ollama. The catalog DB writer (`catalog_db.py`, in-progress under bead `vwt.6`) is the sink.
+The `scrape/` submodule (`src/rational_recipes/scrape/`) handles loaders (RecipeNLG, WDC), grouping (L1 title / L2 ingredient-set / L3 cookingMethod), canonicalization, merging, deduplication, outlier scoring, and LLM calls via Ollama. The catalog DB writer (`catalog_db.py`) is the sink.
 
 ## Key directories
 
 | Path | Purpose |
 |---|---|
-| `src/rational_recipes/scrape/` | Extraction pipeline (live) — loaders, grouping, canonicalization, LLM calls, `catalog_pipeline.py` (whole-corpus orchestrator) |
-| `src/rational_recipes/catalog_db.py` | SQLite writer + reader + schema (live) — `CatalogDB.upsert_variant`, `list_variants`, `update_review_status`, etc. |
+| `src/rational_recipes/scrape/` | Extraction pipeline (live) — loaders, grouping, canonicalization, LLM calls, `catalog_pipeline.py` (three-pass orchestrator), `pass3_titles.py` (distinctive title generation), `loaders.py` (shared loader helpers incl. prose-line filter) |
+| `src/rational_recipes/catalog_db.py` | SQLite writer + reader + schema (live) — `CatalogDB.upsert_variant`, `list_variants`, `update_review_status`, ingredient frequency filter, etc. |
 | `src/rational_recipes/ingredient.py`, `units.py` | Ingredient + unit primitives (live, used by scrape) |
 | `src/rational_recipes/discover.py`, `discover_cli.py` | `rr-discover` diagnostic (live) |
 | `src/rational_recipes/corpus_title_survey.py` | vwt.1 survey lib (live) |
