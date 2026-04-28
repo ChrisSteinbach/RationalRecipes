@@ -362,7 +362,28 @@ def _parse_batch_with_fallback(
     timeout: float,
     num_predict: int,
 ) -> list[ParsedIngredient | None]:
-    """Try one batched call; on failure, fall back to per-line for safety."""
+    """Try one batched call; on failure, bisect (vwt.21).
+
+    A failed batch is split in half and each half retried as its own batch.
+    This costs O(log N) extra calls instead of N when only a few items in a
+    big batch trip up the model, while still degrading to per-line for the
+    singletons at the leaves.
+    """
+    if len(lines) <= 1:
+        # Skip the batched-call hop for singletons — the per-line system
+        # prompt and response shape are simpler and more reliable.
+        return [
+            parse_ingredient_line(
+                line,
+                model=model,
+                base_url=base_url,
+                system_prompt=system_prompt,
+                timeout=timeout,
+                num_predict=num_predict,
+            )
+            for line in lines
+        ]
+
     batched = _parse_batch(
         lines,
         model=model,
@@ -374,20 +395,30 @@ def _parse_batch_with_fallback(
     if batched is not None:
         return batched
 
+    mid = len(lines) // 2
     logger.warning(
-        "Batched parse failed for %d lines; falling back to per-line", len(lines)
+        "Batched parse failed for %d lines; bisecting into %d + %d",
+        len(lines),
+        mid,
+        len(lines) - mid,
     )
-    return [
-        parse_ingredient_line(
-            line,
-            model=model,
-            base_url=base_url,
-            system_prompt=system_prompt,
-            timeout=timeout,
-            num_predict=num_predict,
-        )
-        for line in lines
-    ]
+    left = _parse_batch_with_fallback(
+        lines[:mid],
+        model=model,
+        base_url=base_url,
+        system_prompt=system_prompt,
+        timeout=timeout,
+        num_predict=num_predict,
+    )
+    right = _parse_batch_with_fallback(
+        lines[mid:],
+        model=model,
+        base_url=base_url,
+        system_prompt=system_prompt,
+        timeout=timeout,
+        num_predict=num_predict,
+    )
+    return left + right
 
 
 def _parse_batch(

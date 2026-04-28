@@ -167,6 +167,78 @@ class TestBatchedParseFallback:
             assert all(r is not None for r in results)
 
 
+class TestBatchedParseBisection:
+    def test_failed_batch_bisects_instead_of_per_line(self) -> None:
+        """4-line failure → 1 batched + 2 half-batches = 3 calls, not 1 + 4."""
+        responses = iter(
+            [
+                # First call: 4 lines → return only 3 results → length mismatch
+                '{"results": ['
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "x", "preparation": ""},'
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "x", "preparation": ""},'
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "x", "preparation": ""}'
+                "]}",
+                # Left half (2 lines): succeeds
+                '{"results": ['
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "flour", "preparation": ""},'
+                '{"quantity": 2.0, "unit": "MEDIUM",'
+                ' "ingredient": "egg", "preparation": ""}'
+                "]}",
+                # Right half (2 lines): succeeds
+                '{"results": ['
+                '{"quantity": 0.5, "unit": "tsp",'
+                ' "ingredient": "salt", "preparation": ""},'
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "milk", "preparation": ""}'
+                "]}",
+            ]
+        )
+        with patch(
+            "rational_recipes.scrape.parse._ollama_generate",
+            side_effect=lambda *a, **kw: next(responses),
+        ) as mock_gen:
+            results = _llm_parse(
+                ["1 cup flour", "2 eggs", "1/2 tsp salt", "1 cup milk"]
+            )
+            # Bisection: 1 failed batched + 2 half-batched = 3 calls.
+            # Old per-line fallback would have been 1 + 4 = 5.
+            assert mock_gen.call_count == 3
+            assert len(results) == 4
+            assert results[0] is not None and results[0].ingredient == "flour"
+            assert results[1] is not None and results[1].ingredient == "egg"
+            assert results[2] is not None and results[2].ingredient == "salt"
+            assert results[3] is not None and results[3].ingredient == "milk"
+
+    def test_singleton_in_bisection_falls_back_to_per_line(self) -> None:
+        """When a half bisects down to a singleton, that leaf goes per-line."""
+        responses = iter(
+            [
+                # Outer 2-line batch: length mismatch (1 result for 2 inputs)
+                '{"results": [{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "x", "preparation": ""}]}',
+                # First singleton: per-line succeeds
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "flour", "preparation": ""}',
+                # Second singleton: per-line returns None (genuinely unparseable)
+                None,
+            ]
+        )
+        with patch(
+            "rational_recipes.scrape.parse._ollama_generate",
+            side_effect=lambda *a, **kw: next(responses),
+        ) as mock_gen:
+            results = _llm_parse(["1 cup flour", "garbage line"])
+            # 1 batched + 2 per-line (not batched-then-per-line) = 3 calls
+            assert mock_gen.call_count == 3
+            assert len(results) == 2
+            assert results[0] is not None and results[0].ingredient == "flour"
+            assert results[1] is None  # singleton parse failure preserved
+
+
 class TestBatchedParseChunking:
     def test_batches_above_max_size_get_split(self) -> None:
         """31-line input → 2 batched calls (30 + 1)."""
