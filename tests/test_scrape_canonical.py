@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from rational_recipes.scrape.canonical import canonicalize_name, canonicalize_names
+from rational_recipes.scrape.canonical import (
+    SWEDISH_TO_ENGLISH,
+    canonicalize_name,
+    canonicalize_names,
+)
 
 
 class TestCanonicalizeName:
@@ -80,3 +84,78 @@ class TestCanonicalizeNames:
     def test_unknown_names_kept_lowercased(self) -> None:
         result = canonicalize_names(["flour", "UNKNOWN_X"])
         assert result == frozenset({"flour", "unknown_x"})
+
+
+class TestSwedishStaticDictionary:
+    """Static-dictionary translations for Swedish nouns the synonym DB misses."""
+
+    def test_swedish_baking_leak_terms_translate(self) -> None:
+        """Common Swedish baking words that previously leaked are now English."""
+        leaks = {
+            "pekannötter": "pecans",
+            "lönnsirap": "maple syrup",
+            "färskost": "cream cheese",
+            "vinäger": "vinegar",
+            "vaniljsocker": "vanilla sugar",
+            "rågmjöl": "rye flour",
+            "krossade tomater": "crushed tomatoes",
+            "tomatpuré": "tomato paste",
+            "vispgrädde": "cream",  # DB canonical for whipping cream
+            "gräddfil": "sour cream",
+            "kvarg": "quark",
+            "filmjölk": "buttermilk",
+            "äggula": "egg yolk",
+            "äggvita": "egg white",
+            "valnötter": "walnuts",
+            "hasselnötter": "hazelnuts",
+            "jordnötter": "peanuts",
+            "lagerblad": "bay leaf",
+            "rosmarin": "rosemary",
+            "persilja": "parsley",
+            "ingefära": "ginger",
+            "muskot": "nutmeg",
+            "olivolja": "olive oil",
+            "rapsolja": "oil",  # falls through DB synonym chain
+            "russin": "raisin",  # DB canonical singular
+            "rödlök": "onion",  # DB collapses red onion to onion canonical
+            "vitlök": "garlic",
+            "morot": "carrot",
+            "äpple": "apple",
+            "jordgubbar": "strawberries",
+            "soja": "soy sauce",
+            "sojasås": "soy sauce",
+        }
+        for swedish, english in leaks.items():
+            assert canonicalize_name(swedish) == english, (
+                f"{swedish!r} canonicalized to {canonicalize_name(swedish)!r}, "
+                f"expected {english!r}"
+            )
+
+    def test_swedish_canonical_in_db_gets_post_translated(self) -> None:
+        """Foods whose ingredients-DB canonical is itself Swedish are rewritten.
+
+        ``olja``, ``tomat``, ``peppar`` are stored as canonical_name on
+        their food rows, so the synonym lookup returns the Swedish form.
+        Post-translation must rewrite these to English.
+        """
+        assert canonicalize_name("olja") == "oil"
+        assert canonicalize_name("tomat") == "tomato"
+        assert canonicalize_name("peppar") == "pepper"
+
+    def test_translation_is_case_insensitive(self) -> None:
+        assert canonicalize_name("Pekannötter") == "pecans"
+        assert canonicalize_name("  LÖNNSIRAP  ") == "maple syrup"
+
+    def test_english_inputs_unaffected(self) -> None:
+        """English ingredients still resolve to their English canonical."""
+        assert canonicalize_name("flour") == "flour"
+        assert canonicalize_name("butter") == "butter"
+        assert canonicalize_name("eggs") == "egg"
+
+    def test_dictionary_values_have_no_swedish_diacritics(self) -> None:
+        """Every dictionary value must be plain ASCII English."""
+        diacritics = set("åäöÅÄÖ")
+        for sv, en in SWEDISH_TO_ENGLISH.items():
+            assert not (set(en) & diacritics), (
+                f"Swedish residue in translation value: {sv!r} -> {en!r}"
+            )
