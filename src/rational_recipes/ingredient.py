@@ -52,6 +52,7 @@ class Factory:
     """
 
     _INGREDIENTS: dict[str, Ingredient] = {}
+    _MISSES: set[str] = set()
     _conn: sqlite3.Connection | None = None
     _lock: threading.Lock = threading.Lock()
 
@@ -65,6 +66,36 @@ class Factory:
         return cls._conn
 
     @classmethod
+    def warm_cache(cls) -> int:
+        """Pre-load all ingredient synonyms into the in-memory cache.
+
+        Call once at startup before batch operations to avoid per-lookup
+        DB round-trips during the hot path. Returns the number of foods
+        loaded. Idempotent — subsequent calls are near-instant.
+        """
+        with cls._lock:
+            if cls._INGREDIENTS:
+                return 0  # Already warm
+            conn = cls._get_conn()
+            food_ids = conn.execute("SELECT id FROM food").fetchall()
+            loaded = 0
+            for (food_id,) in food_ids:
+                # Re-use _load_from_db logic via any synonym for this food
+                row = conn.execute(
+                    "SELECT name FROM synonym WHERE food_id = ? LIMIT 1",
+                    (food_id,),
+                ).fetchone()
+                if row is None:
+                    continue
+                name = row[0]
+                if name.lower().strip() in cls._INGREDIENTS:
+                    continue
+                ingredient = cls._load_from_db(name.lower().strip())
+                if ingredient is not None:
+                    loaded += 1
+            return loaded
+
+    @classmethod
     def register(cls, ingredient: Ingredient) -> None:
         """Register ingredient name and synonyms (for backward compat)"""
         for name in ingredient.synonyms():
@@ -76,17 +107,24 @@ class Factory:
 
         First checks the in-memory cache, then queries the SQLite database.
         Thread-safe: the shared connection and cache are protected by a lock.
+        Caches negative lookups so repeated misses on the same name skip
+        the expensive ``_suggest`` DB query (~1ms → ~0.5us).
         """
         key = name.lower().strip()
 
         with cls._lock:
-            # Check cache first
+            # Check positive cache
             if key in cls._INGREDIENTS:
                 return cls._INGREDIENTS[key]
+
+            # Check negative cache — skip the DB round-trip entirely
+            if key in cls._MISSES:
+                raise KeyError(key)
 
             # Query the database
             ingredient = cls._load_from_db(key)
             if ingredient is None:
+                cls._MISSES.add(key)
                 suggestions = cls._suggest(key)
                 if suggestions:
                     hint = "\n".join(f"  - {s}" for s in suggestions)

@@ -26,15 +26,24 @@ class Recipe:
     ner: tuple[str, ...]
     source: str
     link: str
+    _ingredient_names: frozenset[str] = field(
+        default=frozenset(), init=False, repr=False
+    )
+
+    def __post_init__(self) -> None:
+        """Eagerly compute ingredient_names once at construction.
+
+        Previously a @property that recomputed canonicalize_names on every
+        access — profiling showed this was the dominant bottleneck in
+        merge_corpora (675s for 10 groups) because the near-dup loop
+        accesses ingredient_names O(n*m) times per L1 group.
+        """
+        object.__setattr__(self, "_ingredient_names", canonicalize_names(self.ner))
 
     @property
     def ingredient_names(self) -> frozenset[str]:
-        """Canonicalized ingredient names from the NER column.
-
-        Each NER name is routed through IngredientFactory so cross-corpus
-        comparison sees a shared English vocabulary.
-        """
-        return canonicalize_names(self.ner)
+        """Canonicalized ingredient names from the NER column."""
+        return self._ingredient_names
 
 
 def _parse_string_list(raw: str) -> tuple[str, ...]:

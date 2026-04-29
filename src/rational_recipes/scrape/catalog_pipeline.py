@@ -179,6 +179,12 @@ def stream_l1_groups(
     ``accept`` is the language predicate from ``corpus_title_survey`` — keys
     rejected here never surface to downstream stages, saving the LLM pass.
     """
+    # Pre-warm the ingredient synonym cache so Recipe.__post_init__ hits
+    # only in-memory dicts (eliminates ~10s DB cold-start penalty).
+    from rational_recipes.ingredient import Factory as IngredientFactory
+
+    IngredientFactory.warm_cache()
+
     groups: dict[str, L1Group] = defaultdict(lambda: L1Group(key=""))
     for recipe in rnlg_loader.iter_recipes():
         key = normalize_title(recipe.title)
