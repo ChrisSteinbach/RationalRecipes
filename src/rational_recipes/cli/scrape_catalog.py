@@ -226,21 +226,21 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--pass3-workers",
         type=int,
-        default=1,
+        default=4,
         metavar="N",
         help=(
-            "Thread-pool size for Pass 3 title generation. Default: 1."
+            "Thread-pool size for Pass 3 title generation. Default: 4."
         ),
     )
     parser.add_argument(
         "--pass1-workers",
         type=int,
-        default=1,
+        default=4,
         metavar="N",
         help=(
             "Thread-pool size for Pass 1 recipe parsing. Each worker "
             "sends one Ollama request at a time; tune alongside "
-            "OLLAMA_NUM_PARALLEL on the server. Default: 1 (serial)."
+            "OLLAMA_NUM_PARALLEL on the server. Default: 4."
         ),
     )
     parser.add_argument(
