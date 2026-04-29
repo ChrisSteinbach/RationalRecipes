@@ -44,7 +44,12 @@ from rational_recipes.scrape.merge import (
     DEFAULT_NEAR_DUP_THRESHOLD,
 )
 from rational_recipes.scrape.parse import OLLAMA_BASE_URL, parse_ingredient_lines
-from rational_recipes.scrape.pass3_titles import TitleFn, build_default_title_fn
+from rational_recipes.scrape.pass3_titles import (
+    Pass3CallTiming,
+    TitleFn,
+    build_default_title_fn,
+    format_pass3_summary,
+)
 from rational_recipes.scrape.recipenlg import RecipeNLGLoader
 from rational_recipes.scrape.wdc import WDCLoader, WDCRecipe, extract_batch
 
@@ -254,6 +259,18 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "snapshot; set negative to silence."
         ),
     )
+    parser.add_argument(
+        "--pass3-profile",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "vwt.29: dump per-call Pass 3 timing records to this JSONL "
+            "path. Always-on summary lines are printed regardless; this "
+            "flag is for offline analysis (sibling-count buckets, "
+            "per-call histograms)."
+        ),
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser.parse_args(argv)
 
@@ -356,8 +373,23 @@ def run(
 
         parse_fn = default_parse
 
+    # vwt.29: collect Pass 3 timings whenever the live LLM path is in use
+    # (only the production title_fn captures them — stub fns from tests
+    # don't). Lock-protected because run_pass3 dispatches LLM calls on a
+    # ThreadPoolExecutor.
+    pass3_timings: list[Pass3CallTiming] = []
+    pass3_lock = threading.Lock()
+
+    def collect_pass3_timing(rec: Pass3CallTiming) -> None:
+        with pass3_lock:
+            pass3_timings.append(rec)
+
     if title_fn is None:
-        title_fn = build_default_title_fn(args.model, base_url=args.ollama_url)
+        title_fn = build_default_title_fn(
+            args.model,
+            base_url=args.ollama_url,
+            timing_collector=collect_pass3_timing,
+        )
 
     heartbeat: HeartbeatFn
     if args.heartbeat_seconds < 0:
@@ -429,6 +461,20 @@ def run(
         f"llm_calls={stats.pass3.llm_calls} "
         f"llm_failures={stats.pass3.llm_failures}"
     )
+    # vwt.29: summary lines from Pass 3 instrumentation, plus optional
+    # JSONL dump for offline histogram / scatter-plot analysis.
+    stats.pass3.timings = pass3_timings
+    for line in format_pass3_summary(stats.pass3):
+        print(line)
+    if args.pass3_profile is not None and pass3_timings:
+        args.pass3_profile.parent.mkdir(parents=True, exist_ok=True)
+        with args.pass3_profile.open("w", encoding="utf-8") as f:
+            for rec in pass3_timings:
+                f.write(json.dumps(rec.to_dict(), ensure_ascii=False) + "\n")
+        print(
+            f"wrote {len(pass3_timings)} Pass 3 timing records to "
+            f"{args.pass3_profile}"
+        )
     print(f"wallclock: {stats.wallclock_seconds:.1f}s")
     return 0
 

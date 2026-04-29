@@ -8,13 +8,16 @@ from dataclasses import dataclass, field
 from rational_recipes.catalog_db import CatalogDB
 from rational_recipes.scrape.merge import MergedRecipe
 from rational_recipes.scrape.pass3_titles import (
+    Pass3CallTiming,
     Pass3Stats,
     TitleFn,
     _ollama_title_call,
     build_default_title_fn,
     build_title_prompt,
+    format_pass3_summary,
     parse_title_response,
     run_pass3,
+    summarize_pass3_timings,
 )
 from rational_recipes.scrape.pipeline_merged import (
     MergedNormalizedRow,
@@ -366,6 +369,255 @@ def test_build_default_title_fn_returns_callable() -> None:
     """Smoke-test: factory returns a TitleFn signature without invoking Ollama."""
     fn = build_default_title_fn("gemma4:e2b", base_url="http://nowhere.invalid:1")
     assert callable(fn)
+
+
+# --- Profiling instrumentation (vwt.29) ---
+
+
+class TestTimingCollector:
+    """The Pass 3 profiling hook plumbs Pass3CallTiming records out of the
+    Ollama call path so a profiling driver can inspect per-call timings
+    without changing the TitleFn contract."""
+
+    def _fake_response(self, body: bytes) -> object:
+        class _R:
+            def __enter__(self_inner):  # type: ignore[no-untyped-def]
+                return self_inner
+
+            def __exit__(self_inner, *_: object) -> None:
+                return None
+
+            def read(self_inner) -> bytes:
+                return body
+
+        return _R()
+
+    def test_collector_called_once_per_call_with_ollama_fields(
+        self, monkeypatch  # type: ignore[no-untyped-def]
+    ) -> None:
+        body = (
+            b'{"response": "{\\"title\\": \\"Maple Pecan Pie\\"}", '
+            b'"total_duration": 1500000000, '
+            b'"load_duration": 100000000, '
+            b'"prompt_eval_count": 850, '
+            b'"prompt_eval_duration": 700000000, '
+            b'"eval_count": 9, '
+            b'"eval_duration": 200000000}'
+        )
+        monkeypatch.setattr(
+            "rational_recipes.scrape.pass3_titles.urllib.request.urlopen",
+            lambda req, timeout: self._fake_response(body),
+        )
+
+        collected: list[Pass3CallTiming] = []
+        title = _ollama_title_call(
+            "pecan pie",
+            frozenset({"pecan", "maple", "egg"}),
+            frozenset(),
+            [frozenset({"pecan", "bourbon", "egg"})],
+            model="gemma4:e2b",
+            timing_collector=collected.append,
+        )
+        assert title == "Maple Pecan Pie"
+        assert len(collected) == 1
+        rec = collected[0]
+        assert rec.family == "pecan pie"
+        assert rec.sibling_count == 1
+        assert rec.success is True
+        # Wall-clock fields are populated (>= 0; can't assert specifics).
+        assert rec.request_seconds >= 0
+        assert rec.prompt_chars > 0
+        # Ollama-reported fields are converted from ns to seconds.
+        assert rec.ollama_total_seconds == 1.5
+        assert rec.ollama_prompt_eval_count == 850
+        assert rec.ollama_prompt_eval_seconds == 0.7
+        assert rec.ollama_eval_count == 9
+        assert rec.ollama_eval_seconds == 0.2
+        # db_write_seconds is left for run_pass3 to populate; standalone
+        # _ollama_title_call use leaves it at 0.
+        assert rec.db_write_seconds == 0.0
+
+    def test_collector_called_on_failure(
+        self, monkeypatch  # type: ignore[no-untyped-def]
+    ) -> None:
+        """A request that errors still yields a timing record so failures
+        show up in the histogram (with success=False)."""
+        import urllib.error
+
+        def boom(req, timeout):  # type: ignore[no-untyped-def]
+            raise urllib.error.URLError("boom")
+
+        monkeypatch.setattr(
+            "rational_recipes.scrape.pass3_titles.urllib.request.urlopen", boom
+        )
+
+        collected: list[Pass3CallTiming] = []
+        title = _ollama_title_call(
+            "pecan pie",
+            frozenset({"pecan"}),
+            frozenset(),
+            [frozenset({"pecan", "bourbon"})],
+            model="gemma4:e2b",
+            timing_collector=collected.append,
+        )
+        assert title is None
+        assert len(collected) == 1
+        rec = collected[0]
+        assert rec.success is False
+        assert rec.ollama_total_seconds is None  # nothing came back
+        assert rec.ollama_eval_count is None
+
+    def test_build_default_title_fn_forwards_collector(
+        self, monkeypatch  # type: ignore[no-untyped-def]
+    ) -> None:
+        body = (
+            b'{"response": "{\\"title\\": \\"X\\"}", '
+            b'"total_duration": 100000000}'
+        )
+        monkeypatch.setattr(
+            "rational_recipes.scrape.pass3_titles.urllib.request.urlopen",
+            lambda req, timeout: self._fake_response(body),
+        )
+        collected: list[Pass3CallTiming] = []
+        fn = build_default_title_fn(
+            "gemma4:e2b",
+            base_url="http://nowhere.invalid:1",
+            timing_collector=collected.append,
+        )
+        fn(
+            "pecan pie",
+            frozenset({"pecan"}),
+            frozenset(),
+            [frozenset({"pecan", "maple"})],
+        )
+        assert len(collected) == 1
+
+
+class TestPass3Stats:
+    def test_run_pass3_records_db_write_time(self) -> None:
+        """Even with a stub TitleFn, DB writes are timed and counted."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="pecan pie",
+            canonical_ingredients=frozenset({"pecan", "egg", "bourbon"}),
+        )
+        _make_variant(
+            db,
+            l1_title="pecan pie",
+            canonical_ingredients=frozenset({"pecan", "egg", "maple"}),
+        )
+
+        stats = run_pass3(db=db, title_fn=_stub_title_fn())
+        # Two multi-variant rows got DB writes; singletons would also count
+        # but we don't have any in this fixture.
+        assert stats.db_write_count == 2
+        assert stats.db_write_seconds_total >= 0
+
+
+class TestSummarizePass3Timings:
+    def _make(
+        self,
+        *,
+        sibling_count: int,
+        request_seconds: float,
+        prompt_chars: int = 1000,
+        prompt_eval_seconds: float | None = 0.5,
+        prompt_eval_count: int | None = 800,
+        success: bool = True,
+    ) -> Pass3CallTiming:
+        return Pass3CallTiming(
+            family="x",
+            sibling_count=sibling_count,
+            prompt_chars=prompt_chars,
+            prompt_build_seconds=0.001,
+            request_seconds=request_seconds,
+            response_parse_seconds=0.001,
+            db_write_seconds=0.001,
+            success=success,
+            ollama_total_seconds=request_seconds,
+            ollama_load_seconds=0.0,
+            ollama_prompt_eval_count=prompt_eval_count,
+            ollama_prompt_eval_seconds=prompt_eval_seconds,
+            ollama_eval_count=10,
+            ollama_eval_seconds=0.05,
+        )
+
+    def test_empty_input(self) -> None:
+        assert summarize_pass3_timings([]) == {"count": 0}
+
+    def test_basic_percentiles(self) -> None:
+        timings = [
+            self._make(sibling_count=2, request_seconds=0.5),
+            self._make(sibling_count=10, request_seconds=1.0),
+            self._make(sibling_count=50, request_seconds=2.0),
+            self._make(sibling_count=100, request_seconds=4.0),
+        ]
+        s = summarize_pass3_timings(timings)
+        assert s["count"] == 4
+        assert s["successes"] == 4
+        assert s["request_seconds_max"] == 4.0
+        assert s["request_seconds_p50"] == 1.5  # midpoint of 1.0 and 2.0
+        assert s["request_seconds_total"] == 7.5
+
+    def test_failure_count_separated(self) -> None:
+        timings = [
+            self._make(sibling_count=2, request_seconds=0.5),
+            self._make(sibling_count=2, request_seconds=0.5, success=False),
+        ]
+        s = summarize_pass3_timings(timings)
+        assert s["successes"] == 1
+        assert s["failures"] == 1
+
+    def test_sibling_buckets_split_groups(self) -> None:
+        timings = [
+            self._make(sibling_count=2, request_seconds=0.5),
+            self._make(sibling_count=4, request_seconds=0.5),
+            self._make(sibling_count=100, request_seconds=4.0),
+        ]
+        s = summarize_pass3_timings(timings)
+        buckets = s["by_sibling_bucket"]
+        assert isinstance(buckets, list)
+        labels = [b["label"] for b in buckets]
+        assert "2-5" in labels
+        assert "51-100" in labels
+        big = next(b for b in buckets if b["label"] == "51-100")
+        assert big["count"] == 1
+        assert big["request_seconds_mean"] == 4.0
+
+
+class TestFormatPass3Summary:
+    def test_empty_timings_yields_no_lines(self) -> None:
+        stats = Pass3Stats()
+        assert format_pass3_summary(stats) == []
+
+    def test_lines_include_key_metrics(self) -> None:
+        stats = Pass3Stats()
+        stats.timings.append(
+            Pass3CallTiming(
+                family="x",
+                sibling_count=10,
+                prompt_chars=2000,
+                prompt_build_seconds=0.001,
+                request_seconds=1.0,
+                response_parse_seconds=0.001,
+                db_write_seconds=0.0001,
+                success=True,
+                ollama_total_seconds=1.0,
+                ollama_load_seconds=0.0,
+                ollama_prompt_eval_count=800,
+                ollama_prompt_eval_seconds=0.5,
+                ollama_eval_count=10,
+                ollama_eval_seconds=0.05,
+            )
+        )
+        lines = format_pass3_summary(stats)
+        joined = "\n".join(lines)
+        assert "pass 3 timing" in joined
+        assert "pass 3 prompt" in joined
+        assert "pass 3 ollama" in joined
+        assert "pass 3 overhead" in joined
+        assert "pass 3 by siblings" in joined
 
 
 # Suppress unused-import lint guards for fixtures shared with other suites.
