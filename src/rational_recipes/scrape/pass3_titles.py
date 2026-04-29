@@ -116,6 +116,7 @@ def _ollama_title_call(
             "format": "json",
             "stream": False,
             "options": {
+                "num_ctx": 8192,
                 "num_predict": 64,
                 "temperature": 0.0,
                 "seed": 42,
@@ -241,7 +242,7 @@ def _resolve_title(
     )
     if not title:
         stats.llm_failures += 1
-        return family
+        return family.title()
     return title
 
 

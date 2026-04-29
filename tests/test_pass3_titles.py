@@ -268,8 +268,8 @@ class TestRunPass3:
         stats = run_pass3(db=db, title_fn=fn)
         assert stats.llm_failures == 2
         for v in db.list_variants():
-            # Fallback is the L1 family name.
-            assert v.display_title == "pecan pie"
+            # Fallback is the L1 family name in Title Case.
+            assert v.display_title == "Pecan Pie"
 
     def test_parallel_workers_match_serial(self) -> None:
         # Build the same DB twice; run Pass 3 once serially, once parallel.
