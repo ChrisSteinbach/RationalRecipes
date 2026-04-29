@@ -28,6 +28,7 @@ rr-scrape-catalog = "rational_recipes.cli.scrape_catalog:run"
 rr-review-variants = "rational_recipes.cli.review_variants:main"
 rr-corpus-title-survey = "rational_recipes.cli.corpus_title_survey:run"
 rr-migrate-curated = "rational_recipes.cli.migrate_curated_to_db:main"
+rr-scrape-progress = "rational_recipes.cli.scrape_progress:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -17,10 +17,13 @@ import argparse
 import json
 import logging
 import sys
+import threading
+import time
 import urllib.error
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import IO
 
 from rational_recipes.catalog_db import CatalogDB
 from rational_recipes.corpus_title_survey import (
@@ -30,6 +33,8 @@ from rational_recipes.corpus_title_survey import (
 from rational_recipes.scrape.catalog_pipeline import (
     DEFAULT_PARSE_SEED,
     ExtractFn,
+    HeartbeatFn,
+    HeartbeatSnapshot,
     ParseFn,
     compute_corpus_revisions,
     run_catalog_pipeline,
@@ -47,6 +52,68 @@ DEFAULT_RECIPENLG = Path("dataset/full_dataset.csv")
 DEFAULT_WDC_ZIP = Path("dataset/wdc/Recipe_top100.zip")
 DEFAULT_OUTPUT_DB = Path("output/catalog/recipes.db")
 DEFAULT_CACHE = Path("output/catalog/extraction_cache/wdc_names.json")
+DEFAULT_HEARTBEAT_SECONDS = 30.0
+
+
+def _format_duration(seconds: float) -> str:
+    if seconds < 0 or seconds != seconds:  # NaN-safe
+        return "-"
+    seconds = int(seconds)
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h{m:02d}m{s:02d}s"
+    if m:
+        return f"{m}m{s:02d}s"
+    return f"{s}s"
+
+
+class _HeartbeatPrinter:
+    """Throttled printer of ``HeartbeatSnapshot`` to a stream.
+
+    Emits one snapshot, then drops further snapshots until ``interval``
+    seconds have passed. Thread-safe — Pass 1's parallel mode emits from
+    the main thread anyway, but lock cheaply guards the timestamp so a
+    future change can't accidentally double-emit.
+    """
+
+    def __init__(
+        self,
+        *,
+        interval_seconds: float = DEFAULT_HEARTBEAT_SECONDS,
+        stream: IO[str] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._interval = interval_seconds
+        self._stream = stream if stream is not None else sys.stdout
+        self._clock = clock
+        self._last = -float("inf")
+        self._lock = threading.Lock()
+
+    def __call__(self, snap: HeartbeatSnapshot) -> None:
+        now = self._clock()
+        with self._lock:
+            if (now - self._last) < self._interval:
+                return
+            self._last = now
+        self._emit(snap)
+
+    def _emit(self, snap: HeartbeatSnapshot) -> None:
+        elapsed = _format_duration(snap.elapsed_seconds)
+        if snap.position > 0 and snap.total > 0 and snap.elapsed_seconds > 0:
+            rate = snap.position / snap.elapsed_seconds
+            remaining = max(snap.total - snap.position, 0)
+            eta = _format_duration(remaining / rate) if rate > 0 else "-"
+            pct = f"{snap.position / snap.total * 100:5.1f}%"
+        else:
+            eta = "-"
+            pct = "  -.-%"
+        counters = " ".join(f"{k}={v}" for k, v in snap.counters.items())
+        line = (
+            f"[hb {snap.pass_name} {snap.position}/{snap.total} {pct}] "
+            f"elapsed={elapsed} eta={eta} {counters}"
+        )
+        print(line, file=self._stream, flush=True)
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -176,6 +243,17 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "OLLAMA_NUM_PARALLEL on the server. Default: 1 (serial)."
         ),
     )
+    parser.add_argument(
+        "--heartbeat-seconds",
+        type=float,
+        default=DEFAULT_HEARTBEAT_SECONDS,
+        metavar="SECS",
+        help=(
+            "Throttle interval for the always-on progress heartbeat printed "
+            "to stdout (default %(default)ss). Set to 0 to print every "
+            "snapshot; set negative to silence."
+        ),
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser.parse_args(argv)
 
@@ -281,6 +359,12 @@ def run(
     if title_fn is None:
         title_fn = build_default_title_fn(args.model, base_url=args.ollama_url)
 
+    heartbeat: HeartbeatFn
+    if args.heartbeat_seconds < 0:
+        heartbeat = lambda _: None  # noqa: E731 - inline noop is clearer here
+    else:
+        heartbeat = _HeartbeatPrinter(interval_seconds=args.heartbeat_seconds)
+
     args.output_db.parent.mkdir(parents=True, exist_ok=True)
     db = CatalogDB.open(args.output_db)
     try:
@@ -311,6 +395,7 @@ def run(
             pass3_workers=args.pass3_workers,
             pass3_force=args.pass3_force,
             title_fn=title_fn,
+            heartbeat=heartbeat,
             # Persist the cache between groups so a killed run doesn't
             # lose already-extracted names.
             on_group_done=lambda _k, _v: _save_cache(args.cache_path, cache),

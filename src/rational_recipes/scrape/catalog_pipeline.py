@@ -31,7 +31,7 @@ import logging
 import threading
 import time
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -103,6 +103,27 @@ swap (e.g. vwt.18 to gemma4:e2b) automatically invalidates the cache.
 
 DEFAULT_PARSE_SEED = 42
 """Production LLM seed (matches ``parse.py::_ollama_generate``)."""
+
+
+@dataclass(frozen=True)
+class HeartbeatSnapshot:
+    """Per-step status emitted by the pipeline for live progress reporting."""
+
+    pass_name: str
+    position: int
+    total: int
+    elapsed_seconds: float
+    counters: Mapping[str, int]
+
+
+HeartbeatFn = Callable[[HeartbeatSnapshot], None]
+"""Pipeline emits one snapshot per natural unit (recipe in pass 1,
+group in pass 2). Receivers are expected to throttle as needed —
+calling on every unit is cheap as long as the receiver returns fast."""
+
+
+def _noop_heartbeat(_: HeartbeatSnapshot) -> None:
+    return
 
 
 def detect_language(title: str) -> str:
@@ -376,6 +397,16 @@ def _pass1_recipe(
             stats.pass1_lines_parsed += len(all_rows)
 
 
+def _pass1_counters(stats: CatalogRunStats) -> dict[str, int]:
+    return {
+        "recipes_seen": stats.pass1_recipes_seen,
+        "recipes_skipped": stats.pass1_recipes_skipped,
+        "lines_parsed": stats.pass1_lines_parsed,
+        "lines_cache_hits": stats.pass1_lines_cache_hits,
+        "llm_batches": stats.pass1_llm_batches,
+    }
+
+
 def _run_pass1(
     *,
     db: CatalogDB,
@@ -386,6 +417,8 @@ def _run_pass1(
     seed: int,
     stats: CatalogRunStats,
     max_workers: int = 1,
+    heartbeat: HeartbeatFn = _noop_heartbeat,
+    start_monotonic: float | None = None,
 ) -> None:
     """Phase 1: parse + persist every line in every recipe of the surviving
     L1 groups. Resumable per-recipe; idempotent on re-run.
@@ -396,6 +429,8 @@ def _run_pass1(
     """
     line_text_cache: dict[str, str | None] = {}
     lock = threading.Lock() if max_workers > 1 else None
+    if start_monotonic is None:
+        start_monotonic = time.monotonic()
 
     # Flatten all recipes into a work list.
     work: list[tuple[str, str, Sequence[str]]] = []
@@ -405,6 +440,8 @@ def _run_pass1(
             work.append(("recipenlg", recipenlg_recipe_id(r), r.ingredients))
         for w in group.wdc:
             work.append(("wdc", wdc_recipe_id(w), w.ingredients))
+
+    total = len(work)
 
     def _process(item: tuple[str, str, Sequence[str]]) -> None:
         corpus, recipe_id, raw_lines = item
@@ -421,15 +458,28 @@ def _run_pass1(
             lock=lock,
         )
 
+    def _beat(position: int) -> None:
+        heartbeat(
+            HeartbeatSnapshot(
+                pass_name="pass1",
+                position=position,
+                total=total,
+                elapsed_seconds=time.monotonic() - start_monotonic,
+                counters=_pass1_counters(stats),
+            )
+        )
+
     if max_workers <= 1:
-        for item in work:
+        for i, item in enumerate(work, start=1):
             _process(item)
+            _beat(i)
     else:
-        logger.info("  pass1: %d recipes across %d workers", len(work), max_workers)
+        logger.info("  pass1: %d recipes across %d workers", total, max_workers)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(_process, item) for item in work]
-            for future in as_completed(futures):
+            for i, future in enumerate(as_completed(futures), start=1):
                 future.result()
+                _beat(i)
 
 
 # --- Pass 2: No-LLM clustering + variant assembly from the cache table ---
@@ -481,6 +531,15 @@ def _populate_wdc_names_from_db(
     return out
 
 
+def _pass2_counters(stats: CatalogRunStats) -> dict[str, int]:
+    return {
+        "groups_processed": stats.l1_groups_processed,
+        "groups_skipped": stats.l1_groups_skipped,
+        "groups_dry": stats.l1_groups_dry,
+        "variants_produced": stats.variants_produced,
+    }
+
+
 def _run_pass2(
     *,
     db: CatalogDB,
@@ -497,15 +556,32 @@ def _run_pass2(
     now_fn: Callable[[], str],
     on_group_done: Callable[[str, list[MergedVariantResult]], None] | None,
     stats: CatalogRunStats,
+    heartbeat: HeartbeatFn = _noop_heartbeat,
+    start_monotonic: float | None = None,
 ) -> None:
     """Phase 2: cluster + write variants from the parsed_ingredient_lines
     table. No LLM; a re-run with new thresholds is seconds, not hours."""
     db_parse_fn = _build_db_parse_fn(db, model, seed)
+    if start_monotonic is None:
+        start_monotonic = time.monotonic()
+    total = len(keys)
 
-    for key in keys:
+    def _beat(position: int) -> None:
+        heartbeat(
+            HeartbeatSnapshot(
+                pass_name="pass2",
+                position=position,
+                total=total,
+                elapsed_seconds=time.monotonic() - start_monotonic,
+                counters=_pass2_counters(stats),
+            )
+        )
+
+    for i, key in enumerate(keys, start=1):
         if db.is_l1_fresh(key, corpus_revisions):
             stats.l1_groups_skipped += 1
             logger.info("  skip %r — fresh in query_runs", key)
+            _beat(i)
             continue
 
         group = groups[key]
@@ -567,6 +643,8 @@ def _run_pass2(
         if on_group_done is not None:
             on_group_done(key, variants)
 
+        _beat(i)
+
 
 # --- Top-level orchestrator ---
 
@@ -600,6 +678,7 @@ def run_catalog_pipeline(
     title_fn: TitleFn | None = None,
     now_fn: Callable[[], str] = _utcnow_iso,
     on_group_done: Callable[[str, list[MergedVariantResult]], None] | None = None,
+    heartbeat: HeartbeatFn = _noop_heartbeat,
 ) -> CatalogRunStats:
     """Drive the two-pass whole-corpus → recipes.db pipeline.
 
@@ -672,6 +751,8 @@ def run_catalog_pipeline(
             seed=seed,
             stats=stats,
             max_workers=pass1_workers,
+            heartbeat=heartbeat,
+            start_monotonic=start_t,
         )
 
     if do_pass2:
@@ -691,6 +772,8 @@ def run_catalog_pipeline(
             now_fn=now_fn,
             on_group_done=on_group_done,
             stats=stats,
+            heartbeat=heartbeat,
+            start_monotonic=start_t,
         )
 
     if do_pass3:

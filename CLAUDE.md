@@ -53,6 +53,7 @@ The `scrape/` submodule (`src/rational_recipes/scrape/`) handles loaders (Recipe
 | `scripts/corpus_title_survey.py` | Title-frequency diagnostic CLI (vwt.1) |
 | `scripts/migrate_curated_to_db.py` | One-shot seed of 4 hand-curated recipes into recipes.db (vwt.6) |
 | `scripts/review_variants.py` | CLI review tool against recipes.db (vwt.9) |
+| `scripts/scrape_progress.py` | Read-only progress reporter for a running/dead `scrape_catalog` (vwt.27) |
 | `scripts/build_db.py` | Rebuild `ingredients.db` from FDC/FAO sources |
 | `dataset/` | Raw corpora (gitignored) |
 | `output/catalog/recipes.db` | Pipeline output (gitignored) |

@@ -18,6 +18,7 @@ from rational_recipes.cli import scrape_catalog as cli
 from rational_recipes.scrape.canonical import canonicalize_names
 from rational_recipes.scrape.catalog_pipeline import (
     CatalogRunStats,
+    HeartbeatSnapshot,
     compute_corpus_revisions,
     detect_language,
     run_catalog_pipeline,
@@ -720,6 +721,140 @@ class TestCli:
             assert titles == ["Bourbon Pecan Pie", "Maple Pecan Pie"]
         finally:
             db.close()
+
+
+class TestHeartbeat:
+    def test_pipeline_emits_pass1_and_pass2_snapshots(
+        self, synthetic_corpora: tuple[Path, Path], tmp_path: Path
+    ) -> None:
+        csv_path, zip_path = synthetic_corpora
+        db, _ = _open_db(tmp_path)
+        beats: list[HeartbeatSnapshot] = []
+        run_catalog_pipeline(
+            db=db,
+            rnlg_loader=RecipeNLGLoader(path=csv_path),
+            wdc_loader=WDCLoader(zip_path=zip_path),
+            parse_fn=_default_parse,
+            extract_fn=_default_extract,
+            corpus_revisions="rev-1",
+            l1_min=3,
+            l2_threshold=0.3,
+            l2_min=2,
+            l3_min=2,
+            heartbeat=beats.append,
+        )
+        passes = {b.pass_name for b in beats}
+        assert "pass1" in passes
+        assert "pass2" in passes
+
+        # Final snapshot per pass: position == total.
+        last_pass1 = [b for b in beats if b.pass_name == "pass1"][-1]
+        last_pass2 = [b for b in beats if b.pass_name == "pass2"][-1]
+        assert last_pass1.position == last_pass1.total > 0
+        assert last_pass2.position == last_pass2.total > 0
+
+        # Counters reflect the same totals as CatalogRunStats.
+        assert last_pass1.counters["recipes_seen"] >= 1
+        assert last_pass2.counters["groups_processed"] == last_pass2.total
+
+    def test_default_heartbeat_is_silent_noop(
+        self, synthetic_corpora: tuple[Path, Path], tmp_path: Path
+    ) -> None:
+        """run_catalog_pipeline without ``heartbeat`` arg must not crash or
+        spam — back-compat for existing callers."""
+        csv_path, zip_path = synthetic_corpora
+        db, _ = _open_db(tmp_path)
+        # No heartbeat= passed; should default to a no-op.
+        stats = run_catalog_pipeline(
+            db=db,
+            rnlg_loader=RecipeNLGLoader(path=csv_path),
+            wdc_loader=WDCLoader(zip_path=zip_path),
+            parse_fn=_default_parse,
+            extract_fn=_default_extract,
+            corpus_revisions="rev-1",
+            l1_min=3,
+            l2_threshold=0.3,
+            l2_min=2,
+            l3_min=2,
+        )
+        assert stats.l1_groups_processed >= 1
+
+
+class TestHeartbeatPrinter:
+    def test_throttles_calls_within_interval(self) -> None:
+        from io import StringIO
+
+        from rational_recipes.cli.scrape_catalog import _HeartbeatPrinter
+
+        buf = StringIO()
+        clock = iter([0.0, 1.0, 5.0, 35.0])  # 0s, +1s, +5s, +35s
+        printer = _HeartbeatPrinter(
+            interval_seconds=30.0, stream=buf, clock=lambda: next(clock)
+        )
+        for i in range(4):
+            printer(
+                HeartbeatSnapshot(
+                    pass_name="pass1",
+                    position=i,
+                    total=10,
+                    elapsed_seconds=float(i),
+                    counters={"recipes_seen": i},
+                )
+            )
+        # First call always emits; +1s and +5s throttled; +35s emits.
+        lines = [line for line in buf.getvalue().splitlines() if line]
+        assert len(lines) == 2
+        assert "pass1 0/10" in lines[0]
+        assert "pass1 3/10" in lines[1]
+
+    def test_zero_interval_emits_every_call(self) -> None:
+        from io import StringIO
+
+        from rational_recipes.cli.scrape_catalog import _HeartbeatPrinter
+
+        buf = StringIO()
+        clock = iter([0.0, 0.0, 0.0])
+        printer = _HeartbeatPrinter(
+            interval_seconds=0.0, stream=buf, clock=lambda: next(clock)
+        )
+        for i in range(3):
+            printer(
+                HeartbeatSnapshot(
+                    pass_name="pass2",
+                    position=i,
+                    total=3,
+                    elapsed_seconds=float(i),
+                    counters={"groups_processed": i},
+                )
+            )
+        lines = [line for line in buf.getvalue().splitlines() if line]
+        assert len(lines) == 3
+
+    def test_format_includes_eta_and_counters(self) -> None:
+        from io import StringIO
+
+        from rational_recipes.cli.scrape_catalog import _HeartbeatPrinter
+
+        buf = StringIO()
+        printer = _HeartbeatPrinter(
+            interval_seconds=0.0, stream=buf, clock=lambda: 0.0
+        )
+        printer(
+            HeartbeatSnapshot(
+                pass_name="pass1",
+                position=10,
+                total=100,
+                elapsed_seconds=60.0,
+                counters={"recipes_seen": 10, "llm_batches": 2},
+            )
+        )
+        line = buf.getvalue().strip()
+        assert "pass1 10/100" in line
+        assert "10.0%" in line
+        assert "elapsed=1m00s" in line
+        assert "eta=9m00s" in line
+        assert "recipes_seen=10" in line
+        assert "llm_batches=2" in line
 
 
 class TestCatalogRunStatsDefaults:
