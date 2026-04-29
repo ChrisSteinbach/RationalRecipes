@@ -116,7 +116,7 @@ def _ollama_title_call(
             "format": "json",
             "stream": False,
             "options": {
-                "num_ctx": 8192,
+                "num_ctx": 16384,
                 "num_predict": 64,
                 "temperature": 0.0,
                 "seed": 42,
