@@ -125,7 +125,7 @@ class TestMergeCorpora:
 
         merged, stats = merge_corpora([r], [w])
 
-        # Jaccard = 1/7 = 0.14 — below 0.3 threshold; both kept.
+        # Jaccard = 1/7 = 0.14 — below 0.8 threshold; both kept.
         assert stats.near_dup_duplicates == 0
         assert len(merged) == 2
 
@@ -135,13 +135,13 @@ class TestMergeCorpora:
         r = _rnlg("Pancakes", "https://a.com/r/1", r_ings, ner=r_ings)
         w = _wdc("Pancakes", "https://b.com/r/2", w_ings, names=frozenset(w_ings))
 
-        # Jaccard = 3/7 ≈ 0.43 — above default 0.3 (merges) and above
-        # explicit 0.5 (also merges).
+        # Jaccard = 3/7 ≈ 0.43 — below default 0.8, so both kept.
         _, stats_default = merge_corpora([r], [w])
-        assert stats_default.near_dup_duplicates == 1
+        assert stats_default.near_dup_duplicates == 0
 
-        _, stats_strict = merge_corpora([r], [w], near_dup_threshold=0.5)
-        assert stats_strict.near_dup_duplicates == 0
+        # Explicit 0.3 override: now 0.43 is above threshold → merges.
+        _, stats_loose = merge_corpora([r], [w], near_dup_threshold=0.3)
+        assert stats_loose.near_dup_duplicates == 1
 
     def test_near_dup_only_within_same_title_group(self) -> None:
         """Ingredient-set near-dup runs only inside normalized-title
@@ -156,15 +156,13 @@ class TestMergeCorpora:
         assert stats.near_dup_duplicates == 0
         assert len(merged) == 2
 
-    def test_default_threshold_is_0_3(self) -> None:
-        """Documented contract: the default lives at 0.3 — lowered from
-        0.5 by RationalRecipes-toj validation. A threshold sweep on
-        the pannkak/ica.se slice with deterministic LLM extraction
-        showed the documented saffranspannkaka cross-corpus pair sits
-        at Jaccard ~0.3-0.4 because the two recipes list different
-        optional accompaniments. 0.3 catches it with no false
-        positives in the 43-row stream."""
-        assert DEFAULT_NEAR_DUP_THRESHOLD == 0.3
+    def test_default_threshold_is_0_8(self) -> None:
+        """Documented contract: the default lives at 0.8 — raised from
+        0.3 by RationalRecipes-vwt.11. At 0.3, basic-ingredient
+        families (pancakes, breads) collapse catastrophically because
+        shared basics alone yield 50-60% Jaccard. 0.8 catches genuine
+        reposts while preserving cross-corpus variation for L2."""
+        assert DEFAULT_NEAR_DUP_THRESHOLD == 0.8
 
     def test_url_match_wins_over_near_dup_count(self) -> None:
         """When a row is already URL-matched it isn't re-counted as a
@@ -217,10 +215,11 @@ class TestMergeCorpora:
             names=frozenset(wdc_extra),
         )
 
-        _, stats = merge_corpora([r], [w])
+        # Jaccard = 4/7 ≈ 0.57 — below the 0.8 default, so kept separate.
+        # Use an explicit low threshold to verify the compound-word gate
+        # actually lines the two titles up for comparison.
+        _, stats = merge_corpora([r], [w], near_dup_threshold=0.5)
 
-        # Jaccard = 4/7 ≈ 0.57 — above the 0.3 default after the
-        # compound-word gate lines the two titles up.
         assert stats.near_dup_duplicates == 1
 
     def test_near_dup_gate_keeps_distinct_dishes_separate(self) -> None:

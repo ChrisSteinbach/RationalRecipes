@@ -4,7 +4,7 @@ Two distinct dedup steps live here, because they solve different problems:
 
 1. ``merge_corpora()`` runs at corpus-merge time. It joins RecipeNLG
    rows against WDC rows via URL first, then by ingredient-set Jaccard
-   near-dup at a threshold of 0.3 (see ``DEFAULT_NEAR_DUP_THRESHOLD``
+   near-dup at a threshold of 0.8 (see ``DEFAULT_NEAR_DUP_THRESHOLD``
    for why), gated by a stricter title key than L1 grouping uses:
    ``_merge_title_key`` additionally strips RecipeNLG's common
    ``" - English translation"`` suffix and compacts whitespace so
@@ -37,19 +37,19 @@ from rational_recipes.scrape.grouping import (
 from rational_recipes.scrape.recipenlg import Recipe
 from rational_recipes.scrape.wdc import WDCRecipe
 
-DEFAULT_NEAR_DUP_THRESHOLD = 0.3
+DEFAULT_NEAR_DUP_THRESHOLD = 0.8
 """Jaccard similarity threshold for cross-corpus near-dup detection.
 
-Lowered from 0.5 to 0.3 by ``RationalRecipes-toj`` validation. A
-threshold sweep on the pannkak / WDC ica.se slice (with deterministic
-LLM extraction) found the documented saffranspannkaka cross-corpus
-pair (RecipeNLG food52.com × WDC ica.se) sits at Jaccard ~0.3-0.4
-because the two recipes list different optional accompaniments
-(blueberry jam vs sylt, vispgrädde vs whipping cream, etc.). 0.3 is
-the smallest threshold that catches the pair; the 43-row sweep
-showed no false positives at 0.3. Matches the bottom of the
-0.3-0.5 range documented by ``RationalRecipes-3cu``. Source-level
-default; not yet a CLI flag.
+Raised from 0.3 to 0.8 by ``RationalRecipes-vwt.11``. At 0.3, basic-
+ingredient recipe families (pancakes, breads, basic sauces) collapse
+catastrophically — flour+egg+milk+salt+sugar alone is ~50-60% Jaccard
+for a typical 6-8 ingredient pancake recipe, so merge_corpora drops
+real cross-corpus variation. At 0.8, near-dup catches genuine
+same-recipe-reposted matches (70-90%+ overlap) while preserving
+ingredient-set diversity for L2 clustering downstream.
+
+Validated on chocolate chip cookies (1367 rnlg + 47 wdc): 0.8 yields
+39% dedup and 35 L2 clusters vs ~91% dedup at 0.3 which starves L2.
 """
 
 
