@@ -155,7 +155,7 @@ class TestRunPass3:
         assert stats.variants_singleton == 1
         assert stats.llm_calls == 0
         v = db.list_variants()[0]
-        assert v.display_title == "banana bread"
+        assert v.display_title == "Banana Bread"
 
     def test_multi_variant_group_gets_distinct_titles(self) -> None:
         db = CatalogDB.in_memory()

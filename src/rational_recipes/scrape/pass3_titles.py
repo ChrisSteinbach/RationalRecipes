@@ -278,11 +278,12 @@ def run_pass3(
     for family, members in groups.items():
         if len(members) <= 1:
             stats.variants_singleton += len(members)
+            titled = family.title()
             for v in members:
                 # Make sure the singleton's display_title is the L1
-                # title (Pass 2 already does this, but fix any stragglers).
-                if v.display_title != family:
-                    db.update_display_title(v.variant_id, family)
+                # title in Title Case (matching LLM-generated titles).
+                if v.display_title != titled:
+                    db.update_display_title(v.variant_id, titled)
             continue
         for v in members:
             if not force and v.display_title and v.display_title != family:
