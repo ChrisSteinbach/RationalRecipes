@@ -153,6 +153,32 @@ describe("renderCatalog — populated list", () => {
     expect(container.querySelectorAll(".catalog-list")).toHaveLength(1);
     expect(container.querySelectorAll(".recipe-card")).toHaveLength(1);
   });
+
+  it("preserves search input focus across re-renders", () => {
+    const recipes = [aRecipe({ id: "a", title: "Alpha" })];
+    const state = initialCatalogState();
+    const callbacks = noopCallbacks({
+      onQueryChange: (q) => {
+        state.query = q;
+        renderCatalog(container, aCatalog(recipes), recipes, state, callbacks);
+      },
+    });
+    renderCatalog(container, aCatalog(recipes), recipes, state, callbacks);
+
+    const search = container.querySelector<HTMLInputElement>(".catalog-search")!;
+    search.focus();
+    expect(document.activeElement).toBe(search);
+
+    // Simulate typing — update value + fire input event (triggers re-render).
+    search.value = "pan";
+    search.dispatchEvent(new Event("input"));
+
+    // The same DOM node should still be focused.
+    const searchAfter = container.querySelector<HTMLInputElement>(".catalog-search")!;
+    expect(searchAfter).toBe(search);
+    expect(document.activeElement).toBe(search);
+    expect(searchAfter.value).toBe("pan");
+  });
 });
 
 describe("renderCatalog — toolbar", () => {

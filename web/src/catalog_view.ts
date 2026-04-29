@@ -53,8 +53,18 @@ export function renderCatalog(
   state: CatalogViewState,
   callbacks: CatalogViewCallbacks,
 ): void {
-  container.replaceChildren();
-  container.appendChild(renderToolbar(catalog, state, callbacks));
+  // Preserve the toolbar across re-renders so the search input keeps
+  // focus (and cursor position) while typing. Only the content below
+  // the toolbar is rebuilt each cycle.
+  let toolbar = container.querySelector<HTMLElement>(".catalog-toolbar");
+  if (toolbar) {
+    syncToolbarValues(toolbar, state);
+    while (toolbar.nextSibling) toolbar.nextSibling.remove();
+  } else {
+    container.replaceChildren();
+    toolbar = renderToolbar(catalog, state, callbacks);
+    container.appendChild(toolbar);
+  }
 
   const countLine = document.createElement("p");
   countLine.className = "catalog-count";
@@ -78,6 +88,20 @@ export function renderCatalog(
     list.appendChild(renderRecipeCard(recipe, callbacks));
   }
   container.appendChild(list);
+}
+
+function syncToolbarValues(
+  toolbar: HTMLElement,
+  state: CatalogViewState,
+): void {
+  const search = toolbar.querySelector<HTMLInputElement>(".catalog-search");
+  if (search && search.value !== state.query) search.value = state.query;
+  const category = toolbar.querySelector<HTMLSelectElement>(".catalog-category");
+  if (category) category.value = state.category;
+  const sample = toolbar.querySelector<HTMLSelectElement>(".catalog-min-sample");
+  if (sample) sample.value = String(state.minSampleSize);
+  const order = toolbar.querySelector<HTMLSelectElement>(".catalog-order-by");
+  if (order) order.value = state.orderBy;
 }
 
 function renderToolbar(
