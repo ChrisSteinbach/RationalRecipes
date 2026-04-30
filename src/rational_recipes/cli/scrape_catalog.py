@@ -45,9 +45,9 @@ from rational_recipes.scrape.merge import (
 )
 from rational_recipes.scrape.parse import OLLAMA_BASE_URL, parse_ingredient_lines
 from rational_recipes.scrape.pass3_titles import (
-    BatchTitleFn,
     Pass3CallTiming,
-    build_default_batch_title_fn,
+    TitleFn,
+    build_default_title_fn,
     format_pass3_summary,
 )
 from rational_recipes.scrape.recipenlg import RecipeNLGLoader
@@ -270,6 +270,19 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--max-siblings",
+        type=int,
+        default=20,
+        metavar="N",
+        help=(
+            "Max sibling ingredient sets included in each Pass 3 LLM "
+            "prompt. Larger values give the model more context for "
+            "choosing distinctive titles but increase prompt size. "
+            "Post-LLM dedup handles collisions regardless. "
+            "Default: %(default)s."
+        ),
+    )
+    parser.add_argument(
         "--pass3-profile",
         type=Path,
         default=None,
@@ -319,9 +332,9 @@ def run(
     *,
     parse_fn: ParseFn | None = None,
     extract_fn: ExtractFn | None = None,
-    batch_title_fn: BatchTitleFn | None = None,
+    title_fn: TitleFn | None = None,
 ) -> int:
-    """CLI entrypoint. ``parse_fn``/``extract_fn``/``batch_title_fn`` let tests
+    """CLI entrypoint. ``parse_fn``/``extract_fn``/``title_fn`` let tests
     bypass Ollama."""
     args = _parse_args(argv)
     logging.basicConfig(
@@ -347,7 +360,7 @@ def run(
 
     # Ollama is only needed when Pass 1 or Pass 3 will run with the live LLM.
     needs_live_llm = (do_pass1 and parse_fn is None and extract_fn is None) or (
-        do_pass3 and batch_title_fn is None
+        do_pass3 and title_fn is None
     )
     if needs_live_llm and not args.skip_preflight:
         if not _preflight_ollama(args.ollama_url):
@@ -396,8 +409,8 @@ def run(
 
     num_ctx: int | None = args.num_ctx if args.num_ctx > 0 else None
 
-    if batch_title_fn is None:
-        batch_title_fn = build_default_batch_title_fn(
+    if title_fn is None:
+        title_fn = build_default_title_fn(
             args.model,
             base_url=args.ollama_url,
             num_ctx=num_ctx,
@@ -439,7 +452,8 @@ def run(
             pass1_workers=args.pass1_workers,
             pass3_workers=args.pass3_workers,
             pass3_force=args.pass3_force,
-            batch_title_fn=batch_title_fn,
+            title_fn=title_fn,
+            max_siblings=args.max_siblings,
             heartbeat=heartbeat,
             # Persist the cache between groups so a killed run doesn't
             # lose already-extracted names.

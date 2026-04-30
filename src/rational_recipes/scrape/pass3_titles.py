@@ -1,20 +1,14 @@
-"""Pass 3: distinctive variant titles via LLM (vwt.24, batched v97).
+"""Pass 3: distinctive variant titles via LLM (vwt.24).
 
 Pass 2 leaves every variant in an L1 group sharing ``display_title``
 with the L1 normalized title, so the PWA list view shows e.g. four
 'pecan pie' rows differing only by ``n_recipes``. Pass 3 issues one
-batched LLM call per L1 group (v97), supplying the dish family name
-plus every variant's canonicals + cooking_methods so the model can
-assign distinctive titles in one shot ('Maple Pecan Pie', 'Bourbon
-Pecan Pie', etc.).
+LLM call per variant, supplying a sample of sibling ingredient sets
+so the model can pick a distinctive descriptor ('Maple Pecan Pie',
+'Bourbon Pecan Pie', etc.). A post-LLM dedup step (vwt.32) resolves
+any collisions via ingredient-based disambiguation or numeric suffix.
 
-Groups larger than ``_MAX_BATCH_SIZE`` are chunked; each chunk still
-sees the full group's ingredient lists as context so the model can
-pick globally-distinctive descriptors. On parse failure, the chunk
-bisects (mirroring Pass 1's ``_parse_batch_with_fallback``), degrading
-to per-variant calls at the leaves.
-
-Singletons skip the LLM — ``display_title`` is left equal to
+Singletons skip the LLM — ``display_title`` is title-cased
 ``normalized_title``.
 
 Determinism: the LLM call uses temperature=0 + seed=42 (same convention
@@ -73,51 +67,6 @@ Siblings: [{"ingredients": ["butter", "cream cheese", "egg", "flour", "sugar"]}]
 Output: {"title": "Cocoa Chocolate Cake"}
 """
 
-BATCHED_TITLE_SYSTEM_PROMPT = """\
-You name dish variants. Given a dish family name and an array of
-variants (each with its ingredients and cooking methods), choose a
-SHORT distinctive title for EACH variant — one that calls out what
-makes it different from all the others.
-
-Rules:
-- Output ONLY a JSON object: {"results": [{"title": "..."}, ...]}.
-- The results array MUST have exactly as many entries as the input
-  variants array, in the same order.
-- Each title is at most 5 words, Title Case, English.
-- Each title MUST end with the dish family name (e.g. for family
-  "pecan pie" a title is "<Descriptor> Pecan Pie").
-- Pick ONE descriptor per variant (an ingredient, method, or modifier)
-  that is present in that variant but absent from every other variant.
-  If multiple qualify, pick the most distinctive single word.
-- If nothing distinguishes a variant from all others, return the
-  family name unchanged in Title Case.
-
-Example:
-Family: "pecan pie"
-Variants: [
-  {"ingredients": ["bourbon", "butter", "egg", "pecan", "sugar"]},
-  {"ingredients": ["butter", "egg", "maple syrup", "pecan"]},
-  {"ingredients": ["chocolate", "egg", "pecan", "sugar"]}
-]
-Output: {"results": [{"title": "Bourbon Pecan Pie"}, \
-{"title": "Maple Pecan Pie"}, {"title": "Chocolate Pecan Pie"}]}
-"""
-
-_MAX_BATCH_SIZE = 50
-"""Max variants to title in a single LLM call (v97).
-
-Groups larger than this are chunked; each chunk still receives the full
-group as context so the model picks globally-distinctive descriptors.
-Matches Pass 1's chunking strategy for reliability.
-"""
-
-_TOKENS_PER_TITLE = 15
-"""Estimated output tokens per title (5 words + JSON overhead)."""
-
-_BATCH_OVERHEAD_TOKENS = 50
-"""Fixed overhead tokens for the JSON wrapper in batched output."""
-
-
 TitleFn = Callable[
     [str, frozenset[str], frozenset[str], Sequence[frozenset[str]]],
     str | None,
@@ -136,19 +85,6 @@ class _VariantSlot:
     variant_id: str
     ingredients: frozenset[str]
     methods: frozenset[str]
-
-
-BatchTitleFn = Callable[
-    [str, Sequence[_VariantSlot], Sequence[_VariantSlot]],
-    list[str | None] | None,
-]
-"""LLM callback: (family, slots_to_title, all_group_slots) -> titles.
-
-Returns a list of titles parallel to ``slots_to_title``, or ``None``
-on structural failure (triggering bisect). Individual titles can be
-``None`` to signal per-variant fallback. Tests inject deterministic
-stubs that bypass Ollama.
-"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,8 +162,8 @@ class Pass3CallTiming:
 TimingCollector = Callable[[Pass3CallTiming], None]
 """Callback invoked once per LLM call (success or failure).
 
-Plumbed through ``build_default_batch_title_fn`` (v97) so a profiling
-driver can collect per-call records. Thread-safety is the collector's
+Plumbed through ``build_default_title_fn`` so a profiling driver can
+collect per-call records. Thread-safety is the collector's
 responsibility — under ``run_pass3(max_workers > 1)`` it's called from
 worker threads concurrently.
 """
@@ -237,10 +173,10 @@ worker threads concurrently.
 class Pass3Stats:
     """Per-run counters for the Pass 3 stage.
 
-    ``timings`` is populated when an instrumented ``batch_title_fn`` is
-    in use (e.g. via ``build_default_batch_title_fn(timing_collector=...)``).
-    It stays empty for stub fns used in unit tests, which keeps the
-    existing test contract intact."""
+    ``timings`` is populated when an instrumented ``title_fn`` is in use
+    (e.g. via ``build_default_title_fn(timing_collector=...)``). It stays
+    empty for stub fns used in unit tests, which keeps the existing test
+    contract intact."""
 
     variants_total: int = 0
     variants_singleton: int = 0
@@ -457,260 +393,6 @@ def parse_title_response(raw: str) -> str | None:
     return cleaned or None
 
 
-def build_batched_title_prompt(
-    family: str,
-    slots: Sequence[_VariantSlot],
-    all_slots: Sequence[_VariantSlot],
-) -> str:
-    """Build the batched prompt (v97).
-
-    ``slots`` is the chunk to title; ``all_slots`` is the full group
-    (used as context when chunking). When len(slots) == len(all_slots)
-    the entire group is being titled in one call.
-    """
-    variants_json = [
-        {
-            "ingredients": sorted(s.ingredients),
-            **({"cooking_methods": sorted(s.methods)} if s.methods else {}),
-        }
-        for s in slots
-    ]
-    payload: dict[str, object] = {
-        "family": family,
-        "variants": variants_json,
-    }
-    # When chunking, include the full group as context so the model can
-    # see what other variants exist and avoid colliding titles.
-    if len(slots) < len(all_slots):
-        context_json = [
-            {"ingredients": sorted(s.ingredients)}
-            for s in all_slots
-            if s not in slots
-        ]
-        payload["other_variants_in_group"] = context_json
-    return (
-        f"Choose a distinctive title for each of these {len(slots)} variants:\n"
-        f"{json.dumps(payload, ensure_ascii=False, sort_keys=True)}\nOutput:"
-    )
-
-
-def parse_batched_title_response(
-    raw: str, expected_count: int
-) -> list[str | None] | None:
-    """Parse the batched LLM output into a list of titles.
-
-    Returns ``None`` on structural failure (wrong count, no results
-    array, unparseable JSON) — the caller should bisect. Individual
-    title entries that are malformed become ``None`` in the list.
-    """
-    text = (raw or "").strip()
-    if not text:
-        return None
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start < 0 or end <= start:
-            return None
-        try:
-            data = json.loads(text[start:end])
-        except json.JSONDecodeError:
-            return None
-
-    if not isinstance(data, dict):
-        return None
-    items = data.get("results")
-    if not isinstance(items, list):
-        return None
-    if len(items) != expected_count:
-        logger.warning(
-            "Batched title output length mismatch: got %d, expected %d",
-            len(items),
-            expected_count,
-        )
-        return None
-
-    titles: list[str | None] = []
-    for item in items:
-        if isinstance(item, dict):
-            t = item.get("title")
-            if isinstance(t, str):
-                cleaned = " ".join(t.split())
-                titles.append(cleaned or None)
-            else:
-                titles.append(None)
-        else:
-            titles.append(None)
-    return titles
-
-
-def _ollama_batched_title_call(
-    family: str,
-    slots: Sequence[_VariantSlot],
-    all_slots: Sequence[_VariantSlot],
-    *,
-    model: str,
-    base_url: str = OLLAMA_BASE_URL,
-    timeout: float = 120.0,
-    num_ctx: int | None = 16384,
-    timing_collector: TimingCollector | None = None,
-) -> list[str | None] | None:
-    """One batched Ollama call for a chunk of variants (v97).
-
-    Returns a list of titles parallel to ``slots``, or ``None`` on
-    structural failure. Individual entries can be ``None`` for
-    per-variant fallback.
-    """
-    build_start = time.monotonic()
-    prompt = build_batched_title_prompt(family, slots, all_slots)
-    prompt_build_seconds = time.monotonic() - build_start
-    prompt_chars = len(BATCHED_TITLE_SYSTEM_PROMPT) + len(prompt)
-
-    num_predict = _TOKENS_PER_TITLE * len(slots) + _BATCH_OVERHEAD_TOKENS
-
-    options: dict[str, object] = {
-        "num_predict": num_predict,
-        "temperature": 0.0,
-        "seed": 42,
-    }
-    if num_ctx is not None:
-        options["num_ctx"] = num_ctx
-
-    payload = json.dumps(
-        {
-            "model": model,
-            "system": BATCHED_TITLE_SYSTEM_PROMPT,
-            "prompt": prompt,
-            "format": "json",
-            "stream": False,
-            "options": options,
-        }
-    ).encode()
-
-    req = urllib.request.Request(
-        f"{base_url}/api/generate",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
-    titles: list[str | None] | None = None
-    request_seconds = 0.0
-    response_parse_seconds = 0.0
-    body: dict[str, object] = {}
-    success = False
-
-    request_start = time.monotonic()
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
-        request_seconds = time.monotonic() - request_start
-
-        parse_start = time.monotonic()
-        body = json.loads(raw)
-        visible = body.get("response") or ""
-        if isinstance(visible, str) and visible.strip():
-            titles = parse_batched_title_response(visible, len(slots))
-        else:
-            thinking = body.get("thinking") or ""
-            if isinstance(thinking, str) and thinking:
-                titles = parse_batched_title_response(thinking, len(slots))
-        response_parse_seconds = time.monotonic() - parse_start
-        success = titles is not None
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
-        request_seconds = time.monotonic() - request_start
-        logger.warning("Ollama batched title call failed: %s", e)
-
-    if timing_collector is not None:
-        timing_collector(
-            Pass3CallTiming(
-                family=family,
-                sibling_count=len(all_slots),
-                prompt_chars=prompt_chars,
-                prompt_build_seconds=prompt_build_seconds,
-                request_seconds=request_seconds,
-                response_parse_seconds=response_parse_seconds,
-                db_write_seconds=0.0,
-                success=success,
-                ollama_total_seconds=_ns_to_seconds(body.get("total_duration")),
-                ollama_load_seconds=_ns_to_seconds(body.get("load_duration")),
-                ollama_prompt_eval_count=_as_int(body.get("prompt_eval_count")),
-                ollama_prompt_eval_seconds=_ns_to_seconds(
-                    body.get("prompt_eval_duration")
-                ),
-                ollama_eval_count=_as_int(body.get("eval_count")),
-                ollama_eval_seconds=_ns_to_seconds(body.get("eval_duration")),
-            )
-        )
-
-    return titles
-
-
-def _batched_titles_with_fallback(
-    family: str,
-    slots: Sequence[_VariantSlot],
-    all_slots: Sequence[_VariantSlot],
-    batch_fn: BatchTitleFn,
-) -> list[str | None]:
-    """Bisect-on-failure wrapper around the batched LLM call (v97).
-
-    Mirrors Pass 1's ``_parse_batch_with_fallback``: on structural
-    failure the chunk is split in half and each half retried. At the
-    leaf (single variant), a ``None`` title signals per-variant
-    fallback to the family name.
-    """
-    if len(slots) == 0:
-        return []
-
-    titles = batch_fn(family, slots, all_slots)
-    if titles is not None:
-        return titles
-
-    if len(slots) <= 1:
-        # Leaf: can't bisect further; signal per-variant fallback.
-        return [None]
-
-    mid = len(slots) // 2
-    logger.warning(
-        "Batched title call failed for %d variants in %r; bisecting into %d + %d",
-        len(slots),
-        family,
-        mid,
-        len(slots) - mid,
-    )
-    left = _batched_titles_with_fallback(family, slots[:mid], all_slots, batch_fn)
-    right = _batched_titles_with_fallback(family, slots[mid:], all_slots, batch_fn)
-    return left + right
-
-
-def build_default_batch_title_fn(
-    model: str,
-    base_url: str = OLLAMA_BASE_URL,
-    *,
-    num_ctx: int | None = 16384,
-    timing_collector: TimingCollector | None = None,
-) -> BatchTitleFn:
-    """Bind model + base_url into a BatchTitleFn for the production LLM path."""
-
-    def fn(
-        family: str,
-        slots: Sequence[_VariantSlot],
-        all_slots: Sequence[_VariantSlot],
-    ) -> list[str | None] | None:
-        return _ollama_batched_title_call(
-            family,
-            slots,
-            all_slots,
-            model=model,
-            base_url=base_url,
-            num_ctx=num_ctx,
-            timing_collector=timing_collector,
-        )
-
-    return fn
-
-
 def _group_by_l1(variants: Sequence[VariantRow]) -> dict[str, list[VariantRow]]:
     """Bucket variants by ``normalized_title`` (= L1 group key)."""
     groups: dict[str, list[VariantRow]] = defaultdict(list)
@@ -720,30 +402,6 @@ def _group_by_l1(variants: Sequence[VariantRow]) -> dict[str, list[VariantRow]]:
     for key in groups:
         groups[key].sort(key=lambda v: v.variant_id)
     return groups
-
-
-def _resolve_title(
-    family: str,
-    variant: VariantRow,
-    siblings: Sequence[VariantRow],
-    title_fn: TitleFn,
-    stats: Pass3Stats,
-) -> str:
-    """One LLM call → distinctive title; family-name fallback on failure."""
-    sibling_sets = [
-        frozenset(s.canonical_ingredient_set) for s in siblings
-    ]
-    stats.llm_calls += 1
-    title = title_fn(
-        family,
-        frozenset(variant.canonical_ingredient_set),
-        frozenset(variant.cooking_methods),
-        sibling_sets,
-    )
-    if not title:
-        stats.llm_failures += 1
-        return family.title()
-    return title
 
 
 def _variants_to_slots(variants: Sequence[VariantRow]) -> list[_VariantSlot]:
@@ -840,17 +498,17 @@ def _deduplicate_titles(
 def run_pass3(
     *,
     db: CatalogDB,
-    title_fn: TitleFn | None = None,
-    batch_title_fn: BatchTitleFn | None = None,
+    title_fn: TitleFn,
     max_workers: int = 1,
+    max_siblings: int = 20,
     force: bool = False,
     stats: Pass3Stats | None = None,
 ) -> Pass3Stats:
-    """Generate ``display_title`` for every variant in the catalog DB (v97).
+    """Generate ``display_title`` for every variant in the catalog DB.
 
-    Uses batched LLM calls: one call per L1 group (or per chunk for
-    groups larger than ``_MAX_BATCH_SIZE``). On failure, bisects down
-    to single-variant granularity with family-name fallback.
+    Issues one LLM call per variant, supplying up to ``max_siblings``
+    sibling ingredient sets so the model can pick a distinctive
+    descriptor. A post-LLM dedup step (vwt.32) resolves any collisions.
 
     - Variants in singleton L1 groups keep ``display_title = L1 title``
       (no LLM call).
@@ -859,14 +517,10 @@ def run_pass3(
       a prior Pass 3). Set ``force=True`` to retitle regardless.
     - ``max_workers > 1`` runs L1 groups concurrently; DB writes are
       serialized via a shared lock.
-
-    Either ``batch_title_fn`` (v97 batched path) or ``title_fn`` (legacy
-    per-variant path) must be provided. When ``batch_title_fn`` is given
-    it takes precedence.
+    - ``max_siblings`` caps the number of sibling ingredient sets sent
+      to the LLM prompt. Groups larger than this still get complete
+      dedup coverage via the post-LLM disambiguation step.
     """
-    if batch_title_fn is None and title_fn is None:
-        raise ValueError("one of batch_title_fn or title_fn must be provided")
-
     if stats is None:
         stats = Pass3Stats()
 
@@ -908,41 +562,17 @@ def run_pass3(
     def _process_group(item: _WorkItem) -> None:
         family, needs_title, all_slots, existing_titles = item
 
-        # Collect raw titles from the LLM.
-        raw_titles: list[str | None]
-        if batch_title_fn is not None:
-            raw_titles = []
-            for i in range(0, len(needs_title), _MAX_BATCH_SIZE):
-                chunk = needs_title[i : i + _MAX_BATCH_SIZE]
-                stats.llm_calls += 1
-                chunk_titles = _batched_titles_with_fallback(
-                    family, chunk, all_slots, batch_title_fn,
-                )
-                raw_titles.extend(chunk_titles)
-        else:
-            assert title_fn is not None
-            all_members = [
-                v for v in db.list_variants()
-                if v.normalized_title == family
-            ]
-            all_members.sort(key=lambda v: v.variant_id)
-            raw_titles = []
-            for slot in needs_title:
-                variant = next(
-                    v for v in all_members if v.variant_id == slot.variant_id
-                )
-                siblings = [
-                    s for s in all_members if s.variant_id != slot.variant_id
-                ]
-                title = _resolve_title(
-                    family, variant, siblings, title_fn, stats,
-                )
-                raw_titles.append(title)
-
-        # Count LLM failures (None titles).
-        for t in raw_titles:
-            if not t:
+        # One LLM call per variant, with capped sibling context.
+        raw_titles: list[str | None] = []
+        for slot in needs_title:
+            other_slots = [s for s in all_slots if s.variant_id != slot.variant_id]
+            capped = other_slots[:max_siblings]
+            sibling_sets: Sequence[frozenset[str]] = [s.ingredients for s in capped]
+            stats.llm_calls += 1
+            title = title_fn(family, slot.ingredients, slot.methods, sibling_sets)
+            if not title:
                 stats.llm_failures += 1
+            raw_titles.append(title)
 
         # Deduplicate titles within this group (vwt.32).
         deduped = _deduplicate_titles(

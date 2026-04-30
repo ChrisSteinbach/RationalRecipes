@@ -59,10 +59,9 @@ from rational_recipes.scrape.merge import (
 )
 from rational_recipes.scrape.parse import ParsedIngredient
 from rational_recipes.scrape.pass3_titles import (
-    BatchTitleFn,
     Pass3Stats,
     TitleFn,
-    build_default_batch_title_fn,
+    build_default_title_fn,
     run_pass3,
 )
 from rational_recipes.scrape.pipeline_merged import (
@@ -677,7 +676,7 @@ def run_catalog_pipeline(
     pass3_workers: int = 1,
     pass3_force: bool = False,
     title_fn: TitleFn | None = None,
-    batch_title_fn: BatchTitleFn | None = None,
+    max_siblings: int = 20,
     now_fn: Callable[[], str] = _utcnow_iso,
     on_group_done: Callable[[str, list[MergedVariantResult]], None] | None = None,
     heartbeat: HeartbeatFn = _noop_heartbeat,
@@ -780,12 +779,12 @@ def run_catalog_pipeline(
 
     if do_pass3:
         logger.info("Pass 3: generating distinctive variant titles")
-        resolved_batch_fn = batch_title_fn or build_default_batch_title_fn(model)
+        resolved_title_fn = title_fn or build_default_title_fn(model)
         run_pass3(
             db=db,
-            batch_title_fn=resolved_batch_fn,
-            title_fn=title_fn,
+            title_fn=resolved_title_fn,
             max_workers=pass3_workers,
+            max_siblings=max_siblings,
             force=pass3_force,
             stats=stats.pass3,
         )

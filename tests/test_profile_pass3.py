@@ -60,8 +60,7 @@ def test_profile_pass3_runs_against_db_and_writes_jsonl(
     db.close()
 
     body = (
-        b'{"response": "{\\"results\\": [{\\"title\\": \\"Stub Pecan Pie\\"}, '
-        b'{\\"title\\": \\"Stub Pecan Pie\\"}]}", '
+        b'{"response": "{\\"title\\": \\"Stub Pecan Pie\\"}", '
         b'"total_duration": 200000000, '
         b'"prompt_eval_count": 50, '
         b'"prompt_eval_duration": 100000000, '
@@ -105,12 +104,12 @@ def test_profile_pass3_runs_against_db_and_writes_jsonl(
     )
     assert rc == 0
 
-    # JSONL: one line per LLM call (v97: one batched call for the group).
+    # JSONL: one line per LLM call (one per-variant call each).
     lines = out.read_text(encoding="utf-8").strip().splitlines()
-    assert len(lines) == 1
+    assert len(lines) == 2
     rec = json.loads(lines[0])
     assert rec["family"] == "pecan pie"
-    assert rec["sibling_count"] == 2  # full group size
+    assert rec["sibling_count"] == 1  # one sibling per call
     assert rec["success"] is True
     assert rec["ollama_total_seconds"] == 0.2
     assert rec["ollama_prompt_eval_count"] == 50
@@ -119,8 +118,8 @@ def test_profile_pass3_runs_against_db_and_writes_jsonl(
     summary_path = out.with_suffix(out.suffix + ".summary.json")
     assert summary_path.exists()
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    assert summary["count"] == 1
-    assert summary["successes"] == 1
+    assert summary["count"] == 2
+    assert summary["successes"] == 2
     assert summary["wallclock_seconds"] >= 0
     assert summary["workers"] == 1
 

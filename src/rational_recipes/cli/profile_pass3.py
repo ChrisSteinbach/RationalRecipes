@@ -35,7 +35,7 @@ from rational_recipes.scrape.parse import OLLAMA_BASE_URL
 from rational_recipes.scrape.pass3_titles import (
     Pass3CallTiming,
     Pass3Stats,
-    build_default_batch_title_fn,
+    build_default_title_fn,
     format_pass3_summary,
     run_pass3,
     summarize_pass3_timings,
@@ -130,7 +130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
-    # Thread-safe collector. Batched calls run unlocked under the
+    # Thread-safe collector. LLM calls run unlocked under the
     # ThreadPool, so the append must be guarded.
     collected: list[Pass3CallTiming] = []
     lock = threading.Lock()
@@ -139,7 +139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         with lock:
             collected.append(rec)
 
-    batch_title_fn = build_default_batch_title_fn(
+    title_fn = build_default_title_fn(
         args.model,
         base_url=args.ollama_url,
         timing_collector=collect,
@@ -151,7 +151,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         wall_start = time.monotonic()
         run_pass3(
             db=db,
-            batch_title_fn=batch_title_fn,
+            title_fn=title_fn,
             max_workers=args.pass3_workers,
             force=args.force,
             stats=stats,
