@@ -1,0 +1,845 @@
+{
+  "schema": "v2",
+  "runs": [
+    {
+      "model": "gemma4:e2b",
+      "ollama_url": "http://192.168.50.189:11434",
+      "retry_idx": 0,
+      "english": [
+        {
+          "line": "4 large eggs",
+          "quantity": 4.0,
+          "unit": "LARGE",
+          "ingredient": "egg",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 7.564830136005185
+        },
+        {
+          "line": "2 eggs",
+          "quantity": 2.0,
+          "unit": "LARGE",
+          "ingredient": "egg",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.692997985999682
+        },
+        {
+          "line": "3 eggs",
+          "quantity": 3.0,
+          "unit": "MEDIUM",
+          "ingredient": "egg",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.8431642619980266
+        },
+        {
+          "line": "4 hamburger buns",
+          "quantity": 4.0,
+          "unit": "MEDIUM",
+          "ingredient": "bun",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.8203571360063506
+        },
+        {
+          "line": "4 yellow onions",
+          "quantity": 4.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9233602390013402
+        },
+        {
+          "line": "2 cloves garlic",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "garlic",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.919141081001726
+        },
+        {
+          "line": "2 sticks margarine",
+          "quantity": 2.0,
+          "unit": "stick",
+          "ingredient": "margarine",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9220279799919808
+        },
+        {
+          "line": "12 slices bread",
+          "quantity": 12.0,
+          "unit": "slice",
+          "ingredient": "bread",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.716213705993141
+        },
+        {
+          "line": "3 sliced carrots",
+          "quantity": 3.0,
+          "unit": "MEDIUM",
+          "ingredient": "carrot",
+          "preparation": "sliced",
+          "failed": false,
+          "latency_s": 0.8246496240026318
+        },
+        {
+          "line": "6 chicken bouillon cubes",
+          "quantity": 6.0,
+          "unit": "g",
+          "ingredient": "bouillon cube",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9156350959965494
+        },
+        {
+          "line": "2 buttons garlic",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "button",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.7168490620097145
+        },
+        {
+          "line": "2 stalks celery",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "celery",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.7167523480020463
+        },
+        {
+          "line": "4 medium tomatoes",
+          "quantity": 4.0,
+          "unit": "MEDIUM",
+          "ingredient": "tomato",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.7178820570115931
+        },
+        {
+          "line": "3 small potatoes",
+          "quantity": 3.0,
+          "unit": "LARGE",
+          "ingredient": "potato",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.8528618019918213
+        },
+        {
+          "line": "1 onion, chopped",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.7347144399973331
+        },
+        {
+          "line": "2 eggs, beaten",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "egg",
+          "preparation": "beaten",
+          "failed": false,
+          "latency_s": 0.7184240700007649
+        },
+        {
+          "line": "1 large onion, chopped",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.8678966679872246
+        },
+        {
+          "line": "1 medium onion, chopped",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.7169946299982257
+        },
+        {
+          "line": "1 small onion, thinly sliced",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "sliced",
+          "failed": false,
+          "latency_s": 1.0277893640013644
+        },
+        {
+          "line": "1/2 c. onion, chopped",
+          "quantity": 0.5,
+          "unit": "cup",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.9185211709991563
+        },
+        {
+          "line": "1/4 c. confectioners sugar, sifted",
+          "quantity": 0.25,
+          "unit": "cup",
+          "ingredient": "sugar",
+          "preparation": "sifted",
+          "failed": false,
+          "latency_s": 0.9252036060061073
+        },
+        {
+          "line": "2 sticks margarine, melted",
+          "quantity": 2.0,
+          "unit": "stick",
+          "ingredient": "margarine",
+          "preparation": "melted",
+          "failed": false,
+          "latency_s": 0.9166819980018772
+        },
+        {
+          "line": "1 tsp. basil, crushed",
+          "quantity": 1.0,
+          "unit": "tsp",
+          "ingredient": "basil",
+          "preparation": "crushed",
+          "failed": false,
+          "latency_s": 0.927891172003001
+        },
+        {
+          "line": "1 bay leaf, crushed",
+          "quantity": 1.0,
+          "unit": "none",
+          "ingredient": "bay leaf",
+          "preparation": "crushed",
+          "failed": false,
+          "latency_s": 0.915281118999701
+        },
+        {
+          "line": "1 medium clove garlic, minced",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "garlic",
+          "preparation": "minced",
+          "failed": false,
+          "latency_s": 0.9228911569953198
+        },
+        {
+          "line": "3 lb. butternut squash, peeled, seeded and cubed",
+          "quantity": 3.0,
+          "unit": "lb",
+          "ingredient": "squash",
+          "preparation": "peeled, seeded and cubed",
+          "failed": false,
+          "latency_s": 0.7245890219928697
+        },
+        {
+          "line": "2 c. banana, chopped",
+          "quantity": 2.0,
+          "unit": "cup",
+          "ingredient": "banana",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.6802803239988862
+        },
+        {
+          "line": "2 stalks celery, finely chopped",
+          "quantity": 2.0,
+          "unit": "stalk",
+          "ingredient": "celery",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.7490675169974566
+        },
+        {
+          "line": "1 can cream of chicken soup",
+          "quantity": 1.0,
+          "unit": "can",
+          "ingredient": "cream of chicken soup",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.8151962459960487
+        },
+        {
+          "line": "1 can cream of mushroom soup",
+          "quantity": 1.0,
+          "unit": "can",
+          "ingredient": "cream of mushroom soup",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 1.0241855919884983
+        }
+      ],
+      "swedish": [],
+      "multilingual": [],
+      "errors": []
+    },
+    {
+      "model": "gemma4:e2b",
+      "ollama_url": "http://192.168.50.189:11434",
+      "retry_idx": 1,
+      "english": [
+        {
+          "line": "4 large eggs",
+          "quantity": 4.0,
+          "unit": "LARGE",
+          "ingredient": "egg",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9200435880047735
+        },
+        {
+          "line": "2 eggs",
+          "quantity": 2.0,
+          "unit": "LARGE",
+          "ingredient": "egg",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9021094240015373
+        },
+        {
+          "line": "3 eggs",
+          "quantity": 3.0,
+          "unit": "MEDIUM",
+          "ingredient": "egg",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.8650745560007636
+        },
+        {
+          "line": "4 hamburger buns",
+          "quantity": 4.0,
+          "unit": "MEDIUM",
+          "ingredient": "bun",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9991487749939552
+        },
+        {
+          "line": "4 yellow onions",
+          "quantity": 4.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9207627479918301
+        },
+        {
+          "line": "2 cloves garlic",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "garlic",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.7162008270097431
+        },
+        {
+          "line": "2 sticks margarine",
+          "quantity": 2.0,
+          "unit": "stick",
+          "ingredient": "margarine",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.8198042570002144
+        },
+        {
+          "line": "12 slices bread",
+          "quantity": 12.0,
+          "unit": "slice",
+          "ingredient": "bread",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9209973979886854
+        },
+        {
+          "line": "3 sliced carrots",
+          "quantity": 3.0,
+          "unit": "MEDIUM",
+          "ingredient": "carrot",
+          "preparation": "sliced",
+          "failed": false,
+          "latency_s": 0.9227861120016314
+        },
+        {
+          "line": "6 chicken bouillon cubes",
+          "quantity": 6.0,
+          "unit": "MEDIUM",
+          "ingredient": "bouillon cube",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.7155447460099822
+        },
+        {
+          "line": "2 buttons garlic",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "button",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.716816275002202
+        },
+        {
+          "line": "2 stalks celery",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "celery",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.7174262360058492
+        },
+        {
+          "line": "4 medium tomatoes",
+          "quantity": 4.0,
+          "unit": "MEDIUM",
+          "ingredient": "tomato",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.7262431949930033
+        },
+        {
+          "line": "3 small potatoes",
+          "quantity": 3.0,
+          "unit": "LARGE",
+          "ingredient": "potato",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.8102737300068839
+        },
+        {
+          "line": "1 onion, chopped",
+          "quantity": 1.0,
+          "unit": "g",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.9205343020003056
+        },
+        {
+          "line": "2 eggs, beaten",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "egg",
+          "preparation": "beaten",
+          "failed": false,
+          "latency_s": 0.9278082990058465
+        },
+        {
+          "line": "1 large onion, chopped",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.9171881850052159
+        },
+        {
+          "line": "1 medium onion, chopped",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.9205985589942429
+        },
+        {
+          "line": "1 small onion, thinly sliced",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "sliced",
+          "failed": false,
+          "latency_s": 0.7156678199971793
+        },
+        {
+          "line": "1/2 c. onion, chopped",
+          "quantity": 0.5,
+          "unit": "cup",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.7718301870045252
+        },
+        {
+          "line": "1/4 c. confectioners sugar, sifted",
+          "quantity": 0.25,
+          "unit": "cup",
+          "ingredient": "sugar",
+          "preparation": "sifted",
+          "failed": false,
+          "latency_s": 0.9758337660023244
+        },
+        {
+          "line": "2 sticks margarine, melted",
+          "quantity": 2.0,
+          "unit": "stick",
+          "ingredient": "margarine",
+          "preparation": "melted",
+          "failed": false,
+          "latency_s": 0.7097075560013764
+        },
+        {
+          "line": "1 tsp. basil, crushed",
+          "quantity": 1.0,
+          "unit": "tsp",
+          "ingredient": "basil",
+          "preparation": "crushed",
+          "failed": false,
+          "latency_s": 0.8298846109973965
+        },
+        {
+          "line": "1 bay leaf, crushed",
+          "quantity": 1.0,
+          "unit": "whole",
+          "ingredient": "bay leaf",
+          "preparation": "crushed",
+          "failed": false,
+          "latency_s": 0.9127263690024847
+        },
+        {
+          "line": "1 medium clove garlic, minced",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "garlic",
+          "preparation": "minced",
+          "failed": false,
+          "latency_s": 0.6934382219915278
+        },
+        {
+          "line": "3 lb. butternut squash, peeled, seeded and cubed",
+          "quantity": 3.0,
+          "unit": "lb",
+          "ingredient": "squash",
+          "preparation": "peeled, seeded and cubed",
+          "failed": false,
+          "latency_s": 0.8427081400004681
+        },
+        {
+          "line": "2 c. banana, chopped",
+          "quantity": 2.0,
+          "unit": "cup",
+          "ingredient": "banana",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.920215942998766
+        },
+        {
+          "line": "2 stalks celery, finely chopped",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "celery",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.7171605149924289
+        },
+        {
+          "line": "1 can cream of chicken soup",
+          "quantity": 1.0,
+          "unit": "can",
+          "ingredient": "cream of chicken soup",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.7170605620049173
+        },
+        {
+          "line": "1 can cream of mushroom soup",
+          "quantity": 1.0,
+          "unit": "can",
+          "ingredient": "cream of mushroom soup",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 1.0233660990052158
+        }
+      ],
+      "swedish": [],
+      "multilingual": [],
+      "errors": []
+    },
+    {
+      "model": "gemma4:e2b",
+      "ollama_url": "http://192.168.50.189:11434",
+      "retry_idx": 2,
+      "english": [
+        {
+          "line": "4 large eggs",
+          "quantity": 4.0,
+          "unit": "LARGE",
+          "ingredient": "egg",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9213430160016287
+        },
+        {
+          "line": "2 eggs",
+          "quantity": 2.0,
+          "unit": "LARGE",
+          "ingredient": "egg",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9217500950035173
+        },
+        {
+          "line": "3 eggs",
+          "quantity": 3.0,
+          "unit": "MEDIUM",
+          "ingredient": "egg",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9285542720026569
+        },
+        {
+          "line": "4 hamburger buns",
+          "quantity": 4.0,
+          "unit": "MEDIUM",
+          "ingredient": "bun",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9161390119988937
+        },
+        {
+          "line": "4 yellow onions",
+          "quantity": 4.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.7148264299903531
+        },
+        {
+          "line": "2 cloves garlic",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "garlic",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.718520800000988
+        },
+        {
+          "line": "2 sticks margarine",
+          "quantity": 2.0,
+          "unit": "stick",
+          "ingredient": "margarine",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.8172919729986461
+        },
+        {
+          "line": "12 slices bread",
+          "quantity": 12.0,
+          "unit": "slice",
+          "ingredient": "bread",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.921696493998752
+        },
+        {
+          "line": "3 sliced carrots",
+          "quantity": 3.0,
+          "unit": "MEDIUM",
+          "ingredient": "carrot",
+          "preparation": "sliced",
+          "failed": false,
+          "latency_s": 0.8206110489991261
+        },
+        {
+          "line": "6 chicken bouillon cubes",
+          "quantity": 6.0,
+          "unit": "MEDIUM",
+          "ingredient": "bouillon cube",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.6645307909930125
+        },
+        {
+          "line": "2 buttons garlic",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "button",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.6647401189984521
+        },
+        {
+          "line": "2 stalks celery",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "celery",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.8064366039907327
+        },
+        {
+          "line": "4 medium tomatoes",
+          "quantity": 4.0,
+          "unit": "MEDIUM",
+          "ingredient": "tomato",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.65979283300112
+        },
+        {
+          "line": "3 small potatoes",
+          "quantity": 3.0,
+          "unit": "LARGE",
+          "ingredient": "potato",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.787068977006129
+        },
+        {
+          "line": "1 onion, chopped",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 1.025562174996594
+        },
+        {
+          "line": "2 eggs, beaten",
+          "quantity": 2.0,
+          "unit": "MEDIUM",
+          "ingredient": "egg",
+          "preparation": "beaten",
+          "failed": false,
+          "latency_s": 0.9207232920016395
+        },
+        {
+          "line": "1 large onion, chopped",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.9227537310071057
+        },
+        {
+          "line": "1 medium onion, chopped",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.7282059160061181
+        },
+        {
+          "line": "1 small onion, thinly sliced",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "onion",
+          "preparation": "sliced",
+          "failed": false,
+          "latency_s": 0.8057559949957067
+        },
+        {
+          "line": "1/2 c. onion, chopped",
+          "quantity": 0.5,
+          "unit": "cup",
+          "ingredient": "onion",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.9234254000039073
+        },
+        {
+          "line": "1/4 c. confectioners sugar, sifted",
+          "quantity": 0.25,
+          "unit": "cup",
+          "ingredient": "sugar",
+          "preparation": "sifted",
+          "failed": false,
+          "latency_s": 0.9206413959909696
+        },
+        {
+          "line": "2 sticks margarine, melted",
+          "quantity": 2.0,
+          "unit": "tbsp",
+          "ingredient": "margarine",
+          "preparation": "melted",
+          "failed": false,
+          "latency_s": 0.9272195590019692
+        },
+        {
+          "line": "1 tsp. basil, crushed",
+          "quantity": 1.0,
+          "unit": "tsp",
+          "ingredient": "basil",
+          "preparation": "crushed",
+          "failed": false,
+          "latency_s": 0.9154324800038012
+        },
+        {
+          "line": "1 bay leaf, crushed",
+          "quantity": 1.0,
+          "unit": "none",
+          "ingredient": "bay leaf",
+          "preparation": "crushed",
+          "failed": false,
+          "latency_s": 0.8190502380020916
+        },
+        {
+          "line": "1 medium clove garlic, minced",
+          "quantity": 1.0,
+          "unit": "MEDIUM",
+          "ingredient": "garlic",
+          "preparation": "minced",
+          "failed": false,
+          "latency_s": 0.7308466160029639
+        },
+        {
+          "line": "3 lb. butternut squash, peeled, seeded and cubed",
+          "quantity": 3.0,
+          "unit": "lb",
+          "ingredient": "squash",
+          "preparation": "peeled, seeded and cubed",
+          "failed": false,
+          "latency_s": 0.9115029130043695
+        },
+        {
+          "line": "2 c. banana, chopped",
+          "quantity": 2.0,
+          "unit": "cup",
+          "ingredient": "banana",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.9193415910121985
+        },
+        {
+          "line": "2 stalks celery, finely chopped",
+          "quantity": 2.0,
+          "unit": "stalk",
+          "ingredient": "celery",
+          "preparation": "chopped",
+          "failed": false,
+          "latency_s": 0.9207492940040538
+        },
+        {
+          "line": "1 can cream of chicken soup",
+          "quantity": 1.0,
+          "unit": "can",
+          "ingredient": "cream of chicken soup",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.9218345069966745
+        },
+        {
+          "line": "1 can cream of mushroom soup",
+          "quantity": 1.0,
+          "unit": "can",
+          "ingredient": "cream of mushroom soup",
+          "preparation": "",
+          "failed": false,
+          "latency_s": 0.7212692160101142
+        }
+      ],
+      "swedish": [],
+      "multilingual": [],
+      "errors": []
+    }
+  ]
+}

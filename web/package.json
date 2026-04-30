@@ -4,8 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "sync-catalog": "node scripts/sync-catalog.mjs",
+    "generate-manifest": "node scripts/generate-manifest.mjs",
+    "prepare-assets": "npm run sync-catalog && npm run generate-manifest",
+    "dev": "npm run prepare-assets && vite",
+    "build": "npm run prepare-assets && tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -13,6 +16,7 @@
   },
   "devDependencies": {
     "@types/sql.js": "^1.4.11",
+    "jsdom": "^26.1.0",
     "typescript": "~5.9.3",
     "vite": "^8.0.1",
     "vitest": "^4.1.2"

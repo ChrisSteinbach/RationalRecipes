@@ -1,75 +1,137 @@
-import { loadIngredientsDb } from "./db.ts";
+// App shell: load the catalog, route between catalog list and detail.
+//
+// Route state lives in the URL hash so refreshing preserves the view
+// and back/forward navigation works. Hash format:
+//   #/              → catalog
+//   #/recipe/<id>   → detail
+//
+// Since vwt.4 the catalog list queries recipes.db through CatalogRepo
+// per render, so the filter UI compiles to SQL WHERE clauses. The full
+// in-memory Catalog stays loaded for detail-view lookup and toolbar
+// metadata (categories, total count).
 
-type Counts = {
-  foods: number;
-  synonyms: number;
-  densities: number;
-  portions: number;
-};
+import "./styles.css";
+import {
+  type Route,
+  findRecipe,
+  inMemoryFilter,
+  parseRoute,
+  routeToHash,
+  viewStateToFilters,
+} from "./app_routing.ts";
+import { type Catalog, type CuratedRecipe, loadCatalog } from "./catalog.ts";
+import { type CatalogRepo, loadCatalogRepo } from "./catalog_repo.ts";
+import {
+  type CatalogViewState,
+  initialCatalogState,
+  renderCatalog,
+} from "./catalog_view.ts";
+import {
+  type DetailViewState,
+  initialDetailState,
+  renderDetail,
+} from "./detail_view.ts";
+import { registerServiceWorker } from "./sw-register.ts";
 
-function countRows(db: import("sql.js").Database, table: string): number {
-  const result = db.exec(`SELECT COUNT(*) FROM ${table}`);
-  return result[0].values[0][0] as number;
+interface AppState {
+  catalog: Catalog;
+  repo: CatalogRepo | null;
+  catalogView: CatalogViewState;
+  detailView: DetailViewState;
+  route: Route;
 }
 
-function sampleLookup(
-  db: import("sql.js").Database,
-  name: string,
-): { food: string; density?: number } | null {
-  // Mirrors the Python Factory.get_by_name() lookup: match on synonym, then
-  // join back to food and any density row.
-  const rows = db.exec(
-    `SELECT f.name, d.g_per_ml
-     FROM synonym s
-     JOIN food f ON f.id = s.food_id
-     LEFT JOIN density d ON d.food_id = f.id
-     WHERE s.name = ? COLLATE NOCASE
-     LIMIT 1`,
-    [name],
-  );
-  if (rows.length === 0) return null;
-  const [foodName, density] = rows[0].values[0];
-  return {
-    food: foodName as string,
-    density: density == null ? undefined : (density as number),
-  };
+function filteredRecipes(state: AppState): CuratedRecipe[] {
+  if (state.repo) return state.repo.listRecipes(viewStateToFilters(state.catalogView));
+  return inMemoryFilter(state.catalog, state.catalogView);
+}
+
+function render(container: HTMLElement, state: AppState): void {
+  if (state.route.kind === "detail") {
+    const recipe = findRecipe(state.catalog, state.route.recipeId);
+    if (recipe) {
+      renderDetail(container, recipe, state.detailView, {
+        onBack: () => navigate({ kind: "catalog" }),
+      });
+      return;
+    }
+    state.route = { kind: "catalog" };
+  }
+  renderCatalog(container, state.catalog, filteredRecipes(state), state.catalogView, {
+    onQueryChange(q) {
+      state.catalogView.query = q;
+      render(container, state);
+    },
+    onCategoryChange(c) {
+      state.catalogView.category = c;
+      render(container, state);
+    },
+    onMinSampleSizeChange(n) {
+      state.catalogView.minSampleSize = n;
+      render(container, state);
+    },
+    onOrderByChange(o) {
+      state.catalogView.orderBy = o;
+      render(container, state);
+    },
+    onRecipeSelect(id) {
+      state.detailView = initialDetailState();
+      navigate({ kind: "detail", recipeId: id });
+    },
+  });
+}
+
+let rootState: AppState | null = null;
+let rootContainer: HTMLElement | null = null;
+
+function navigate(route: Route): void {
+  if (!rootState || !rootContainer) return;
+  rootState.route = route;
+  const nextHash = routeToHash(route);
+  if (location.hash !== nextHash) {
+    location.hash = nextHash;
+    return;
+  }
+  render(rootContainer, rootState);
 }
 
 async function main(): Promise<void> {
-  const app = document.querySelector<HTMLDivElement>("#app")!;
-  app.innerHTML = `<h1>RationalRecipes</h1><p id="status">Loading ingredients database…</p>`;
-  const status = app.querySelector<HTMLParagraphElement>("#status")!;
+  const app = document.querySelector<HTMLDivElement>("#app");
+  if (!app) return;
+  app.innerHTML = `<p class="app-loading">Loading catalog…</p>`;
 
+  const useJson = new URLSearchParams(location.search).get("source") === "json";
+  let catalog: Catalog;
+  let repo: CatalogRepo | null = null;
   try {
-    const db = await loadIngredientsDb();
-
-    const counts: Counts = {
-      foods: countRows(db, "food"),
-      synonyms: countRows(db, "synonym"),
-      densities: countRows(db, "density"),
-      portions: countRows(db, "portion"),
-    };
-
-    const flour = sampleLookup(db, "all purpose flour");
-    const water = sampleLookup(db, "water");
-
-    status.innerHTML = `
-      <strong>Database loaded.</strong>
-      ${counts.foods.toLocaleString()} foods,
-      ${counts.synonyms.toLocaleString()} synonyms,
-      ${counts.densities.toLocaleString()} densities,
-      ${counts.portions.toLocaleString()} portions.
-      <br>Sample lookups —
-      all-purpose flour: <code>${flour ? `${flour.food} (${flour.density ?? "no density"} g/ml)` : "not found"}</code>,
-      water: <code>${water ? `${water.food} (${water.density ?? "no density"} g/ml)` : "not found"}</code>
-    `;
-
-    // Expose for ad-hoc console poking during development.
-    (window as unknown as { db: typeof db }).db = db;
+    if (useJson) {
+      catalog = await loadCatalog();
+    } else {
+      repo = await loadCatalogRepo();
+      catalog = repo.toCatalog();
+    }
   } catch (err) {
-    status.textContent = `Failed to load database: ${(err as Error).message}`;
+    app.innerHTML = `<p class="app-error">Failed to load catalog: ${(err as Error).message}</p>`;
     throw err;
   }
+
+  rootState = {
+    catalog,
+    repo,
+    catalogView: initialCatalogState(),
+    detailView: initialDetailState(),
+    route: parseRoute(location.hash),
+  };
+  rootContainer = app;
+
+  window.addEventListener("hashchange", () => {
+    if (!rootState || !rootContainer) return;
+    rootState.route = parseRoute(location.hash);
+    render(rootContainer, rootState);
+  });
+
+  render(app, rootState);
+  registerServiceWorker();
 }
 
 void main();

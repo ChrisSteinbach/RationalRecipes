@@ -1,0 +1,406 @@
+{
+  "baseline": "qwen3.6:35b-a3b",
+  "candidate": "gemma4:e2b",
+  "n_recipes": 100,
+  "n_lines": 1074,
+  "baseline_seconds": 4395.7,
+  "candidate_seconds": 449.7,
+  "speedup": 9.77,
+  "both_parsed": 1074,
+  "ing_agreement": 0.618,
+  "unit_agreement": 0.644,
+  "qty_agreement": 0.934,
+  "full_agreement": 0.414,
+  "sample_disagreements": [
+    {
+      "line": "sm\u00f6r",
+      "baseline": {
+        "qty": 0.0,
+        "unit": "g",
+        "ing": "sm\u00f6r"
+      },
+      "candidate": {
+        "qty": 3.0,
+        "unit": "medium",
+        "ing": "sm\u00f6r"
+      }
+    },
+    {
+      "line": "sm\u00f6r (till stekning)",
+      "baseline": {
+        "qty": 0.0,
+        "unit": "g",
+        "ing": "sm\u00f6r"
+      },
+      "candidate": {
+        "qty": 3.0,
+        "unit": "medium",
+        "ing": "sm\u00f6r"
+      }
+    },
+    {
+      "line": "2 stora \u00e4gg (\u00e0 ca 70 g)",
+      "baseline": {
+        "qty": 2.0,
+        "unit": "LARGE",
+        "ing": "\u00e4gg"
+      },
+      "candidate": {
+        "qty": 2.0,
+        "unit": "LARGE",
+        "ing": "egg"
+      }
+    },
+    {
+      "line": "l\u00f6nnsirap",
+      "baseline": {
+        "qty": 0.0,
+        "unit": "g",
+        "ing": "l\u00f6nnsirap"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "tsp",
+        "ing": "linserap"
+      }
+    },
+    {
+      "line": "2 avokado",
+      "baseline": {
+        "qty": 2.0,
+        "unit": "MEDIUM",
+        "ing": "avokado"
+      },
+      "candidate": {
+        "qty": 2.0,
+        "unit": "MEDIUM",
+        "ing": "avocado"
+      }
+    },
+    {
+      "line": "2 msk olivolja",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "msk",
+        "ing": "olivolja"
+      },
+      "candidate": {
+        "qty": 2.0,
+        "unit": "msk",
+        "ing": "olivolja"
+      }
+    },
+    {
+      "line": "salt och peppar",
+      "baseline": {
+        "qty": 0.0,
+        "unit": "to taste",
+        "ing": "salt och peppar"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "pinch",
+        "ing": "salt"
+      }
+    },
+    {
+      "line": "1 r\u00f6dl\u00f6k",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "MEDIUM",
+        "ing": "r\u00f6dl\u00f6k"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "l",
+        "ing": "\u00f6ljuk"
+      }
+    },
+    {
+      "line": "1 f\u00f6rpackning krossade tomater med basilika (\u00e0 500 g)",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "f\u00f6rpackning",
+        "ing": "krossade tomater med basilika"
+      },
+      "candidate": {
+        "qty": 500.0,
+        "unit": "g",
+        "ing": "tomater"
+      }
+    },
+    {
+      "line": "2 dl riven ost (max 17 %)",
+      "baseline": {
+        "qty": 200.0,
+        "unit": "dl",
+        "ing": "riven ost"
+      },
+      "candidate": {
+        "qty": 2.0,
+        "unit": "dl",
+        "ing": "ost"
+      }
+    },
+    {
+      "line": "250 g k\u00f6rsb\u00e4rstomater",
+      "baseline": {
+        "qty": 250.0,
+        "unit": "g",
+        "ing": "k\u00f6rsb\u00e4rstomater"
+      },
+      "candidate": {
+        "qty": 250.0,
+        "unit": "g",
+        "ing": "k\u00fcrsbartstomater"
+      }
+    },
+    {
+      "line": "1/2 f\u00f6rp snackgurka (\u00e0 250 g)",
+      "baseline": {
+        "qty": 0.5,
+        "unit": "f\u00f6rp",
+        "ing": "snackgurka"
+      },
+      "candidate": {
+        "qty": 125.0,
+        "unit": "g",
+        "ing": "f\u0151rp snackgurka"
+      }
+    },
+    {
+      "line": "salt",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "g",
+        "ing": "salt"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "pinch",
+        "ing": "salt"
+      }
+    },
+    {
+      "line": "peppar",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "g",
+        "ing": "peppar"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "pinch",
+        "ing": "pepper"
+      }
+    },
+    {
+      "line": "4 port couscous eller annat gryn",
+      "baseline": {
+        "qty": 4.0,
+        "unit": "port",
+        "ing": "couscous"
+      },
+      "candidate": {
+        "qty": 4.0,
+        "unit": "g",
+        "ing": "couscous"
+      }
+    },
+    {
+      "line": "1 msk olja",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "msk",
+        "ing": "olja"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "tsp",
+        "ing": "olja"
+      }
+    },
+    {
+      "line": "4 port ris eller \u00e4ggnudlar",
+      "baseline": {
+        "qty": 4.0,
+        "unit": "port",
+        "ing": "ris eller \u00e4ggnudlar"
+      },
+      "candidate": {
+        "qty": 4.0,
+        "unit": "medium",
+        "ing": "egg noodle"
+      }
+    },
+    {
+      "line": "2 vitl\u00f6ksklyftor",
+      "baseline": {
+        "qty": 2.0,
+        "unit": "vitl\u00f6ksklyftor",
+        "ing": "vitl\u00f6k"
+      },
+      "candidate": {
+        "qty": 2.0,
+        "unit": "MEDIUM",
+        "ing": "vitl\u00f6ksklyftor"
+      }
+    },
+    {
+      "line": "1 msk riven f\u00e4rsk ingef\u00e4ra",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "msk",
+        "ing": "riven f\u00e4rsk ingef\u00e4ra"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "tsp",
+        "ing": "ingef\u00e4ra"
+      }
+    },
+    {
+      "line": "1 lime",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "lime",
+        "ing": "lime"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "MEDIUM",
+        "ing": "lime"
+      }
+    },
+    {
+      "line": "salt och peppar",
+      "baseline": {
+        "qty": 0.0,
+        "unit": "g",
+        "ing": "salt och peppar"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "pinch",
+        "ing": "salt"
+      }
+    },
+    {
+      "line": "1/2 blomk\u00e5lshuvud",
+      "baseline": {
+        "qty": 0.5,
+        "unit": "blomk\u00e5lshuvud",
+        "ing": "blomk\u00e5lshuvud"
+      },
+      "candidate": {
+        "qty": 0.5,
+        "unit": "g",
+        "ing": "blomk\u00e5lshuvud"
+      }
+    },
+    {
+      "line": "5 dl gr\u00f6nsaksbuljong (vatten och t\u00e4rning eller fond)",
+      "baseline": {
+        "qty": 5.0,
+        "unit": "dl",
+        "ing": "gr\u00f6nsaksbuljong"
+      },
+      "candidate": {
+        "qty": 5.0,
+        "unit": "dl",
+        "ing": "vegetable broth"
+      }
+    },
+    {
+      "line": "1 gul l\u00f6k",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "gul",
+        "ing": "l\u00f6k"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "g",
+        "ing": "l\u00f6k"
+      }
+    },
+    {
+      "line": "1 vitl\u00f6ksklyfta",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "MEDIUM",
+        "ing": "vitl\u00f6ksklyfta"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "g",
+        "ing": "vitl\u00f6ksklyfta"
+      }
+    },
+    {
+      "line": "2 msk olja",
+      "baseline": {
+        "qty": 2.0,
+        "unit": "msk",
+        "ing": "olja"
+      },
+      "candidate": {
+        "qty": 2.0,
+        "unit": "tsp",
+        "ing": "oil"
+      }
+    },
+    {
+      "line": "4 kycklingklubbor",
+      "baseline": {
+        "qty": 4.0,
+        "unit": "MEDIUM",
+        "ing": "kycklingklubba"
+      },
+      "candidate": {
+        "qty": 4.0,
+        "unit": "MEDIUM",
+        "ing": "chicken"
+      }
+    },
+    {
+      "line": "peppar",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "g",
+        "ing": "peppar"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "g",
+        "ing": "pepper"
+      }
+    },
+    {
+      "line": "2 avokador",
+      "baseline": {
+        "qty": 2.0,
+        "unit": "MEDIUM",
+        "ing": "avokado"
+      },
+      "candidate": {
+        "qty": 2.0,
+        "unit": "MEDIUM",
+        "ing": "avocado"
+      }
+    },
+    {
+      "line": "1 kruka sallad (g\u00e4rna r\u00f6d/gr\u00f6n)",
+      "baseline": {
+        "qty": 1.0,
+        "unit": "kruka",
+        "ing": "sallad"
+      },
+      "candidate": {
+        "qty": 1.0,
+        "unit": "g",
+        "ing": "kruka sallad"
+      }
+    }
+  ]
+}

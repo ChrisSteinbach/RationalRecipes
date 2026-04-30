@@ -37,3 +37,27 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: pytest --cov=rational_recipes --cov-report=xml
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      # sync-catalog needs the pipeline artifact; generate it fresh from
+      # sample_input so CI doesn't depend on a committed copy drifting.
+      - name: Regenerate catalog artifact
+        working-directory: ${{ github.workspace }}
+        run: |
+          pip install -e ".[dev]"
+          python3 scripts/export_curated_recipes.py
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

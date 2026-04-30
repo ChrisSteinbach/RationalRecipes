@@ -11,6 +11,7 @@ See scripts/build_db.py for the database build pipeline.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 _DB_PATH = Path(__file__).parent / "data" / "ingredients.db"
@@ -51,7 +52,9 @@ class Factory:
     """
 
     _INGREDIENTS: dict[str, Ingredient] = {}
+    _MISSES: set[str] = set()
     _conn: sqlite3.Connection | None = None
+    _lock: threading.Lock = threading.Lock()
 
     @classmethod
     def _get_conn(cls) -> sqlite3.Connection:
@@ -61,6 +64,36 @@ class Factory:
                 check_same_thread=False,
             )
         return cls._conn
+
+    @classmethod
+    def warm_cache(cls) -> int:
+        """Pre-load all ingredient synonyms into the in-memory cache.
+
+        Call once at startup before batch operations to avoid per-lookup
+        DB round-trips during the hot path. Returns the number of foods
+        loaded. Idempotent — subsequent calls are near-instant.
+        """
+        with cls._lock:
+            if cls._INGREDIENTS:
+                return 0  # Already warm
+            conn = cls._get_conn()
+            food_ids = conn.execute("SELECT id FROM food").fetchall()
+            loaded = 0
+            for (food_id,) in food_ids:
+                # Re-use _load_from_db logic via any synonym for this food
+                row = conn.execute(
+                    "SELECT name FROM synonym WHERE food_id = ? LIMIT 1",
+                    (food_id,),
+                ).fetchone()
+                if row is None:
+                    continue
+                name = row[0]
+                if name.lower().strip() in cls._INGREDIENTS:
+                    continue
+                ingredient = cls._load_from_db(name.lower().strip())
+                if ingredient is not None:
+                    loaded += 1
+            return loaded
 
     @classmethod
     def register(cls, ingredient: Ingredient) -> None:
@@ -73,25 +106,33 @@ class Factory:
         """Lookup an Ingredient instance by name.
 
         First checks the in-memory cache, then queries the SQLite database.
-        Raises KeyError if the ingredient is not found.
+        Thread-safe: the shared connection and cache are protected by a lock.
+        Caches negative lookups so repeated misses on the same name skip
+        the expensive ``_suggest`` DB query (~1ms → ~0.5us).
         """
         key = name.lower().strip()
 
-        # Check cache first
-        if key in cls._INGREDIENTS:
-            return cls._INGREDIENTS[key]
+        with cls._lock:
+            # Check positive cache
+            if key in cls._INGREDIENTS:
+                return cls._INGREDIENTS[key]
 
-        # Query the database
-        ingredient = cls._load_from_db(key)
-        if ingredient is None:
-            suggestions = cls._suggest(key)
-            if suggestions:
-                hint = "\n".join(f"  - {s}" for s in suggestions)
-                raise KeyError(f"{name!r}. Did you mean:\n{hint}")
-            raise KeyError(key)
+            # Check negative cache — skip the DB round-trip entirely
+            if key in cls._MISSES:
+                raise KeyError(key)
 
-        cls._INGREDIENTS[key] = ingredient
-        return ingredient
+            # Query the database
+            ingredient = cls._load_from_db(key)
+            if ingredient is None:
+                cls._MISSES.add(key)
+                suggestions = cls._suggest(key)
+                if suggestions:
+                    hint = "\n".join(f"  - {s}" for s in suggestions)
+                    raise KeyError(f"{name!r}. Did you mean:\n{hint}")
+                raise KeyError(key)
+
+            cls._INGREDIENTS[key] = ingredient
+            return ingredient
 
     @classmethod
     def _suggest(cls, name: str, limit: int = 5) -> list[str]:
@@ -125,7 +166,7 @@ class Factory:
 
         # Find the food via synonym
         row = conn.execute(
-            "SELECT f.id, f.name "
+            "SELECT f.id, f.name, f.canonical_name "
             "FROM synonym s JOIN food f ON f.id = s.food_id "
             "WHERE s.name = ? COLLATE NOCASE",
             (name,),
@@ -136,6 +177,7 @@ class Factory:
 
         food_id: int = row[0]
         food_name: str = row[1]
+        canonical_name: str | None = row[2]
 
         # Get density (prefer fdc_derived, then supplementary, then fao)
         density_rows = conn.execute(
@@ -194,6 +236,7 @@ class Factory:
             density_alternatives=density_alts,
             wholeunits2weight=wholeunits if wholeunits else None,
             default_wholeunit_weight=default_wholeunit,
+            canonical_name=canonical_name,
         )
 
         # Cache all synonyms
@@ -215,12 +258,14 @@ class Ingredient:
         density_alternatives: list[tuple[float, str]] | None = None,
         wholeunits2weight: dict[str, float] | None = None,
         default_wholeunit_weight: str | None = None,
+        canonical_name: str | None = None,
     ) -> None:
         self._conversion = conversion
         self._density_source = density_source
         self._density_alternatives = density_alternatives or []
         self._name = names[0]
         self._names = names
+        self._canonical_name = canonical_name
         self._wholeunits2grams: dict[str, float] = {}
         if wholeunits2weight is not None:
             for unit, weight in wholeunits2weight.items():
@@ -234,6 +279,13 @@ class Ingredient:
     def name(self) -> str:
         """Returns ingredient name"""
         return self._name
+
+    def canonical_name(self) -> str:
+        """Preferred short English form for cross-language comparison.
+
+        Falls back to ``name()`` when no canonical was set for this food.
+        """
+        return self._canonical_name or self._name
 
     def synonyms(self) -> list[str]:
         """Returns a list of ingredient synonyms"""
