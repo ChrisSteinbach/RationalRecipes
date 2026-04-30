@@ -18,6 +18,7 @@ from rational_recipes.scrape.grouping import (
 )
 from rational_recipes.scrape.parse import ParsedIngredient
 from rational_recipes.scrape.wdc import (
+    NEUTRAL_PROMPT,
     WDCLoader,
     WDCRecipe,
     extract_batch,
@@ -414,6 +415,31 @@ class TestExtractIngredientNames:
 
         assert result.ingredient_names == frozenset({"flour", "milk"})
 
+    def test_populates_names_with_english_parse_output(self) -> None:
+        """Pass 1 (e4s) emits English directly; canonicalize is a passthrough."""
+        recipe = WDCRecipe(
+            row_id=0,
+            host="test.com",
+            title="Test",
+            ingredients=("3 dl vetemjöl", "2 ägg", "5 dl mjölk"),
+            page_url="http://test.com/eng",
+            cooking_methods=frozenset(),
+            durations=(),
+            recipe_category="",
+            keywords=(),
+            recipe_yield="",
+        )
+        mock_results = [
+            ParsedIngredient(3.0, "dl", "flour", "", "3 dl vetemjöl"),
+            ParsedIngredient(2.0, "MEDIUM", "egg", "", "2 ägg"),
+            ParsedIngredient(5.0, "dl", "milk", "", "5 dl mjölk"),
+        ]
+        with patch("rational_recipes.scrape.wdc.parse_ingredient_line") as mock_parse:
+            mock_parse.side_effect = mock_results
+            result = extract_ingredient_names(recipe)
+
+        assert result.ingredient_names == frozenset({"flour", "egg", "milk"})
+
     def test_unknown_names_preserved(self) -> None:
         """LLM outputs with no DB match survive as lowercased-stripped originals."""
         recipe = WDCRecipe(
@@ -434,6 +460,16 @@ class TestExtractIngredientNames:
             )
             result = extract_ingredient_names(recipe)
         assert result.ingredient_names == frozenset({"unknown_x"})
+
+
+class TestNeutralPrompt:
+    """Bead e4s: NEUTRAL_PROMPT must instruct English translation at Pass 1."""
+
+    def test_prompt_mentions_english(self) -> None:
+        assert "English" in NEUTRAL_PROMPT
+
+    def test_prompt_mentions_translate(self) -> None:
+        assert "Translate" in NEUTRAL_PROMPT
 
 
 class TestExtractBatch:

@@ -635,6 +635,107 @@ class TestParsedLineCache:
         assert db.count_parsed_lines(corpus="recipenlg") == 1
 
 
+class TestInvalidateNonEnglishParses:
+    """Bead e4s: drop cached parses whose payload contains non-ASCII bytes."""
+
+    def _row(
+        self,
+        *,
+        recipe_id: str,
+        line_index: int,
+        raw_line: str,
+        parsed_json: str | None,
+    ) -> ParsedLineRow:
+        return ParsedLineRow(
+            corpus="wdc",
+            recipe_id=recipe_id,
+            line_index=line_index,
+            raw_line=raw_line,
+            parsed_json=parsed_json,
+            model="gemma4:e2b",
+            seed=42,
+        )
+
+    def test_deletes_only_non_ascii_rows(self) -> None:
+        db = CatalogDB.in_memory()
+        rows = [
+            self._row(
+                recipe_id="r-en",
+                line_index=0,
+                raw_line="1 cup flour",
+                parsed_json='{"quantity": 1.0, "unit": "cup", '
+                '"ingredient": "flour", "preparation": ""}',
+            ),
+            self._row(
+                recipe_id="r-sv",
+                line_index=0,
+                raw_line="3 dl vetemjöl",
+                parsed_json='{"quantity": 3.0, "unit": "dl", '
+                '"ingredient": "vetemjöl", "preparation": ""}',
+            ),
+            self._row(
+                recipe_id="r-ru",
+                line_index=0,
+                raw_line="молоко 500 мл",
+                parsed_json='{"quantity": 500.0, "unit": "мл", '
+                '"ingredient": "молоко", "preparation": ""}',
+            ),
+            self._row(
+                recipe_id="r-jp",
+                line_index=0,
+                raw_line="卵 3個",
+                parsed_json='{"quantity": 3.0, "unit": "個", '
+                '"ingredient": "卵", "preparation": ""}',
+            ),
+        ]
+        db.upsert_parsed_lines(rows)
+        assert db.count_parsed_lines() == 4
+
+        deleted = db.invalidate_non_english_parses()
+
+        assert deleted == 3
+        remaining = db.get_parsed_lines_for_recipe("wdc", "r-en")
+        assert len(remaining) == 1
+        assert remaining[0].raw_line == "1 cup flour"
+        # Non-English rows are gone.
+        assert db.get_parsed_lines_for_recipe("wdc", "r-sv") == []
+        assert db.get_parsed_lines_for_recipe("wdc", "r-ru") == []
+        assert db.get_parsed_lines_for_recipe("wdc", "r-jp") == []
+        assert db.count_parsed_lines() == 1
+
+    def test_returns_zero_when_no_non_ascii_rows(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines(
+            [
+                self._row(
+                    recipe_id="r-en",
+                    line_index=0,
+                    raw_line="1 cup flour",
+                    parsed_json='{"quantity": 1.0, "unit": "cup", '
+                    '"ingredient": "flour", "preparation": ""}',
+                ),
+            ]
+        )
+        assert db.invalidate_non_english_parses() == 0
+        assert db.count_parsed_lines() == 1
+
+    def test_skips_cached_failure_rows(self) -> None:
+        """NULL parsed_json rows (cached failures) are not deleted."""
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines(
+            [
+                self._row(
+                    recipe_id="r-fail",
+                    line_index=0,
+                    raw_line="garbled 卵",
+                    parsed_json=None,
+                ),
+            ]
+        )
+        assert db.invalidate_non_english_parses() == 0
+        assert db.count_parsed_lines() == 1
+
+
 class TestParsedSerialization:
     """vwt.16: parsed_to_json / parsed_from_json round-trip."""
 

@@ -212,9 +212,8 @@ You are an ingredient parser. Given a recipe ingredient line in ANY language,
 extract structured fields.
 
 Return ONLY a JSON object with these fields:
-- "ingredient": the base ingredient name in the ORIGINAL LANGUAGE, lowercase,
-  no preparation notes, no quantities, no units. Keep the original language —
-  do NOT translate to English.
+- "ingredient": the base ingredient name in lowercase ENGLISH. Translate from
+  the source language. No preparation notes, no quantities, no units.
 - "quantity": number (float). For fractions, convert to decimal. If no
   quantity, use 1.
 - "unit": the unit of measurement in the original language, lowercase.
@@ -226,37 +225,38 @@ Return ONLY a JSON object with these fields:
   (Japanese 個/丁/かけ, Russian шт., "burk"/"paket"/"Dose"), keep that
   counter as the unit. If no unit AND the item is NOT countable (bare
   ingredient like "smör", "to taste", "适量"), use "" (empty string).
-- "preparation": any preparation notes. Empty string if none.
+- "preparation": any preparation notes, translated to English. Empty string
+  if none.
 
 Examples in different languages:
 
 Input: "3 dl vetemjöl"
-Output: {"ingredient": "vetemjöl", "quantity": 3.0, "unit": "dl", "preparation": ""}
+Output: {"ingredient": "flour", "quantity": 3.0, "unit": "dl", "preparation": ""}
 
 Input: "3 ägg"
-Output: {"ingredient": "ägg", "quantity": 3.0, "unit": "MEDIUM", "preparation": ""}
+Output: {"ingredient": "egg", "quantity": 3.0, "unit": "MEDIUM", "preparation": ""}
 
 Input: "1 stort ägg"
-Output: {"ingredient": "ägg", "quantity": 1.0, "unit": "LARGE", "preparation": ""}
+Output: {"ingredient": "egg", "quantity": 1.0, "unit": "LARGE", "preparation": ""}
 
 Input: "2 große Eier"
-Output: {"ingredient": "eier", "quantity": 2.0, "unit": "LARGE", "preparation": ""}
+Output: {"ingredient": "egg", "quantity": 2.0, "unit": "LARGE", "preparation": ""}
 
 Input: "3 kleine Zucchini"
 Output: {"ingredient": "zucchini", "quantity": 3.0, "unit": "SMALL", "preparation": ""}
 
 Input: "卵 3個"
-Output: {"ingredient": "卵", "quantity": 3.0, "unit": "個", "preparation": ""}
+Output: {"ingredient": "egg", "quantity": 3.0, "unit": "個", "preparation": ""}
 
 Input: "молоко - 500 мл"
-Output: {"ingredient": "молоко", "quantity": 500.0, "unit": "мл", "preparation": ""}
+Output: {"ingredient": "milk", "quantity": 500.0, "unit": "мл", "preparation": ""}
 
 Input: "250 g frysta, halvtinade blåbär"
-Output: {"ingredient": "blåbär", "quantity": 250.0, "unit": "g",\
- "preparation": "frysta, halvtinade"}
+Output: {"ingredient": "blueberries", "quantity": 250.0, "unit": "g",\
+ "preparation": "frozen, half-thawed"}
 
 Input: "smör"
-Output: {"ingredient": "smör", "quantity": 1.0, "unit": "", "preparation": ""}
+Output: {"ingredient": "butter", "quantity": 1.0, "unit": "", "preparation": ""}
 """
 
 

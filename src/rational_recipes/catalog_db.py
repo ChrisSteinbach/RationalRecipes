@@ -720,6 +720,32 @@ class CatalogDB:
             return (False, None)
         return (True, row[0])
 
+    def invalidate_non_english_parses(self) -> int:
+        """Delete parsed_ingredient_lines rows whose parsed_json is non-ASCII."""
+        cursor = self._conn.execute(
+            """
+            SELECT corpus, recipe_id, line_index, parsed_json
+            FROM parsed_ingredient_lines
+            WHERE parsed_json IS NOT NULL
+            """
+        )
+        keys: list[tuple[str, str, int]] = [
+            (row[0], row[1], row[2])
+            for row in cursor
+            if row[3] is not None and any(ord(c) > 127 for c in row[3])
+        ]
+        if not keys:
+            return 0
+        with self._conn:
+            self._conn.executemany(
+                """
+                DELETE FROM parsed_ingredient_lines
+                WHERE corpus = ? AND recipe_id = ? AND line_index = ?
+                """,
+                keys,
+            )
+        return len(keys)
+
     def count_parsed_lines(
         self,
         *,

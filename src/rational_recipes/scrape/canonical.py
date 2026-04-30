@@ -7,11 +7,14 @@ synonym table. Names that don't resolve are kept in their
 lowercased-stripped original form so partial DB coverage doesn't silently
 drop ingredients from the set.
 
-A static Swedish→English dictionary (``SWEDISH_TO_ENGLISH``) covers
-common baking/cooking nouns the synonym table misses, and also rewrites
-the handful of foods whose ingredients-DB canonical is itself Swedish
-(e.g. ``olja``, ``tomat``). Translation runs both before and after the
-synonym lookup so it catches DB misses and Swedish-canonical hits alike.
+As of bead e4s, Pass 1 (the WDC ingredient-line LLM parse — see
+``scrape/wdc.py::NEUTRAL_PROMPT``) is the primary translation point: the
+LLM is instructed to emit English ingredient names directly. The
+``SWEDISH_TO_ENGLISH`` dictionary and ``_translate_swedish`` stay as
+defense-in-depth — they catch LLM misses and rewrite the handful of foods
+whose ingredients-DB canonical is itself Swedish (e.g. ``olja`` → oil,
+``tomat`` → tomato). Translation runs both before and after the synonym
+lookup so it catches DB misses and Swedish-canonical hits alike.
 """
 
 from __future__ import annotations
