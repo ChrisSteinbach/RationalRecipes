@@ -45,13 +45,6 @@ from rational_recipes.scrape.pipeline_merged import (
     MergedVariantResult,
 )
 
-# Ingredient frequency filter (vwt.26): drop ingredients that appear
-# in fewer than this fraction of a variant's source recipes.  Only
-# applied when the variant has at least _INGREDIENT_FREQ_MIN_N recipes
-# so that tiny variants aren't over-pruned.
-INGREDIENT_FREQ_THRESHOLD: float = 0.10
-_INGREDIENT_FREQ_MIN_N: int = 5
-
 _SCHEMA: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS recipes (
@@ -889,9 +882,10 @@ class CatalogDB:
     def bulk_ingredient_names(self) -> dict[str, tuple[str, ...]]:
         """Map ``variant_id`` → tuple of canonical_name ordered by ordinal.
 
-        Sourced from ``variant_ingredient_stats`` so the result reflects
-        frequency-filtered ingredients (vwt.26), not the raw
-        ``variants.canonical_ingredient_set``.
+        Sourced from ``variant_ingredient_stats``. After
+        RationalRecipes-70o this matches ``canonical_ingredient_set``,
+        because the frequency filter is applied at variant-formation
+        time so both representations agree by construction.
         """
         rows = self._conn.execute(
             """
@@ -1076,12 +1070,6 @@ def _compute_ingredient_stats(
         min_sample = sum(
             1 for row in rows if row.proportions.get(name, 0.0) > 0.0
         )
-
-        # vwt.26: drop low-frequency noise ingredients.  The filter
-        # only fires when the variant is large enough that a 10 %
-        # threshold is meaningful.
-        if n >= _INGREDIENT_FREQ_MIN_N and min_sample / n < INGREDIENT_FREQ_THRESHOLD:
-            continue
 
         fallback_ordinal = len(header_order) + canonicals.index(name)
         stats.append(

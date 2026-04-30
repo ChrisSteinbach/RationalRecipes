@@ -63,6 +63,14 @@ from rational_recipes.units import Factory as UnitFactory
 
 logger = logging.getLogger(__name__)
 
+# Drop ingredients appearing in fewer than this fraction of a variant's
+# recipes (filter only fires when the variant has at least
+# _INGREDIENT_FREQ_MIN_N recipes so tiny variants aren't over-pruned).
+# Applied at variant-formation time so variant_id, canonical_ingredients
+# and stats agree by construction (RationalRecipes-70o).
+INGREDIENT_FREQ_THRESHOLD: float = 0.10
+_INGREDIENT_FREQ_MIN_N: int = 5
+
 # Unit-name aliases the LLM may emit that aren't directly registered on
 # UnitFactory. Mirrors pipeline.py's private table for RecipeNLG output.
 _UNIT_ALIASES = {
@@ -321,6 +329,88 @@ class PipelineRunStats:
     db_misses: dict[str, int]
 
 
+def _apply_freq_filter(
+    canonical: Iterable[str],
+    normalized_rows: Sequence[MergedNormalizedRow],
+) -> set[str]:
+    """Drop low-frequency ingredients from a candidate variant's set.
+
+    Presence is non-zero proportion (matches the previous catalog_db
+    semantics — zero-quantity ingredients don't count as "present").
+    Filter only fires when the variant has at least
+    ``_INGREDIENT_FREQ_MIN_N`` recipes.
+    """
+    canonical_set = set(canonical)
+    n = len(normalized_rows)
+    if n < _INGREDIENT_FREQ_MIN_N:
+        return canonical_set
+    kept: set[str] = set()
+    for name in canonical_set:
+        present = sum(
+            1 for row in normalized_rows if row.proportions.get(name, 0.0) > 0.0
+        )
+        if present / n >= INGREDIENT_FREQ_THRESHOLD:
+            kept.add(name)
+    return kept
+
+
+def _derive_header(
+    normalized_rows: Sequence[MergedNormalizedRow],
+    canonical: Iterable[str],
+) -> list[str]:
+    """Header: ingredients in canonical and present in >= half the rows."""
+    canonical_set = set(canonical)
+    min_appearance = max(1, len(normalized_rows) // 2)
+    counts: dict[str, int] = {}
+    for row in normalized_rows:
+        for name in row.cells:
+            counts[name] = counts.get(name, 0) + 1
+    return sorted(
+        name
+        for name, c in counts.items()
+        if c >= min_appearance and name in canonical_set
+    )
+
+
+def _merge_duplicate_variants(
+    variants: Sequence[MergedVariantResult],
+    *,
+    bucket_size: float,
+) -> tuple[list[MergedVariantResult], int]:
+    """Combine variants sharing a ``variant_id`` into one.
+
+    Two L2 clusters in the same L1 group can produce the same
+    post-filter ``variant_id`` when their pre-filter ingredient sets
+    differ only by low-frequency noise. Merge their rows (union by URL),
+    re-derive the header, and re-run dedup so the merged set behaves
+    like a single variant.
+    """
+    by_id: dict[str, MergedVariantResult] = {}
+    touched: set[str] = set()
+    for v in variants:
+        vid = v.variant_id
+        existing = by_id.get(vid)
+        if existing is None:
+            by_id[vid] = v
+            continue
+        existing_urls = {row.url for row in existing.normalized_rows}
+        for row in v.normalized_rows:
+            if row.url in existing_urls:
+                continue
+            existing.normalized_rows.append(row)
+            existing_urls.add(row.url)
+        touched.add(vid)
+
+    dropped = 0
+    for vid in touched:
+        v = by_id[vid]
+        v.header_ingredients = _derive_header(
+            v.normalized_rows, v.canonical_ingredients
+        )
+        dropped += v.dedup_in_place(bucket_size=bucket_size)
+    return list(by_id.values()), dropped
+
+
 def build_variants(
     merged_recipes: Sequence[MergedRecipe],
     *,
@@ -402,21 +492,19 @@ def build_variants(
                 if len(normalized_rows) < l3_min_variant_size:
                     continue
 
-                # Header: ingredients present in at least half the rows.
-                min_appearance = max(1, len(normalized_rows) // 2)
-                counts: dict[str, int] = {}
-                for row in normalized_rows:
-                    for name in row.cells:
-                        counts[name] = counts.get(name, 0) + 1
-                header = sorted(
-                    name for name, n in counts.items() if n >= min_appearance
+                filtered_canonical = _apply_freq_filter(
+                    canonical_ingredients, normalized_rows
                 )
+                if not filtered_canonical:
+                    continue
+
+                header = _derive_header(normalized_rows, filtered_canonical)
                 if not header:
                     continue
 
                 variant = MergedVariantResult(
                     variant_title=title_key,
-                    canonical_ingredients=frozenset(canonical_ingredients),
+                    canonical_ingredients=frozenset(filtered_canonical),
                     cooking_methods=l3_variant.cooking_methods,
                     normalized_rows=normalized_rows,
                     header_ingredients=header,
@@ -425,6 +513,14 @@ def build_variants(
                 rows_dedup_dropped += dropped
                 if len(variant.normalized_rows) >= l3_min_variant_size:
                     variants.append(variant)
+
+    variants, merge_dedup_dropped = _merge_duplicate_variants(
+        variants, bucket_size=bucket_size
+    )
+    rows_dedup_dropped += merge_dedup_dropped
+    variants = [
+        v for v in variants if len(v.normalized_rows) >= l3_min_variant_size
+    ]
 
     stats = PipelineRunStats(
         recipenlg_in=0,  # filled by caller

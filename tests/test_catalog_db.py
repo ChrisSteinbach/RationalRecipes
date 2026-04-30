@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from rational_recipes.catalog_db import (
-    INGREDIENT_FREQ_THRESHOLD,
     CatalogDB,
     ListFilters,
     ParsedIngredientRow,
@@ -236,76 +235,39 @@ class TestUpsertVariant:
         assert len(db.list_variants(ListFilters(include_dropped=True))) == 1
 
 
-class TestIngredientFrequencyFilter:
-    """vwt.26: noise ingredients below the frequency threshold are excluded."""
+class TestComputeStatsNoLongerFilters:
+    """RationalRecipes-70o: the filter moved upstream to pipeline_merged.
 
-    def _variant_with_noise(
-        self, *, n_rows: int = 20
-    ) -> MergedVariantResult:
-        """Build a variant where flour+milk appear in every row but
-        ketchup appears in only the first row."""
+    Stats writer now passes through whatever ingredients the variant
+    declares — duplicating the filter here would diverge from
+    canonical_ingredient_set.
+    """
+
+    def test_low_freq_ingredient_in_canonical_yields_stat_row(self) -> None:
+        db = CatalogDB.in_memory()
         rows: list[MergedNormalizedRow] = []
-        for i in range(n_rows):
-            cells: dict[str, str] = {"flour": "100 g", "milk": "250 ml"}
-            props: dict[str, float] = {
-                "flour": 28.5 + i * 0.01,
-                "milk": 71.5 - i * 0.01,
-            }
+        for i in range(20):
+            cells = {"flour": "100 g", "milk": "250 ml"}
+            props = {"flour": 28.5 + i * 0.01, "milk": 71.5 - i * 0.01}
             if i == 0:
                 cells["ketchup"] = "5 g"
                 props["ketchup"] = 0.01
-            rows.append(
-                _row(
-                    f"https://example.com/r/{i}",
-                    cells,
-                    props,
-                )
-            )
-        return MergedVariantResult(
+            rows.append(_row(f"https://example.com/r/{i}", cells, props))
+        # Caller hands us a variant that still has ketchup in canonical
+        # (e.g. a test/legacy variant). The writer must not silently
+        # drop it — it goes into the stats table as-is.
+        variant = MergedVariantResult(
             variant_title="pecan pie",
             canonical_ingredients=frozenset({"flour", "milk", "ketchup"}),
             cooking_methods=frozenset(),
             normalized_rows=rows,
             header_ingredients=["flour", "milk"],
         )
-
-    def test_noise_ingredient_excluded_from_stats(self) -> None:
-        db = CatalogDB.in_memory()
-        variant = self._variant_with_noise(n_rows=20)
         db.upsert_variant(variant, l1_key="pecan pie", base_ingredient="flour")
 
         stats = db.get_ingredient_stats(variant.variant_id)
         names = {s.canonical_name for s in stats}
-        assert "flour" in names
-        assert "milk" in names
-        # ketchup appears in 1/20 = 5%, below the 10% threshold.
-        assert "ketchup" not in names
-
-    def test_filter_does_not_fire_on_small_variants(self) -> None:
-        """With only 3 rows, an ingredient in 1/3 should be kept."""
-        db = CatalogDB.in_memory()
-        variant = self._variant_with_noise(n_rows=3)
-        db.upsert_variant(variant, l1_key="pecan pie", base_ingredient="flour")
-
-        stats = db.get_ingredient_stats(variant.variant_id)
-        names = {s.canonical_name for s in stats}
-        # 1/3 ≈ 33% — above threshold, and n=3 < min_n anyway.
-        assert "ketchup" in names
-
-    def test_borderline_ingredient_at_threshold_kept(self) -> None:
-        """An ingredient at exactly the threshold fraction should be kept."""
-        db = CatalogDB.in_memory()
-        # 10 rows, ketchup in first 1 → 1/10 = 10% = threshold.
-        # int division: 1/10 = 0.1 which is NOT < 0.10, so it should pass.
-        variant = self._variant_with_noise(n_rows=10)
-        db.upsert_variant(variant, l1_key="pecan pie", base_ingredient="flour")
-
-        stats = db.get_ingredient_stats(variant.variant_id)
-        names = {s.canonical_name for s in stats}
-        assert "ketchup" in names
-
-    def test_threshold_constant_is_accessible(self) -> None:
-        assert INGREDIENT_FREQ_THRESHOLD == pytest.approx(0.10)
+        assert names == {"flour", "milk", "ketchup"}
 
 
 class TestL1RunTracking:

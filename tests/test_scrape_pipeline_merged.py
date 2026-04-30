@@ -633,3 +633,231 @@ class TestBuildVariants:
         )
         assert len(variants) == 1
         assert variants[0].cooking_methods == frozenset()
+
+
+class TestIngredientFrequencyFilter:
+    """RationalRecipes-70o: filter low-frequency noise at variant formation."""
+
+    def test_low_freq_ingredient_dropped_from_canonical(self) -> None:
+        """ketchup appears in 1/10 = 10% — at threshold, kept; raise to
+        1/15 = ~6.7% and it must drop."""
+        merged = []
+        for i in range(15):
+            ingredients: tuple[str, ...] = (f"{200 + i * 5} g flour",
+                                            f"{300 - i * 5} g milk")
+            names = {"flour", "milk"}
+            if i == 0:
+                ingredients = ingredients + ("1 g ketchup",)
+                names = names | {"ketchup"}
+            merged.append(
+                _make_merged(
+                    "pancakes",
+                    ingredients,
+                    frozenset(names),
+                    url=f"https://x/{i}",
+                )
+            )
+
+        def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            out: list[ParsedIngredient | None] = []
+            for line in lines:
+                parts = line.split()
+                out.append(_parsed(parts[-1], float(parts[0]), "g"))
+            return out
+
+        variants, _stats = build_variants(
+            merged,
+            parse_fn=fake_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            l3_min_variant_size=3,
+        )
+        assert len(variants) == 1
+        assert "ketchup" not in variants[0].canonical_ingredients
+        assert {"flour", "milk"} <= variants[0].canonical_ingredients
+
+    def test_filter_does_not_fire_below_min_n(self) -> None:
+        """With < 5 recipes the filter is skipped — small variants
+        keep all their ingredients regardless of how rare any one is."""
+        merged = []
+        for i in range(4):
+            ingredients = (f"{200 + i * 10} g flour", f"{300 - i * 10} g milk")
+            names = {"flour", "milk"}
+            if i == 0:
+                ingredients = ingredients + ("1 g ketchup",)
+                names = names | {"ketchup"}
+            merged.append(
+                _make_merged(
+                    "pancakes",
+                    ingredients,
+                    frozenset(names),
+                    url=f"https://x/{i}",
+                )
+            )
+
+        def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            out: list[ParsedIngredient | None] = []
+            for line in lines:
+                parts = line.split()
+                out.append(_parsed(parts[-1], float(parts[0]), "g"))
+            return out
+
+        variants, _stats = build_variants(
+            merged,
+            parse_fn=fake_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            l3_min_variant_size=3,
+        )
+        assert len(variants) == 1
+        assert "ketchup" in variants[0].canonical_ingredients
+
+    def test_variant_id_reflects_post_filter_set(self) -> None:
+        """The variant_id is computed from the filtered canonical set —
+        so two clusters whose pre-filter sets differ only in noise
+        collapse to the same id."""
+        # Cluster A: 10 recipes, ketchup in first row only (10%, kept at
+        # exactly threshold). Cluster B: 10 recipes, mustard in first
+        # row only. Different pre-filter sets, but if we made each noise
+        # ingredient sub-threshold (1/15 each) the ids would collapse.
+        # Easier proof: compute the expected id from {flour, milk} and
+        # compare against a 15-row variant where only flour+milk survive.
+        from rational_recipes.scrape.grouping import normalize_title
+        from rational_recipes.scrape.manifest import compute_variant_id
+
+        merged = []
+        for i in range(15):
+            ingredients = (f"{200 + i * 5} g flour", f"{300 - i * 5} g milk")
+            names = {"flour", "milk"}
+            if i == 0:
+                ingredients = ingredients + ("1 g ketchup",)
+                names = names | {"ketchup"}
+            merged.append(
+                _make_merged(
+                    "pancakes",
+                    ingredients,
+                    frozenset(names),
+                    url=f"https://x/{i}",
+                )
+            )
+
+        def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            out: list[ParsedIngredient | None] = []
+            for line in lines:
+                parts = line.split()
+                out.append(_parsed(parts[-1], float(parts[0]), "g"))
+            return out
+
+        variants, _ = build_variants(
+            merged,
+            parse_fn=fake_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            l3_min_variant_size=3,
+        )
+        assert len(variants) == 1
+        expected = compute_variant_id(
+            normalize_title("pancakes"), {"flour", "milk"}, set()
+        )
+        assert variants[0].variant_id == expected
+
+
+class TestMergeDuplicateVariants:
+    """RationalRecipes-70o side effect: variants sharing a variant_id merge."""
+
+    def test_two_clusters_collapse_when_noise_filtered(self) -> None:
+        """Two L2 clusters distinguished only by sub-threshold noise
+        share a variant_id post-filter and merge into one variant whose
+        normalized_rows is the union of both clusters' rows."""
+        # Cluster A: 8 recipes with ketchup as the only "extra"; ketchup
+        # appears in 1/8 = 12.5% (above threshold within the cluster).
+        # Cluster B: 8 recipes with mustard in 1/8 (above threshold
+        # within the cluster). With l2_similarity_threshold low enough,
+        # these are merged at L2 already; force them apart by making
+        # ketchup/mustard distinct enough that L2 separates them. After
+        # the freq filter, both end up with {flour, milk} and merge.
+        a_rows = []
+        for i in range(8):
+            ingredients: tuple[str, ...] = (f"{200 + i * 5} g flour",
+                                            f"{300 - i * 5} g milk")
+            names = {"flour", "milk"}
+            # ketchup in just the first row of cluster A
+            if i == 0:
+                ingredients = ingredients + ("1 g ketchup",)
+                names = names | {"ketchup"}
+            a_rows.append(
+                _make_merged(
+                    "pancakes",
+                    ingredients,
+                    frozenset(names),
+                    url=f"https://a/{i}",
+                )
+            )
+        # All A rows are flour+milk, so pre-filter they already share an
+        # ingredient set with B's rows. Easiest direct test: build two
+        # variants with the SAME variant_id by hand and feed them to
+        # _merge_duplicate_variants.
+        from rational_recipes.scrape.pipeline_merged import (
+            _merge_duplicate_variants,
+        )
+
+        v1 = MergedVariantResult(
+            variant_title="pancakes",
+            canonical_ingredients=frozenset({"flour", "milk"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row("https://a/1", {"flour": "100 g"}, {"flour": 30.0, "milk": 70.0}),
+                _row("https://a/2", {"flour": "200 g"}, {"flour": 32.0, "milk": 68.0}),
+            ],
+            header_ingredients=["flour", "milk"],
+        )
+        v2 = MergedVariantResult(
+            variant_title="pancakes",
+            canonical_ingredients=frozenset({"flour", "milk"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row("https://b/1", {"flour": "300 g"}, {"flour": 40.0, "milk": 60.0}),
+                _row("https://b/2", {"flour": "400 g"}, {"flour": 42.0, "milk": 58.0}),
+            ],
+            header_ingredients=["flour", "milk"],
+        )
+        merged_list, _dropped = _merge_duplicate_variants(
+            [v1, v2], bucket_size=2.0
+        )
+        assert len(merged_list) == 1
+        urls = {r.url for r in merged_list[0].normalized_rows}
+        assert urls == {"https://a/1", "https://a/2", "https://b/1", "https://b/2"}
+
+    def test_noop_when_variant_ids_distinct(self) -> None:
+        from rational_recipes.scrape.pipeline_merged import (
+            _merge_duplicate_variants,
+        )
+
+        v1 = MergedVariantResult(
+            variant_title="pancakes",
+            canonical_ingredients=frozenset({"flour", "milk"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row("https://a/1", {"flour": "100 g"}, {"flour": 30.0, "milk": 70.0}),
+            ],
+            header_ingredients=["flour", "milk"],
+        )
+        v2 = MergedVariantResult(
+            variant_title="pancakes",
+            canonical_ingredients=frozenset({"flour", "buttermilk"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row(
+                    "https://b/1",
+                    {"flour": "100 g"},
+                    {"flour": 30.0, "buttermilk": 70.0},
+                ),
+            ],
+            header_ingredients=["flour", "buttermilk"],
+        )
+        merged_list, dropped = _merge_duplicate_variants([v1, v2], bucket_size=2.0)
+        assert len(merged_list) == 2
+        assert dropped == 0
