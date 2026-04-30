@@ -80,6 +80,9 @@ cd web && npm install && npm run dev
 scripts/download_data.sh
 python3 scripts/build_db.py
 
+# Sync pipeline output to PWA (after scrape_catalog.py or any DB change)
+node web/scripts/sync-catalog.mjs
+
 # Find ready work
 bd ready
 ```
