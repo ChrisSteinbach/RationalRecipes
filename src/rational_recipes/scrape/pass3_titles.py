@@ -404,12 +404,20 @@ def _group_by_l1(variants: Sequence[VariantRow]) -> dict[str, list[VariantRow]]:
     return groups
 
 
-def _variants_to_slots(variants: Sequence[VariantRow]) -> list[_VariantSlot]:
-    """Convert VariantRows to lightweight slots for the batched call."""
+def _variants_to_slots(
+    variants: Sequence[VariantRow],
+    ingredient_names: dict[str, tuple[str, ...]],
+) -> list[_VariantSlot]:
+    """Convert VariantRows to lightweight slots for the batched call.
+
+    ``ingredient_names`` maps variant_id → frequency-filtered canonical
+    names from ``variant_ingredient_stats``; variants missing from the
+    map (no stats rows) get an empty ingredient set.
+    """
     return [
         _VariantSlot(
             variant_id=v.variant_id,
-            ingredients=frozenset(v.canonical_ingredient_set),
+            ingredients=frozenset(ingredient_names.get(v.variant_id, ())),
             methods=frozenset(v.cooking_methods),
         )
         for v in variants
@@ -527,6 +535,7 @@ def run_pass3(
     variants = db.list_variants()
     stats.variants_total = len(variants)
     groups = _group_by_l1(variants)
+    ingredient_names = db.bulk_ingredient_names()
 
     # Build per-group work items.
     _WorkItem = tuple[str, list[_VariantSlot], list[_VariantSlot], frozenset[str]]
@@ -539,7 +548,7 @@ def run_pass3(
                 if v.display_title != titled:
                     db.update_display_title(v.variant_id, titled)
             continue
-        all_slots = _variants_to_slots(members)
+        all_slots = _variants_to_slots(members, ingredient_names)
         needs_title: list[_VariantSlot] = []
         existing: set[str] = set()
         for v, slot in zip(members, all_slots, strict=True):

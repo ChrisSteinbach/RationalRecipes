@@ -13,6 +13,7 @@ from rational_recipes.scrape.pass3_titles import (
     TitleFn,
     _deduplicate_titles,
     _ollama_title_call,
+    _variants_to_slots,
     _VariantSlot,
     build_default_title_fn,
     build_title_prompt,
@@ -230,6 +231,127 @@ class TestDeduplicateTitles:
         titles: list[str | None] = ["Cream Pie", "Cream Pie", "Cream Pie"]
         result = _deduplicate_titles("pie", slots, titles)
         assert len(set(result)) == 3
+
+
+# --- Slot construction reads variant_ingredient_stats (vwt.us1) ---
+
+
+def _delete_stats_row(db: CatalogDB, variant_id: str, canonical_name: str) -> None:
+    """Drop one row from variant_ingredient_stats to mimic the freq filter."""
+    with db._conn:  # noqa: SLF001 — test reaches into the connection on purpose
+        db._conn.execute(  # noqa: SLF001
+            "DELETE FROM variant_ingredient_stats "
+            "WHERE variant_id = ? AND canonical_name = ?",
+            (variant_id, canonical_name),
+        )
+
+
+class TestVariantsToSlots:
+    def test_slot_uses_variant_ingredient_stats_not_canonical_set(self) -> None:
+        """Slot ingredients come from variant_ingredient_stats, not the
+        canonical_ingredient_set on the variant row. The frequency
+        filter (vwt.26) drops noise ingredients from the stats table
+        but leaves canonical_ingredient_set intact, so a slot that
+        reads canonical_ingredient_set would surface filtered names."""
+        db = CatalogDB.in_memory()
+        variant_id = _make_variant(
+            db,
+            l1_title="refrigerator rolls",
+            canonical_ingredients=frozenset({"a", "b", "c", "yeast"}),
+        )
+        # Simulate the freq-filter outcome: yeast is absent from
+        # variant_ingredient_stats but present in canonical_ingredient_set.
+        _delete_stats_row(db, variant_id, "yeast")
+
+        variant_row = db.get_variant(variant_id)
+        assert variant_row is not None
+        assert "yeast" in variant_row.canonical_ingredient_set
+
+        ingredient_names = db.bulk_ingredient_names()
+        slots = _variants_to_slots([variant_row], ingredient_names)
+
+        assert len(slots) == 1
+        assert slots[0].ingredients == frozenset({"a", "b", "c"})
+        assert "yeast" not in slots[0].ingredients
+
+    def test_missing_stats_yields_empty_ingredient_set(self) -> None:
+        """A variant with no rows in variant_ingredient_stats — e.g. one
+        whose ingredients were entirely freq-filtered out — gets an
+        empty frozenset rather than a KeyError."""
+        db = CatalogDB.in_memory()
+        variant_id = _make_variant(
+            db,
+            l1_title="empty stats",
+            canonical_ingredients=frozenset({"a"}),
+        )
+        with db._conn:  # noqa: SLF001
+            db._conn.execute(  # noqa: SLF001
+                "DELETE FROM variant_ingredient_stats WHERE variant_id = ?",
+                (variant_id,),
+            )
+
+        variant_row = db.get_variant(variant_id)
+        assert variant_row is not None
+        slots = _variants_to_slots([variant_row], db.bulk_ingredient_names())
+
+        assert slots[0].ingredients == frozenset()
+
+
+class TestBulkIngredientNames:
+    def test_orders_by_ordinal(self) -> None:
+        """bulk_ingredient_names returns names ordered by ordinal so
+        downstream callers see them in display order."""
+        db = CatalogDB.in_memory()
+        variant_id = _make_variant(
+            db,
+            l1_title="mix",
+            canonical_ingredients=frozenset({"flour", "sugar", "egg"}),
+        )
+        names = db.bulk_ingredient_names()
+        assert variant_id in names
+        # All three made it through (single-recipe variant, freq filter
+        # is gated on n >= 5 so it doesn't fire here).
+        assert set(names[variant_id]) == {"flour", "sugar", "egg"}
+
+
+class TestRunPass3SiblingContext:
+    def test_sibling_context_uses_filtered_ingredients(self) -> None:
+        """Sibling sets fed to the LLM come from variant_ingredient_stats,
+        not canonical_ingredient_set. Reading the wrong source would
+        leak filtered names like 'yeast' into the prompt context and
+        ultimately into chosen titles."""
+        db = CatalogDB.in_memory()
+        v1 = _make_variant(
+            db,
+            l1_title="refrigerator rolls",
+            canonical_ingredients=frozenset({"flour", "milk", "yeast"}),
+        )
+        v2 = _make_variant(
+            db,
+            l1_title="refrigerator rolls",
+            canonical_ingredients=frozenset({"flour", "butter", "yeast"}),
+        )
+        _delete_stats_row(db, v1, "yeast")
+        _delete_stats_row(db, v2, "yeast")
+
+        seen: list[tuple[frozenset[str], list[frozenset[str]]]] = []
+
+        def fn(
+            family: str,
+            my: frozenset[str],
+            methods: frozenset[str],
+            siblings: Sequence[frozenset[str]],
+        ) -> str | None:
+            seen.append((my, [frozenset(s) for s in siblings]))
+            return f"{family.title()}"
+
+        run_pass3(db=db, title_fn=fn)
+
+        # Both variant ingredient sets must omit yeast.
+        for my, siblings in seen:
+            assert "yeast" not in my
+            for sib in siblings:
+                assert "yeast" not in sib
 
 
 # --- run_pass3 against a real DB ---

@@ -886,6 +886,25 @@ class CatalogDB:
             for r in rows
         ]
 
+    def bulk_ingredient_names(self) -> dict[str, tuple[str, ...]]:
+        """Map ``variant_id`` → tuple of canonical_name ordered by ordinal.
+
+        Sourced from ``variant_ingredient_stats`` so the result reflects
+        frequency-filtered ingredients (vwt.26), not the raw
+        ``variants.canonical_ingredient_set``.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT variant_id, canonical_name
+            FROM variant_ingredient_stats
+            ORDER BY variant_id, ordinal ASC
+            """
+        ).fetchall()
+        out: dict[str, list[str]] = {}
+        for variant_id, canonical_name in rows:
+            out.setdefault(variant_id, []).append(canonical_name)
+        return {vid: tuple(names) for vid, names in out.items()}
+
     def get_ingredient_stats(self, variant_id: str) -> list[IngredientStatsRow]:
         rows = self._conn.execute(
             """
