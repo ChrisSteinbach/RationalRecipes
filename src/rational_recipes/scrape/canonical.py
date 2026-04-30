@@ -111,10 +111,43 @@ SWEDISH_TO_ENGLISH: dict[str, str] = {
     "päron": "pear",
     "jordgubbar": "strawberries",
     "hallon": "raspberries",
+    # Meats and seafood
+    "nötkött": "ground beef",
+    "korv": "sausage",
+    "skinka": "ham",
+    "räkor": "shrimp",
+    # Cheese
+    "mozzarellaost": "mozzarella cheese",
+    # Corn and beans
+    "majs": "corn",
+    "bönor": "beans",
+    "vita bönor": "white beans",
+    # Fruit
+    "ananas": "pineapple",
+    # Juice
+    "apelsinjuice": "orange juice",
     # Sauces and condiments
     "soja": "soy sauce",
     "sojasås": "soy sauce",
     "soyasås": "soy sauce",
+    "majonnäs": "mayonnaise",
+    "senap": "mustard",
+    "tomatsås": "tomato sauce",
+    # Spices (additional)
+    "cayennepeppar": "cayenne pepper",
+    # Herbs (additional)
+    "salladslök": "scallion",
+    "gräslök": "chives",
+    # Baking (additional)
+    "chokladhackor": "chocolate chips",
+    "citronskal": "lemon zest",
+    "sesamfrön": "sesame seeds",
+    # Acids (additional)
+    "ättika": "vinegar",
+    "balsamvinäger": "balsamic vinegar",
+    "rödvinsvinäger": "red wine vinegar",
+    # Broths
+    "nötbuljong": "beef broth",
     # Liquids
     "kaffe": "coffee",
 }
