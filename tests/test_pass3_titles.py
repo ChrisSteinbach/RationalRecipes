@@ -13,6 +13,7 @@ from rational_recipes.scrape.pass3_titles import (
     Pass3Stats,
     TitleFn,
     _batched_titles_with_fallback,
+    _deduplicate_titles,
     _ollama_batched_title_call,
     _ollama_title_call,
     _VariantSlot,
@@ -311,6 +312,106 @@ class TestBatchedTitlesWithFallback:
         assert result == []
 
 
+# --- Deduplication (vwt.32) ---
+
+
+class TestDeduplicateTitles:
+    def test_no_duplicates_unchanged(self) -> None:
+        slots = [
+            _VariantSlot("v1", frozenset({"a", "b"}), frozenset()),
+            _VariantSlot("v2", frozenset({"c", "d"}), frozenset()),
+        ]
+        titles: list[str | None] = ["A Pie", "C Pie"]
+        result = _deduplicate_titles("pie", slots, titles)
+        assert result == ["A Pie", "C Pie"]
+
+    def test_ingredient_based_dedup(self) -> None:
+        slots = [
+            _VariantSlot("v1", frozenset({"sour cream", "onion"}), frozenset()),
+            _VariantSlot("v2", frozenset({"sour cream", "pepper"}), frozenset()),
+        ]
+        titles: list[str | None] = ["Sour Cream Pie", "Sour Cream Pie"]
+        result = _deduplicate_titles("pie", slots, titles)
+        assert len(set(result)) == 2
+        assert "Onion Sour Cream Pie" in result or "Sour Cream Onion Pie" in result
+        assert "Pepper Sour Cream Pie" in result or "Sour Cream Pepper Pie" in result
+
+    def test_ingredient_inserted_before_family(self) -> None:
+        slots = [
+            _VariantSlot("v1", frozenset({"butter", "onion"}), frozenset()),
+            _VariantSlot("v2", frozenset({"butter", "garlic"}), frozenset()),
+        ]
+        titles: list[str | None] = ["Butter Corn Casserole", "Butter Corn Casserole"]
+        result = _deduplicate_titles("corn casserole", slots, titles)
+        assert result[0] == "Butter Onion Corn Casserole"
+        assert result[1] == "Butter Garlic Corn Casserole"
+
+    def test_method_used_when_no_unique_ingredient(self) -> None:
+        slots = [
+            _VariantSlot("v1", frozenset({"a"}), frozenset({"bake"})),
+            _VariantSlot("v2", frozenset({"a"}), frozenset({"fry"})),
+        ]
+        titles: list[str | None] = ["Pie", "Pie"]
+        result = _deduplicate_titles("pie", slots, titles)
+        assert len(set(result)) == 2
+        assert any("Bake" in t for t in result)
+        assert any("Fry" in t for t in result)
+
+    def test_numeric_suffix_fallback(self) -> None:
+        slots = [
+            _VariantSlot("v1", frozenset({"a"}), frozenset()),
+            _VariantSlot("v2", frozenset({"a"}), frozenset()),
+        ]
+        titles: list[str | None] = ["A Pie", "A Pie"]
+        result = _deduplicate_titles("pie", slots, titles)
+        assert len(set(result)) == 2
+        assert "A Pie" in result
+        assert "A Pie (2)" in result
+
+    def test_none_titles_resolved_to_family(self) -> None:
+        slots = [
+            _VariantSlot("v1", frozenset({"a"}), frozenset()),
+            _VariantSlot("v2", frozenset({"b"}), frozenset()),
+        ]
+        titles: list[str | None] = [None, None]
+        result = _deduplicate_titles("pie", slots, titles)
+        assert len(set(result)) == 2
+        # Ingredient-based dedup should differentiate them.
+        assert any("A" in t.upper() for t in result)
+
+    def test_existing_titles_respected(self) -> None:
+        slots = [
+            _VariantSlot("v1", frozenset({"butter"}), frozenset()),
+        ]
+        titles: list[str | None] = ["Butter Pie"]
+        result = _deduplicate_titles(
+            "pie", slots, titles, existing_titles=frozenset({"Butter Pie"}),
+        )
+        assert result[0] != "Butter Pie"
+        assert "2" in result[0]  # numeric suffix
+
+    def test_cascading_collisions(self) -> None:
+        """Ingredient dedup creates a new collision → numeric resolves it."""
+        slots = [
+            _VariantSlot("v1", frozenset({"butter", "onion"}), frozenset()),
+            _VariantSlot("v2", frozenset({"butter", "onion"}), frozenset()),
+        ]
+        titles: list[str | None] = ["Butter Pie", "Butter Pie"]
+        result = _deduplicate_titles("pie", slots, titles)
+        # Identical ingredients → no dedup from phase 2 → numeric suffix.
+        assert len(set(result)) == 2
+
+    def test_three_way_collision_mixed_resolution(self) -> None:
+        slots = [
+            _VariantSlot("v1", frozenset({"cream", "onion"}), frozenset()),
+            _VariantSlot("v2", frozenset({"cream", "pepper"}), frozenset()),
+            _VariantSlot("v3", frozenset({"cream"}), frozenset()),
+        ]
+        titles: list[str | None] = ["Cream Pie", "Cream Pie", "Cream Pie"]
+        result = _deduplicate_titles("pie", slots, titles)
+        assert len(set(result)) == 3
+
+
 # --- run_pass3 against a real DB ---
 
 
@@ -430,8 +531,10 @@ class TestRunPass3:
         stats = run_pass3(db=db, title_fn=fn, force=True)
         assert stats.variants_titled == 2
         assert len(seen_calls) == 2
-        for v in db.list_variants():
-            assert v.display_title == "X Pecan Pie"
+        # Stub returns "X Pecan Pie" for both; dedup makes them unique.
+        titles = {v.display_title for v in db.list_variants()}
+        assert len(titles) == 2
+        assert stats.variants_deduped > 0
 
     def test_falls_back_to_family_on_llm_failure(self) -> None:
         db = CatalogDB.in_memory()
@@ -451,9 +554,10 @@ class TestRunPass3:
 
         stats = run_pass3(db=db, title_fn=fn)
         assert stats.llm_failures == 2
-        for v in db.list_variants():
-            # Fallback is the L1 family name in Title Case.
-            assert v.display_title == "Pecan Pie"
+        # Both fall back to "Pecan Pie" then get deduped.
+        titles = {v.display_title for v in db.list_variants()}
+        assert len(titles) == 2
+        assert stats.variants_deduped > 0
 
     def test_parallel_workers_match_serial(self) -> None:
         # Build the same DB twice; run Pass 3 once serially, once parallel.
@@ -610,8 +714,10 @@ class TestRunPass3Batched:
 
         stats = run_pass3(db=db, batch_title_fn=override_fn, force=True)
         assert stats.variants_titled == 2
-        for v in db.list_variants():
-            assert v.display_title == "X Pecan Pie"
+        # Stub returns "X Pecan Pie" for both; dedup makes them unique.
+        titles = {v.display_title for v in db.list_variants()}
+        assert len(titles) == 2
+        assert stats.variants_deduped > 0
 
     def test_falls_back_to_family_on_total_failure(self) -> None:
         db = CatalogDB.in_memory()
@@ -635,8 +741,10 @@ class TestRunPass3Batched:
 
         stats = run_pass3(db=db, batch_title_fn=always_fail)
         assert stats.llm_failures == 2
-        for v in db.list_variants():
-            assert v.display_title == "Pecan Pie"
+        # Both fall back to "Pecan Pie" then get deduped.
+        titles = {v.display_title for v in db.list_variants()}
+        assert len(titles) == 2
+        assert stats.variants_deduped > 0
 
     def test_parallel_workers_match_serial(self) -> None:
         def build() -> CatalogDB:
@@ -683,6 +791,55 @@ class TestRunPass3Batched:
         }
 
         assert serial == parallel
+
+    def test_duplicate_titles_deduplicated(self) -> None:
+        """LLM returning identical titles for different variants gets deduped."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="corn casserole",
+            canonical_ingredients=frozenset({"corn", "sour cream", "onion"}),
+        )
+        _make_variant(
+            db,
+            l1_title="corn casserole",
+            canonical_ingredients=frozenset({"corn", "sour cream", "pepper"}),
+        )
+        _make_variant(
+            db,
+            l1_title="corn casserole",
+            canonical_ingredients=frozenset({"corn", "sour cream", "cheese"}),
+        )
+
+        # Stub that always returns the same title for every variant.
+        def dup_fn(
+            family: str,
+            slots: Sequence[_VariantSlot],
+            all_slots: Sequence[_VariantSlot],
+        ) -> list[str | None] | None:
+            return [f"Sour Cream {family.title()}" for _ in slots]
+
+        stats = run_pass3(db=db, batch_title_fn=dup_fn)
+        variants = db.list_variants()
+        titles = [v.display_title for v in variants]
+        # All three must be unique.
+        assert len(set(titles)) == 3
+        assert stats.variants_deduped > 0
+
+    def test_dedup_stats_zero_when_no_duplicates(self) -> None:
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="pecan pie",
+            canonical_ingredients=frozenset({"pecan", "egg", "bourbon"}),
+        )
+        _make_variant(
+            db,
+            l1_title="pecan pie",
+            canonical_ingredients=frozenset({"pecan", "egg", "maple"}),
+        )
+        stats = run_pass3(db=db, batch_title_fn=_stub_batch_title_fn())
+        assert stats.variants_deduped == 0
 
     def test_batched_matches_legacy_titles(self) -> None:
         """Batched and legacy per-variant paths produce equivalent titles."""

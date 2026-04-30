@@ -458,6 +458,7 @@ def run(
         f"singletons={stats.pass3.variants_singleton} "
         f"titled={stats.pass3.variants_titled} "
         f"skipped={stats.pass3.variants_skipped} "
+        f"deduped={stats.pass3.variants_deduped} "
         f"llm_calls={stats.pass3.llm_calls} "
         f"llm_failures={stats.pass3.llm_failures}"
     )

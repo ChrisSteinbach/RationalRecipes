@@ -246,6 +246,7 @@ class Pass3Stats:
     variants_singleton: int = 0
     variants_titled: int = 0
     variants_skipped: int = 0
+    variants_deduped: int = 0
     llm_calls: int = 0
     llm_failures: int = 0
     db_write_seconds_total: float = 0.0
@@ -745,6 +746,85 @@ def _variants_to_slots(variants: Sequence[VariantRow]) -> list[_VariantSlot]:
     ]
 
 
+def _deduplicate_titles(
+    family: str,
+    slots: Sequence[_VariantSlot],
+    titles: Sequence[str | None],
+    existing_titles: frozenset[str] = frozenset(),
+) -> list[str]:
+    """Resolve duplicate display_titles within an L1 group (vwt.32).
+
+    Three phases:
+    1. Resolve None titles to the family name (Title Case).
+    2. For each collision set (variants sharing a title), try to
+       disambiguate by inserting a second ingredient or cooking method
+       that is unique to that variant within the collision set.
+    3. Any remaining collisions get a numeric suffix ``(2)``, ``(3)``, etc.
+
+    ``existing_titles`` holds titles from already-titled variants that
+    were skipped (``force=False``); new titles must not collide with them.
+    """
+    family_tc = family.title()
+    family_lc = family.lower()
+    resolved = [t if t else family_tc for t in titles]
+
+    # Phase 2: ingredient/method-based disambiguation for collisions.
+    by_title: dict[str, list[int]] = defaultdict(list)
+    for i, t in enumerate(resolved):
+        by_title[t].append(i)
+
+    for title, indices in by_title.items():
+        extra = 1 if title in existing_titles else 0
+        if len(indices) + extra <= 1:
+            continue
+        if len(indices) <= 1:
+            # Single new variant collides only with existing titles;
+            # ingredient comparison needs peers, so skip to phase 3.
+            continue
+        # Find ingredients unique to each variant within the collision set.
+        collision_ings = [slots[i].ingredients for i in indices]
+        collision_methods = [slots[i].methods for i in indices]
+        for pos, global_idx in enumerate(indices):
+            others_ings: set[str] = set()
+            for j, ings in enumerate(collision_ings):
+                if j != pos:
+                    others_ings.update(ings)
+            unique = sorted(slots[global_idx].ingredients - others_ings)
+            if not unique:
+                others_methods: set[str] = set()
+                for j, methods in enumerate(collision_methods):
+                    if j != pos:
+                        others_methods.update(methods)
+                unique = sorted(slots[global_idx].methods - others_methods)
+            if unique:
+                disamb = unique[0].title()
+                if title.lower().endswith(family_lc):
+                    prefix = title[: len(title) - len(family)].strip()
+                    new_title = (
+                        f"{prefix} {disamb} {family_tc}".strip()
+                        if prefix
+                        else f"{disamb} {family_tc}"
+                    )
+                else:
+                    new_title = f"{disamb} {title}"
+                resolved[global_idx] = new_title
+
+    # Phase 3: numeric suffix for any remaining collisions.
+    taken: set[str] = set(existing_titles)
+    for i in range(len(resolved)):
+        title = resolved[i]
+        if title not in taken:
+            taken.add(title)
+            continue
+        counter = 2
+        while f"{title} ({counter})" in taken:
+            counter += 1
+        resolved[i] = f"{title} ({counter})"
+        taken.add(resolved[i])
+
+    return resolved
+
+
 def run_pass3(
     *,
     db: CatalogDB,
@@ -782,8 +862,9 @@ def run_pass3(
     stats.variants_total = len(variants)
     groups = _group_by_l1(variants)
 
-    # Build per-group work items: (family, slots_to_title, all_group_slots).
-    work: list[tuple[str, list[_VariantSlot], list[_VariantSlot]]] = []
+    # Build per-group work items.
+    _WorkItem = tuple[str, list[_VariantSlot], list[_VariantSlot], frozenset[str]]
+    work: list[_WorkItem] = []
     for family, members in groups.items():
         if len(members) <= 1:
             stats.variants_singleton += len(members)
@@ -794,13 +875,15 @@ def run_pass3(
             continue
         all_slots = _variants_to_slots(members)
         needs_title: list[_VariantSlot] = []
+        existing: set[str] = set()
         for v, slot in zip(members, all_slots, strict=True):
             if not force and v.display_title and v.display_title != family:
                 stats.variants_skipped += 1
+                existing.add(v.display_title)
                 continue
             needs_title.append(slot)
         if needs_title:
-            work.append((family, needs_title, all_slots))
+            work.append((family, needs_title, all_slots, frozenset(existing)))
 
     if not work:
         return stats
@@ -810,41 +893,28 @@ def run_pass3(
         lock if lock is not None else contextlib.nullcontext()
     )
 
-    def _process_group(
-        item: tuple[str, list[_VariantSlot], list[_VariantSlot]],
-    ) -> None:
-        family, needs_title, all_slots = item
+    def _process_group(item: _WorkItem) -> None:
+        family, needs_title, all_slots, existing_titles = item
 
+        # Collect raw titles from the LLM.
+        raw_titles: list[str | None]
         if batch_title_fn is not None:
-            # v97 batched path: chunk into _MAX_BATCH_SIZE pieces.
-            titles: list[str | None] = []
+            raw_titles = []
             for i in range(0, len(needs_title), _MAX_BATCH_SIZE):
                 chunk = needs_title[i : i + _MAX_BATCH_SIZE]
                 stats.llm_calls += 1
                 chunk_titles = _batched_titles_with_fallback(
                     family, chunk, all_slots, batch_title_fn,
                 )
-                titles.extend(chunk_titles)
-
-            for slot, title in zip(needs_title, titles, strict=True):
-                resolved = title if title else family.title()
-                if not title:
-                    stats.llm_failures += 1
-                write_start = time.monotonic()
-                with hold:
-                    db.update_display_title(slot.variant_id, resolved)
-                    db_write_seconds = time.monotonic() - write_start
-                    stats.variants_titled += 1
-                    stats.db_write_seconds_total += db_write_seconds
-                    stats.db_write_count += 1
+                raw_titles.extend(chunk_titles)
         else:
-            # Legacy per-variant path (backward compat for existing tests).
             assert title_fn is not None
             all_members = [
                 v for v in db.list_variants()
                 if v.normalized_title == family
             ]
             all_members.sort(key=lambda v: v.variant_id)
+            raw_titles = []
             for slot in needs_title:
                 variant = next(
                     v for v in all_members if v.variant_id == slot.variant_id
@@ -855,13 +925,31 @@ def run_pass3(
                 title = _resolve_title(
                     family, variant, siblings, title_fn, stats,
                 )
-                write_start = time.monotonic()
-                with hold:
-                    db.update_display_title(slot.variant_id, title)
-                    db_write_seconds = time.monotonic() - write_start
-                    stats.variants_titled += 1
-                    stats.db_write_seconds_total += db_write_seconds
-                    stats.db_write_count += 1
+                raw_titles.append(title)
+
+        # Count LLM failures (None titles).
+        for t in raw_titles:
+            if not t:
+                stats.llm_failures += 1
+
+        # Deduplicate titles within this group (vwt.32).
+        deduped = _deduplicate_titles(
+            family, needs_title, raw_titles, existing_titles,
+        )
+        for raw, final in zip(raw_titles, deduped, strict=True):
+            original = raw if raw else family.title()
+            if final != original:
+                stats.variants_deduped += 1
+
+        # Write resolved titles to DB.
+        for slot, title in zip(needs_title, deduped, strict=True):
+            write_start = time.monotonic()
+            with hold:
+                db.update_display_title(slot.variant_id, title)
+                db_write_seconds = time.monotonic() - write_start
+                stats.variants_titled += 1
+                stats.db_write_seconds_total += db_write_seconds
+                stats.db_write_count += 1
 
     if max_workers <= 1:
         for item in work:
