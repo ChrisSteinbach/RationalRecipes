@@ -260,6 +260,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--num-ctx",
+        type=int,
+        default=16384,
+        metavar="N",
+        help=(
+            "Ollama num_ctx for LLM calls. Set to 0 to omit (use model "
+            "default). Default: %(default)s."
+        ),
+    )
+    parser.add_argument(
         "--pass3-profile",
         type=Path,
         default=None,
@@ -384,10 +394,13 @@ def run(
         with pass3_lock:
             pass3_timings.append(rec)
 
+    num_ctx: int | None = args.num_ctx if args.num_ctx > 0 else None
+
     if batch_title_fn is None:
         batch_title_fn = build_default_batch_title_fn(
             args.model,
             base_url=args.ollama_url,
+            num_ctx=num_ctx,
             timing_collector=collect_pass3_timing,
         )
 

@@ -263,6 +263,7 @@ def _ollama_title_call(
     model: str,
     base_url: str = OLLAMA_BASE_URL,
     timeout: float = 60.0,
+    num_ctx: int | None = 16384,
     timing_collector: TimingCollector | None = None,
 ) -> str | None:
     """Single Ollama /api/generate call shaped for title generation.
@@ -284,6 +285,14 @@ def _ollama_title_call(
     prompt_build_seconds = time.monotonic() - build_start
     prompt_chars = len(TITLE_SYSTEM_PROMPT) + len(prompt)
 
+    options: dict[str, object] = {
+        "num_predict": 64,
+        "temperature": 0.0,
+        "seed": 42,
+    }
+    if num_ctx is not None:
+        options["num_ctx"] = num_ctx
+
     payload = json.dumps(
         {
             "model": model,
@@ -291,12 +300,7 @@ def _ollama_title_call(
             "prompt": prompt,
             "format": "json",
             "stream": False,
-            "options": {
-                "num_ctx": 16384,
-                "num_predict": 64,
-                "temperature": 0.0,
-                "seed": 42,
-            },
+            "options": options,
         }
     ).encode()
 
@@ -378,6 +382,7 @@ def build_default_title_fn(
     model: str,
     base_url: str = OLLAMA_BASE_URL,
     *,
+    num_ctx: int | None = 16384,
     timing_collector: TimingCollector | None = None,
 ) -> TitleFn:
     """Bind model + base_url into a TitleFn for the production LLM path.
@@ -399,6 +404,7 @@ def build_default_title_fn(
             siblings,
             model=model,
             base_url=base_url,
+            num_ctx=num_ctx,
             timing_collector=timing_collector,
         )
 
@@ -547,6 +553,7 @@ def _ollama_batched_title_call(
     model: str,
     base_url: str = OLLAMA_BASE_URL,
     timeout: float = 120.0,
+    num_ctx: int | None = 16384,
     timing_collector: TimingCollector | None = None,
 ) -> list[str | None] | None:
     """One batched Ollama call for a chunk of variants (v97).
@@ -562,6 +569,14 @@ def _ollama_batched_title_call(
 
     num_predict = _TOKENS_PER_TITLE * len(slots) + _BATCH_OVERHEAD_TOKENS
 
+    options: dict[str, object] = {
+        "num_predict": num_predict,
+        "temperature": 0.0,
+        "seed": 42,
+    }
+    if num_ctx is not None:
+        options["num_ctx"] = num_ctx
+
     payload = json.dumps(
         {
             "model": model,
@@ -569,12 +584,7 @@ def _ollama_batched_title_call(
             "prompt": prompt,
             "format": "json",
             "stream": False,
-            "options": {
-                "num_ctx": 16384,
-                "num_predict": num_predict,
-                "temperature": 0.0,
-                "seed": 42,
-            },
+            "options": options,
         }
     ).encode()
 
@@ -678,6 +688,7 @@ def build_default_batch_title_fn(
     model: str,
     base_url: str = OLLAMA_BASE_URL,
     *,
+    num_ctx: int | None = 16384,
     timing_collector: TimingCollector | None = None,
 ) -> BatchTitleFn:
     """Bind model + base_url into a BatchTitleFn for the production LLM path."""
@@ -693,6 +704,7 @@ def build_default_batch_title_fn(
             all_slots,
             model=model,
             base_url=base_url,
+            num_ctx=num_ctx,
             timing_collector=timing_collector,
         )
 
