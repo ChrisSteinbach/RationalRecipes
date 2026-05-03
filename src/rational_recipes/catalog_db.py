@@ -570,6 +570,29 @@ class CatalogDB:
                 (display_title, variant_id),
             )
 
+    def update_category(self, variant_id: str, category: str | None) -> None:
+        """Overwrite a variant's ``category`` (vwt.33 backfill).
+
+        Single-row UPDATE in its own transaction. Pass ``None`` to clear
+        the column (the PWA falls back to "uncategorized" for NULL).
+        """
+        with self._conn:
+            self._conn.execute(
+                "UPDATE variants SET category = ? WHERE variant_id = ?",
+                (category, variant_id),
+            )
+
+    def iter_variant_ids_titles(self) -> Iterable[tuple[str, str]]:
+        """Stream ``(variant_id, normalized_title)`` for every variant.
+
+        Used by the categorize-backfill CLI to walk the table without
+        loading the whole row set into memory.
+        """
+        for row in self._conn.execute(
+            "SELECT variant_id, normalized_title FROM variants"
+        ):
+            yield (row[0], row[1])
+
     def record_l1_run(
         self,
         l1_key: str,
