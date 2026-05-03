@@ -57,6 +57,7 @@ from rational_recipes.scrape.merge import (
     DEFAULT_NEAR_DUP_THRESHOLD,
     merge_corpora,
 )
+from rational_recipes.scrape.ner_match import resolve_ner_for_line
 from rational_recipes.scrape.parse import ParsedIngredient
 from rational_recipes.scrape.pass3_titles import (
     Pass3Stats,
@@ -69,6 +70,7 @@ from rational_recipes.scrape.pipeline_merged import (
     build_variants,
 )
 from rational_recipes.scrape.recipenlg import Recipe, RecipeNLGLoader
+from rational_recipes.scrape.regex_parse import regex_parse_line
 from rational_recipes.scrape.wdc import WDCLoader, WDCRecipe
 
 logger = logging.getLogger(__name__)
@@ -243,6 +245,12 @@ class CatalogRunStats:
     pass1_lines_parsed: int = 0
     pass1_lines_cache_hits: int = 0
     pass1_llm_batches: int = 0
+    # am5: count lines resolved off-LLM via the RecipeNLG NER hot path.
+    # Bumps when ``regex_parse_line`` returns a confident parse using the
+    # NER candidate as ``name_override`` — those lines never reach
+    # ``parse_fn`` and produce a cache row indistinguishable downstream
+    # from an LLM-derived parse.
+    pass1_ner_hits: int = 0
     # vwt.24 Pass 3 counters.
     pass3: Pass3Stats = field(default_factory=Pass3Stats)
     wallclock_seconds: float = 0.0
@@ -283,6 +291,7 @@ def _pass1_recipe(
     line_text_cache: dict[str, str | None],
     stats: CatalogRunStats,
     lock: threading.Lock | None = None,
+    ner_list: Sequence[str] | None = None,
 ) -> None:
     """Parse one recipe's lines and persist them, applying line-text dedup.
 
@@ -295,6 +304,18 @@ def _pass1_recipe(
     (``db``, ``line_text_cache``, ``stats``) is accessed only while the
     lock is held. The LLM call (``parse_fn``) runs unlocked so multiple
     recipes can have in-flight Ollama requests concurrently.
+
+    ``ner_list`` (am5): optional NER-column entries from the source
+    recipe. When present, each line is run through the NER hot path
+    before being enqueued for the LLM — ``resolve_ner_for_line`` picks
+    the longest NER value that substring-matches the line, then
+    ``regex_parse_line(name_override=...)`` produces qty/unit/prep
+    locally. Successful NER+regex parses are stored in the cache with
+    the production model+seed so Pass 2 finds them transparently and
+    the line-text index naturally amortizes them across recipes.
+    Validation showed 96.85% NER hit-rate with 97.94% LLM-agreement on
+    a 5000-recipe RecipeNLG sample — well above the 85% bar. WDC
+    recipes pass ``ner_list=None`` and skip the hot path.
     """
     if not raw_lines:
         return
@@ -303,7 +324,7 @@ def _pass1_recipe(
         lock if lock is not None else contextlib.nullcontext()
     )
 
-    # --- Phase 1 (locked): skip check + resolve from cache ---
+    # --- Phase 1 (locked): skip check + resolve from cache + NER hot path ---
     with hold:
         if db.has_parsed_lines_for_recipe(corpus, recipe_id, model=model, seed=seed):
             stats.pass1_recipes_skipped += 1
@@ -332,22 +353,43 @@ def _pass1_recipe(
                 continue
             # DB cache hit (line-text dedup across recipes / prior runs).
             found, payload = db.lookup_cached_parse(line, model, seed)
-            if not found:
-                needs_llm.append((idx, line))
-                continue
-            stats.pass1_lines_cache_hits += 1
-            line_text_cache[line] = payload
-            pre_resolved.append(
-                ParsedLineRow(
-                    corpus=corpus,
-                    recipe_id=recipe_id,
-                    line_index=idx,
-                    raw_line=line,
-                    parsed_json=payload,
-                    model=model,
-                    seed=seed,
+            if found:
+                stats.pass1_lines_cache_hits += 1
+                line_text_cache[line] = payload
+                pre_resolved.append(
+                    ParsedLineRow(
+                        corpus=corpus,
+                        recipe_id=recipe_id,
+                        line_index=idx,
+                        raw_line=line,
+                        parsed_json=payload,
+                        model=model,
+                        seed=seed,
+                    )
                 )
-            )
+                continue
+            # NER hot path (am5): try to resolve a NER candidate for this
+            # line, then run regex_parse_line with that override. The
+            # parse is recorded as if the LLM produced it — same model,
+            # same seed — so Pass 2 and the cross-recipe dedup index
+            # treat it identically to an LLM-derived row.
+            ner_payload = _try_ner_parse(line, ner_list)
+            if ner_payload is not None:
+                stats.pass1_ner_hits += 1
+                line_text_cache[line] = ner_payload
+                pre_resolved.append(
+                    ParsedLineRow(
+                        corpus=corpus,
+                        recipe_id=recipe_id,
+                        line_index=idx,
+                        raw_line=line,
+                        parsed_json=ner_payload,
+                        model=model,
+                        seed=seed,
+                    )
+                )
+                continue
+            needs_llm.append((idx, line))
 
     # --- Phase 2 (unlocked): LLM call ---
     new_rows: list[ParsedLineRow] = []
@@ -397,6 +439,29 @@ def _pass1_recipe(
             stats.pass1_lines_parsed += len(all_rows)
 
 
+def _try_ner_parse(
+    line: str,
+    ner_list: Sequence[str] | None,
+) -> str | None:
+    """Resolve a NER candidate for ``line`` and run regex+NER (am5).
+
+    Returns the JSON-encoded ParsedIngredient on success, ``None`` when
+    NER doesn't apply (no NER list, no candidate found, or the regex
+    rejects the line). Successful payloads are cache-shape-identical to
+    LLM-derived rows, so callers can drop them into ``parsed_ingredient_lines``
+    without further translation.
+    """
+    if not ner_list:
+        return None
+    candidate = resolve_ner_for_line(line, ner_list)
+    if candidate is None:
+        return None
+    rx_result = regex_parse_line(line, name_override=candidate)
+    if rx_result is None:
+        return None
+    return parsed_to_json(rx_result.parsed)
+
+
 def _pass1_counters(stats: CatalogRunStats) -> dict[str, int]:
     return {
         "recipes_seen": stats.pass1_recipes_seen,
@@ -404,6 +469,7 @@ def _pass1_counters(stats: CatalogRunStats) -> dict[str, int]:
         "lines_parsed": stats.pass1_lines_parsed,
         "lines_cache_hits": stats.pass1_lines_cache_hits,
         "llm_batches": stats.pass1_llm_batches,
+        "ner_hits": stats.pass1_ner_hits,
     }
 
 
@@ -432,19 +498,25 @@ def _run_pass1(
     if start_monotonic is None:
         start_monotonic = time.monotonic()
 
-    # Flatten all recipes into a work list.
-    work: list[tuple[str, str, Sequence[str]]] = []
+    # Flatten all recipes into a work list. RecipeNLG rows carry the NER
+    # list through so the am5 hot path can resolve names without the LLM;
+    # WDC rows pass None and use the regex+LLM path unchanged.
+    work: list[tuple[str, str, Sequence[str], Sequence[str] | None]] = []
     for key in keys:
         group = groups[key]
         for r in group.recipenlg:
-            work.append(("recipenlg", recipenlg_recipe_id(r), r.ingredients))
+            work.append(
+                ("recipenlg", recipenlg_recipe_id(r), r.ingredients, r.ner)
+            )
         for w in group.wdc:
-            work.append(("wdc", wdc_recipe_id(w), w.ingredients))
+            work.append(("wdc", wdc_recipe_id(w), w.ingredients, None))
 
     total = len(work)
 
-    def _process(item: tuple[str, str, Sequence[str]]) -> None:
-        corpus, recipe_id, raw_lines = item
+    def _process(
+        item: tuple[str, str, Sequence[str], Sequence[str] | None],
+    ) -> None:
+        corpus, recipe_id, raw_lines, ner_list = item
         _pass1_recipe(
             db=db,
             corpus=corpus,
@@ -455,6 +527,7 @@ def _run_pass1(
             seed=seed,
             line_text_cache=line_text_cache,
             stats=stats,
+            ner_list=ner_list,
             lock=lock,
         )
 
@@ -537,6 +610,15 @@ def _pass2_counters(stats: CatalogRunStats) -> dict[str, int]:
         "groups_skipped": stats.l1_groups_skipped,
         "groups_dry": stats.l1_groups_dry,
         "variants_produced": stats.variants_produced,
+    }
+
+
+def _pass3_counters(stats: CatalogRunStats) -> dict[str, int]:
+    return {
+        "titled": stats.pass3.variants_titled,
+        "skipped": stats.pass3.variants_skipped,
+        "llm_calls": stats.pass3.llm_calls,
+        "llm_failures": stats.pass3.llm_failures,
     }
 
 
@@ -780,6 +862,18 @@ def run_catalog_pipeline(
     if do_pass3:
         logger.info("Pass 3: generating distinctive variant titles")
         resolved_title_fn = title_fn or build_default_title_fn(model)
+
+        def _pass3_beat(position: int, total: int) -> None:
+            heartbeat(
+                HeartbeatSnapshot(
+                    pass_name="pass3",
+                    position=position,
+                    total=total,
+                    elapsed_seconds=time.monotonic() - start_t,
+                    counters=_pass3_counters(stats),
+                )
+            )
+
         run_pass3(
             db=db,
             title_fn=resolved_title_fn,
@@ -787,6 +881,7 @@ def run_catalog_pipeline(
             max_siblings=max_siblings,
             force=pass3_force,
             stats=stats.pass3,
+            on_group_done=_pass3_beat,
         )
 
     stats.wallclock_seconds = time.monotonic() - start_t

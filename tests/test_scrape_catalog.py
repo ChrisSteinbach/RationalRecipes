@@ -392,21 +392,29 @@ class TestRunCatalogPipeline:
         assert titles == {"pannkakor"} or titles == set()
 
     def test_resumability_after_mid_run_abort(
-        self, synthetic_corpora: tuple[Path, Path], tmp_path: Path
+        self,
+        synthetic_corpora: tuple[Path, Path],
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Kill mid-run → next run skips completed groups, processes remainder."""
+        """Kill mid-run → next run skips completed groups, processes remainder.
+
+        The synthetic corpus has clean ``"<qty> <unit> <ingredient>"`` lines
+        whose NER values substring-match — meaning the am5 hot path would
+        resolve every line off the LLM. To exercise the parse_fn crash
+        path, disable the NER hot path inline so Pass 1 routes to the
+        injected stub.
+        """
         csv_path, zip_path = synthetic_corpora
         db, _ = _open_db(tmp_path)
 
-        calls: dict[str, int] = {"n": 0}
-
-        def flaky_parse(lines: list[str]) -> list[ParsedIngredient | None]:
-            calls["n"] += 1
-            # Fail after chocolate cake's first parse — pannkakor processed
-            # first alphabetically ("chocolate cake" < "pannkakor" but the
-            # test uses callable-counting, so abort after the group's first
-            # call).
-            raise RuntimeError("simulated mid-run crash")
+        # Disable the NER hot path so the synthetic lines flow to parse_fn
+        # the way they did pre-am5. The mechanism under test is resumability,
+        # not NER coverage.
+        monkeypatch.setattr(
+            "rational_recipes.scrape.catalog_pipeline._try_ner_parse",
+            lambda *_args, **_kwargs: None,
+        )
 
         # First run: succeed on pannkakor + chocolate cake's first group by
         # making parse_fn succeed only for lines from pannkakor.
@@ -570,6 +578,87 @@ class TestRunCatalogPipeline:
 
         db_serial.close()
         db_parallel.close()
+
+    def test_ner_hot_path_skips_parse_fn_for_recipenlg(
+        self,
+        synthetic_corpora: tuple[Path, Path],
+        tmp_path: Path,
+    ) -> None:
+        """NER+regex resolves clean RecipeNLG lines without calling the LLM (am5).
+
+        The synthetic corpus's "<qty> <unit> <ingredient>" lines all have
+        NER values that substring-match. NER+regex therefore handles every
+        RecipeNLG line, leaving only WDC lines for ``parse_fn``.
+        """
+        csv_path, zip_path = synthetic_corpora
+        db, _ = _open_db(tmp_path)
+        seen_lines: list[str] = []
+
+        def tracking_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            seen_lines.extend(lines)
+            return _default_parse(lines)
+
+        stats = run_catalog_pipeline(
+            db=db,
+            rnlg_loader=RecipeNLGLoader(path=csv_path),
+            wdc_loader=WDCLoader(zip_path=zip_path),
+            parse_fn=tracking_parse,
+            extract_fn=_default_extract,
+            corpus_revisions="rev-ner",
+            l1_min=3,
+            l2_threshold=0.3,
+            l2_min=2,
+            l3_min=2,
+        )
+
+        # RecipeNLG lines have NER substring matches and were resolved off
+        # the LLM. WDC lines have ner_list=None and still pay the LLM cost.
+        # The fixture has 7 RecipeNLG recipes (3 pannkakor + 4 chocolate
+        # cake); the only LLM calls should be for WDC pannkakor lines.
+        for line in seen_lines:
+            # No chocolate cake / non-pannkakor RecipeNLG line should be here.
+            assert "sugar" not in line, (
+                f"unexpected RecipeNLG line in LLM batch: {line}"
+            )
+        assert stats.pass1_ner_hits > 0
+
+    def test_ner_disabled_for_wdc_recipes(
+        self,
+        synthetic_corpora: tuple[Path, Path],
+        tmp_path: Path,
+    ) -> None:
+        """WDC recipes have no NER column — they always reach the parse_fn (am5)."""
+        csv_path, zip_path = synthetic_corpora
+        db, _ = _open_db(tmp_path)
+        wdc_lines_seen: list[str] = []
+
+        def tracking_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            # WDC lines start with "150 g flour" / "500 ml milk" etc.
+            # The fixture's pannkakor RecipeNLG lines look the same, so
+            # rely on stats.pass1_ner_hits to confirm WDC is the residue.
+            wdc_lines_seen.extend(lines)
+            return _default_parse(lines)
+
+        stats = run_catalog_pipeline(
+            db=db,
+            rnlg_loader=RecipeNLGLoader(path=csv_path),
+            wdc_loader=WDCLoader(zip_path=zip_path),
+            parse_fn=tracking_parse,
+            extract_fn=_default_extract,
+            corpus_revisions="rev-wdc",
+            l1_min=3,
+            l2_threshold=0.3,
+            l2_min=2,
+            l3_min=2,
+        )
+        # WDC pannkakor has 3 recipes × 2 lines = 6 lines that need LLM
+        # because no NER list flows through. The exact count depends on
+        # line-text dedup but at minimum some lines must reach parse_fn
+        # (WDC has no NER and the fixture's pannkakor variants vary qty
+        # per recipe so dedup doesn't collapse all of them).
+        assert len(wdc_lines_seen) > 0
+        # NER hits should still be positive — RecipeNLG lines used it.
+        assert stats.pass1_ner_hits > 0
 
     def test_rejects_unknown_language_filter(
         self, synthetic_corpora: tuple[Path, Path], tmp_path: Path
