@@ -1,0 +1,568 @@
+{
+  "schema_version": 1,
+  "db": "output/catalog/recipes.db",
+  "sample": 2000,
+  "distinct_lines": true,
+  "buckets": {
+    "total": 2000,
+    "regex_hit_llm_hit": 213,
+    "regex_hit_llm_failed": 0,
+    "regex_decline_llm_hit": 1787,
+    "regex_decline_llm_failed": 0,
+    "ing_match": 213,
+    "unit_match": 213,
+    "qty_match": 213,
+    "full_match": 213
+  },
+  "metrics": {
+    "hit_rate": 0.1065,
+    "llm_only_share": 0.8935,
+    "ing_agreement": 1.0,
+    "unit_agreement": 1.0,
+    "qty_agreement": 1.0,
+    "full_agreement": 1.0
+  },
+  "disagreements": [],
+  "declines": [
+    {
+      "line": "pastry or ziplock bags optional",
+      "llm": {
+        "quantity": 0.0,
+        "unit": "bag",
+        "ingredient": "bag",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 lb. sausage (like Jimmy Dean or Owens)",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "lb",
+        "ingredient": "sausage",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "Tuorli ( circa 2) 50 g",
+      "llm": {
+        "quantity": 100.0,
+        "unit": "g",
+        "ingredient": "tuorli",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/2 lb. butter or butter substitute",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "lb",
+        "ingredient": "butter",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/2 bell pepper (if desired)",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "g",
+        "ingredient": "bell pepper",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 tsp (5 ml). salt",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "tsp",
+        "ingredient": "salt",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "3/4 c. prepared mild or medium salsa",
+      "llm": {
+        "quantity": 0.75,
+        "unit": "cup",
+        "ingredient": "salsa",
+        "preparation": "prepared"
+      }
+    },
+    {
+      "line": "1 1/2 c. chocolate wafers, crushed",
+      "llm": {
+        "quantity": 1.5,
+        "unit": "cup",
+        "ingredient": "chocolate wafer",
+        "preparation": "crushed"
+      }
+    },
+    {
+      "line": "1/2 pkg. mini-marshmallows",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "pkg",
+        "ingredient": "marshmallow",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "4 cups thinly sliced lettuce",
+      "llm": {
+        "quantity": 4.0,
+        "unit": "cup",
+        "ingredient": "lettuce",
+        "preparation": "thinly sliced"
+      }
+    },
+    {
+      "line": "1/4 onion (put through press)",
+      "llm": {
+        "quantity": 0.25,
+        "unit": "onion",
+        "ingredient": "onion",
+        "preparation": "put through press"
+      }
+    },
+    {
+      "line": "1/2 lb Golden brown Delicious apples, peeled, cored, cut into 1/2-inch pcs (about 4 c.)",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "lb",
+        "ingredient": "apple",
+        "preparation": "peeled, cored, cut into 1/2-inch pcs"
+      }
+    },
+    {
+      "line": "3 lb. hamburger (ground chuck)",
+      "llm": {
+        "quantity": 3.0,
+        "unit": "lb",
+        "ingredient": "hamburger",
+        "preparation": "ground chuck"
+      }
+    },
+    {
+      "line": "cheese, (optional)",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "g",
+        "ingredient": "cheese",
+        "preparation": "optional"
+      }
+    },
+    {
+      "line": "seasoning (packets from inside Barzi soup package)",
+      "llm": {
+        "quantity": 0.0,
+        "unit": "packet",
+        "ingredient": "seasoning",
+        "preparation": "from inside barzi soup package"
+      }
+    },
+    {
+      "line": "3/4 cups Granulated White Sugar",
+      "llm": {
+        "quantity": 0.75,
+        "unit": "cup",
+        "ingredient": "sugar",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "105 g ground almonds",
+      "llm": {
+        "quantity": 105.0,
+        "unit": "g",
+        "ingredient": "almond",
+        "preparation": "ground"
+      }
+    },
+    {
+      "line": "2 c. Chicken Broth",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "cup",
+        "ingredient": "chicken broth",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "2 x Onions",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "MEDIUM",
+        "ingredient": "onion",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "2 tins green beans or 1 lb. fresh",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "tin",
+        "ingredient": "green beans",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "300 g de chocolat noir",
+      "llm": {
+        "quantity": 300.0,
+        "unit": "g",
+        "ingredient": "chocolat noir",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 (10 ounce) bag yellow rice (cooked as directed)",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "ounce",
+        "ingredient": "rice",
+        "preparation": "cooked as directed"
+      }
+    },
+    {
+      "line": "2 c. buttery cracker crumbs",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "cup",
+        "ingredient": "cracker crumbs",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/4 c. milk or buttermilk",
+      "llm": {
+        "quantity": 0.25,
+        "unit": "cup",
+        "ingredient": "milk",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/2 teaspoon ground ancho chile powder",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "tsp",
+        "ingredient": "chile powder",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "4 medium or 8 small carrots",
+      "llm": {
+        "quantity": 4.0,
+        "unit": "MEDIUM",
+        "ingredient": "carrot",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 (3 1/2 lb.) chicken",
+      "llm": {
+        "quantity": 4.5,
+        "unit": "lb",
+        "ingredient": "chicken",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "4 pkg. Equal, divided",
+      "llm": {
+        "quantity": 4.0,
+        "unit": "pkg",
+        "ingredient": "equal",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/4 lb. Swiss cheese, sliced",
+      "llm": {
+        "quantity": 0.25,
+        "unit": "lb",
+        "ingredient": "swiss cheese",
+        "preparation": "sliced"
+      }
+    },
+    {
+      "line": "8 oz. radiatori",
+      "llm": {
+        "quantity": 8.0,
+        "unit": "oz",
+        "ingredient": "radiatori",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "2 oz. baking chocolate",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "oz",
+        "ingredient": "chocolate",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/2 c. chives (dry)",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "cup",
+        "ingredient": "chives",
+        "preparation": "dry"
+      }
+    },
+    {
+      "line": "Chopped bacon",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "g",
+        "ingredient": "bacon",
+        "preparation": "chopped"
+      }
+    },
+    {
+      "line": "1 firm mango peeled - finely chopped",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "medium",
+        "ingredient": "mango",
+        "preparation": "finely chopped"
+      }
+    },
+    {
+      "line": "3 cans refrigerated biscuits",
+      "llm": {
+        "quantity": 3.0,
+        "unit": "can",
+        "ingredient": "biscuit",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 can Campbell's Cream of Mushroom soup",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "can",
+        "ingredient": "campbell's cream of mushroom soup",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/2 c. (8 to 10 slices) well drained bacon bits",
+      "llm": {
+        "quantity": 9.0,
+        "unit": "cup",
+        "ingredient": "bacon bit",
+        "preparation": "well drained"
+      }
+    },
+    {
+      "line": "1 cup Sour Cream Or Plain Yogurt",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "cup",
+        "ingredient": "sour cream or plain yogurt",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 (14 oz.) can Eagle Brand(R) Fat Free Sweetened Condensed Milk",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "can",
+        "ingredient": "milk",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 boneless beef chuck roast (3 pound)",
+      "llm": {
+        "quantity": 3.0,
+        "unit": "lb",
+        "ingredient": "beef chuck roast",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 Tbsp.meal",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "tbsp",
+        "ingredient": "meal",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "Diced Roma Tomato",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "item",
+        "ingredient": "tomato",
+        "preparation": "roma"
+      }
+    },
+    {
+      "line": "1 package ramen noodles broken and toasted",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "package",
+        "ingredient": "ramen noodles",
+        "preparation": "broken and toasted"
+      }
+    },
+    {
+      "line": "7 c. Sugar",
+      "llm": {
+        "quantity": 7.0,
+        "unit": "cup",
+        "ingredient": "sugar",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "2 x -8\" plain pastry pie crusts(store bought or possibly make your own)",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "MEDIUM",
+        "ingredient": "crust",
+        "preparation": "store bought or possibly make your own"
+      }
+    },
+    {
+      "line": "1 green sweet pepper, chopped",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "pepper",
+        "ingredient": "pepper",
+        "preparation": "chopped"
+      }
+    },
+    {
+      "line": "4 lb plum tomatoes, cut into 1/2-inch pieces",
+      "llm": {
+        "quantity": 4.0,
+        "unit": "lb",
+        "ingredient": "plum tomato",
+        "preparation": "cut into 0.5-inch pieces"
+      }
+    },
+    {
+      "line": "6 oz. Monterey Jack cheese, shredded",
+      "llm": {
+        "quantity": 6.0,
+        "unit": "oz",
+        "ingredient": "cheese",
+        "preparation": "shredded"
+      }
+    },
+    {
+      "line": "0.5 (12 ounce) can beer",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "can",
+        "ingredient": "beer",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "2/3 c. milk (skim)",
+      "llm": {
+        "quantity": 0.6666666666666666,
+        "unit": "cup",
+        "ingredient": "milk",
+        "preparation": "skim"
+      }
+    },
+    {
+      "line": "5 lumpia wrappers",
+      "llm": {
+        "quantity": 5.0,
+        "unit": "MEDIUM",
+        "ingredient": "wrapper",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "12 stick cup butter or 12 stick cup margarine, softened",
+      "llm": {
+        "quantity": 12.0,
+        "unit": "cup",
+        "ingredient": "butter",
+        "preparation": "softened"
+      }
+    },
+    {
+      "line": "1 pkg. Lipton's Onion Soup mix",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "pkg",
+        "ingredient": "onion soup mix",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 Tbsp. fresh dill",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "tbsp",
+        "ingredient": "dill",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/4 lb. cheese (Provolone, Muenster, Monterey Jack)",
+      "llm": {
+        "quantity": 0.25,
+        "unit": "lb",
+        "ingredient": "cheese",
+        "preparation": "Provolone, Muenster, Monterey Jack"
+      }
+    },
+    {
+      "line": "10 to 15 Ritz crackers",
+      "llm": {
+        "quantity": 12.5,
+        "unit": "count",
+        "ingredient": "cracker",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "3/4 tsp Grnd nutmeg",
+      "llm": {
+        "quantity": 0.75,
+        "unit": "tsp",
+        "ingredient": "nutmeg",
+        "preparation": "grnd"
+      }
+    },
+    {
+      "line": "2 teaspoon(s) real vanilla extract",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "tsp",
+        "ingredient": "vanilla extract",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "3/4 cup natural cocoa powder",
+      "llm": {
+        "quantity": 0.75,
+        "unit": "cup",
+        "ingredient": "cocoa powder",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/4 tsp. allspice (ground)",
+      "llm": {
+        "quantity": 0.25,
+        "unit": "tsp",
+        "ingredient": "allspice",
+        "preparation": "ground"
+      }
+    }
+  ]
+}
