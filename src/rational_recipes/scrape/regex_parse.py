@@ -47,6 +47,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from rational_recipes.scrape.canonical import canonicalize_name
 from rational_recipes.scrape.parse import ParsedIngredient
 from rational_recipes.scrape.usda_match import (
     DEFAULT_SIMILARITY_THRESHOLD,
@@ -460,11 +461,23 @@ def regex_parse_line(
     line: str,
     *,
     similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+    name_override: str | None = None,
 ) -> RegexParseResult | None:
     """Parse one ingredient line; return None if not confidently parseable.
 
     See module docstring for the acceptance rules. Bias is conservative:
     when in doubt return ``None`` so the LLM gets a chance.
+
+    ``name_override`` (am5): when provided, the qty/unit/prep extraction
+    proceeds normally but USDA name resolution is skipped. The override
+    is run through ``canonicalize_name`` (the same path Pass 2's variant
+    grouping uses) and used as the ingredient field. Intended for the
+    RecipeNLG NER hot path: NER values come pre-canonicalized by the
+    corpus, so the regex's USDA fallback isn't needed and a much wider
+    set of lines (panko breadcrumbs, mexicorn, brand-name compounds)
+    gets a confident parse off the LLM hot path. The "or"/"and"/unsafe-
+    punctuation safety guards still apply — NER can't disambiguate
+    "butter or margarine" any better than the regex can.
     """
     if not line:
         return None
@@ -537,11 +550,23 @@ def regex_parse_line(
     if any(p in lower_name for p in (" or ", " and ", " plus ", " & ")):
         return None
 
-    canonical = resolve_canonical_name(
-        name_part, threshold=similarity_threshold
-    )
-    if canonical is None:
-        return None
+    if name_override is not None:
+        # NER hot path (am5): canonicalize the override and skip USDA.
+        # canonicalize_name lowercases and resolves through IngredientFactory
+        # synonyms, mirroring how RecipeNLG's Recipe.ingredient_names is
+        # built so variant grouping sees a consistent vocabulary.
+        canonical_str = canonicalize_name(name_override)
+        if not canonical_str:
+            return None
+        similarity_score = 1.0
+    else:
+        canonical = resolve_canonical_name(
+            name_part, threshold=similarity_threshold
+        )
+        if canonical is None:
+            return None
+        canonical_str = canonical.canonical
+        similarity_score = canonical.similarity
 
     # Default unit if none found: choose by registered ingredient hints.
     # We don't have shape metadata at this layer, so the conservative
@@ -561,11 +586,11 @@ def regex_parse_line(
     parsed = ParsedIngredient(
         quantity=qty_parse.quantity,
         unit=unit,
-        ingredient=canonical.canonical,
+        ingredient=canonical_str,
         preparation=preparation,
         raw=raw,
     )
-    return RegexParseResult(parsed=parsed, similarity=canonical.similarity)
+    return RegexParseResult(parsed=parsed, similarity=similarity_score)
 
 
 def _split_name_and_prep(text: str) -> tuple[str, str]:

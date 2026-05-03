@@ -718,3 +718,87 @@ class TestApproximationPrefix:
         assert result.parsed.quantity == 1.0
         assert result.parsed.unit == "tbsp"
         assert result.parsed.ingredient.lower().endswith("olive oil")
+
+
+class TestNameOverride:
+    """``name_override`` is the RecipeNLG NER hot path (am5).
+
+    When provided, the regex's qty/unit/prep extraction proceeds normally
+    but USDA name resolution is skipped — the override goes through
+    ``canonicalize_name`` and lands in the ``ingredient`` field.
+    """
+
+    def test_override_skips_usda_for_unknown_name(self) -> None:
+        # "panko breadcrumbs" — DB might not synonym this exact phrase, but
+        # NER says "breadcrumbs" so the parse goes through.
+        result = regex_parse_line(
+            "1/2 cup panko breadcrumbs",
+            name_override="breadcrumbs",
+        )
+        assert result is not None
+        assert result.parsed.quantity == 0.5
+        assert result.parsed.unit == "cup"
+        # canonicalize_name lowercases + canonicalizes via IngredientFactory.
+        assert result.parsed.ingredient in {"breadcrumbs", "bread crumbs"}
+        assert result.similarity == 1.0
+
+    def test_override_preserves_qty_and_unit(self) -> None:
+        result = regex_parse_line(
+            "2 Tbsp. pine nuts",
+            name_override="pine nuts",
+        )
+        assert result is not None
+        assert result.parsed.quantity == 2.0
+        assert result.parsed.unit == "tbsp"
+
+    def test_override_canonicalizes_swedish(self) -> None:
+        # NER value is Swedish; canonicalize_name maps via SWEDISH_TO_ENGLISH.
+        result = regex_parse_line(
+            "1 cup vetemjöl",
+            name_override="vetemjöl",
+        )
+        assert result is not None
+        # canonicalize_name routes vetemjöl → flour through the ingredients DB.
+        assert result.parsed.ingredient == "flour"
+
+    def test_override_lowercases_input(self) -> None:
+        # canonicalize_name lowercases AND maps through IngredientFactory
+        # synonyms — "Cheddar cheese" routes to its canonical "cheese"
+        # via the cheese synonym set in ingredients.db (the over-
+        # generalization tracked under bead dfm).
+        result = regex_parse_line(
+            "1/2 c. shredded Cheddar cheese",
+            name_override="Cheddar cheese",
+        )
+        assert result is not None
+        assert result.parsed.ingredient == "cheese"
+
+    def test_override_falls_through_on_unparseable_qty(self) -> None:
+        # No quantity at line start — regex still rejects regardless of NER.
+        assert regex_parse_line(
+            "a pinch of salt",
+            name_override="salt",
+        ) is None
+
+    def test_override_respects_or_alternation_guard(self) -> None:
+        # NER picked one of the alternates, but the line is genuinely
+        # ambiguous about which one is in use. Stay conservative — let
+        # the LLM handle it.
+        assert regex_parse_line(
+            "1 cup butter or margarine",
+            name_override="butter",
+        ) is None
+
+    def test_override_empty_string_returns_none(self) -> None:
+        # An empty / whitespace-only override is an explicit "no name" —
+        # the regex returns None so the caller routes the line to the LLM.
+        # Callers should pass ``None`` (not "") for "no override" — see
+        # the docstring contract.
+        assert regex_parse_line(
+            "1 cup flour",
+            name_override="",
+        ) is None
+        assert regex_parse_line(
+            "1 cup flour",
+            name_override="   ",
+        ) is None
