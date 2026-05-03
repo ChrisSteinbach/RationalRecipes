@@ -10,6 +10,17 @@ ingredient name is trustworthy enough to skip the LLM. Two tiers:
 The bias is conservative: a miss returns ``None`` so the caller falls
 through to the LLM. A wrong name in a regex parse poisons variant
 statistics; an LLM cost is cheap by comparison (vwt.17 acceptance note).
+
+English-canonical guarantee (r6w): Some FDC/FAO rows store a Swedish
+canonical_name (``valnötter``, ``tomat``, ``olja``, ``pekannötter``).
+The PWA shows English unconditionally per project policy
+(``project_english_display``), and the LLM hot path emits English
+because of the e4s NEUTRAL_PROMPT update. The resolver matches that
+contract by post-translating any DB result through
+``scrape.canonical.SWEDISH_TO_ENGLISH`` — so regex hits and LLM hits on
+the same line produce the same canonical and land in the same variant.
+The same dict pre-translates the input, so a Swedish noun whose only
+DB hit is a Swedish-canonical row resolves to English in one hop.
 """
 
 from __future__ import annotations
@@ -21,6 +32,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from rational_recipes.ingredient import Factory as IngredientFactory
+from rational_recipes.scrape.canonical import SWEDISH_TO_ENGLISH
 
 DEFAULT_SIMILARITY_THRESHOLD = 0.85
 """Minimum SequenceMatcher.ratio() for fuzzy matches to be accepted.
@@ -47,6 +59,19 @@ class CanonicalMatch:
     ratio for fuzzy hits; 0.0 only on synthetic test paths."""
 
 
+def _to_english(name: str) -> str:
+    """Map a Swedish canonical/synonym to English; passthrough on miss.
+
+    Mirrors ``scrape.canonical._translate_swedish``. Imported via the
+    shared dict so a single source of truth governs both the
+    canonicalize_name path (LLM-fed) and the regex-resolve path (this
+    module). Empty / non-string input returns the input unchanged.
+    """
+    if not name:
+        return name
+    return SWEDISH_TO_ENGLISH.get(name.lower().strip(), name)
+
+
 def resolve_canonical_name(
     name: str,
     *,
@@ -59,34 +84,50 @@ def resolve_canonical_name(
     callers can fall through to the LLM. ``candidate_limit`` caps the
     number of LIKE-matched synonyms scored for fuzzy similarity — kept
     small because each is a string-distance computation.
+
+    English-canonical guarantee (r6w): pre-translates the input via
+    SWEDISH_TO_ENGLISH so a Swedish noun is matched against its English
+    cognate, then post-translates the DB result so a Swedish-canonical
+    row (``valnötter``, ``tomat``, ``olja``) returns English.
     """
     if not name:
         return None
     normalized = name.lower().strip()
     if not normalized:
         return None
+    pre_translated = _to_english(normalized)
 
     # Tier 1: exact synonym hit (the canonical resolution path used by
-    # canonicalize_name + the rest of the pipeline).
-    try:
-        ingredient = IngredientFactory.get_by_name(normalized)
-    except KeyError:
-        ingredient = None
+    # canonicalize_name + the rest of the pipeline). Try the English
+    # form first, then the original — covers both Swedish-input and
+    # English-input cases.
+    ingredient = None
+    for candidate in {pre_translated, normalized}:
+        try:
+            ingredient = IngredientFactory.get_by_name(candidate)
+        except KeyError:
+            continue
+        else:
+            break
     if ingredient is not None:
         canonical = ingredient.canonical_name()
         if canonical:
-            return CanonicalMatch(canonical=canonical, similarity=1.0)
+            return CanonicalMatch(
+                canonical=_to_english(canonical), similarity=1.0
+            )
 
     # Tier 2: fuzzy. Pull a small candidate set whose synonym contains
     # at least one query word, then score by SequenceMatcher.
-    candidates = _candidate_synonyms(normalized, limit=candidate_limit)
+    candidates = _candidate_synonyms(pre_translated, limit=candidate_limit)
     if not candidates:
         return None
 
     best_synonym: str | None = None
     best_score = 0.0
     for synonym in candidates:
-        score = SequenceMatcher(None, normalized, synonym.lower()).ratio()
+        score = SequenceMatcher(
+            None, pre_translated.lower(), synonym.lower()
+        ).ratio()
         if score > best_score:
             best_score = score
             best_synonym = synonym
@@ -105,7 +146,9 @@ def resolve_canonical_name(
     )
     if not fuzzy_canonical:
         return None
-    return CanonicalMatch(canonical=fuzzy_canonical, similarity=best_score)
+    return CanonicalMatch(
+        canonical=_to_english(fuzzy_canonical), similarity=best_score
+    )
 
 
 def _candidate_synonyms(name: str, *, limit: int) -> list[str]:

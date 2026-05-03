@@ -93,3 +93,58 @@ class TestFuzzyTolerance:
         # flour-shaped.
         if match is not None:
             assert "flour" in match.canonical.lower()
+
+
+class TestEnglishCanonicalGuarantee:
+    """The pipeline shows English to end users (project_english_display).
+
+    Some FoodData Central rows carry a Swedish ``canonical_name`` because
+    they were imported from FAO/INFOODS Swedish-language entries. The
+    resolver MUST post-translate those via the SWEDISH_TO_ENGLISH dict so
+    regex hits never produce ``valnötter`` / ``tomat`` / ``pekannötter``
+    when the LLM hot path produces ``walnut`` / ``tomato`` / ``pecan``.
+    Without this guarantee, regex-parsed and LLM-parsed instances of the
+    same ingredient land in different L2 clusters (r6w correctness gate).
+    """
+
+    def test_walnuts_returns_english(self) -> None:
+        match = resolve_canonical_name("walnuts")
+        assert match is not None
+        # Must NOT be the Swedish "valnötter" canonical from the DB.
+        assert "valn" not in match.canonical.lower()
+        assert "walnut" in match.canonical.lower()
+
+    def test_tomatoes_returns_english(self) -> None:
+        match = resolve_canonical_name("tomatoes")
+        assert match is not None
+        assert "tomat" not in match.canonical.lower() or (
+            "tomato" in match.canonical.lower()
+        )
+        # Either "tomato" or "tomatoes" — both English.
+        assert "tomato" in match.canonical.lower()
+
+    def test_pecans_returns_english(self) -> None:
+        match = resolve_canonical_name("pecans")
+        assert match is not None
+        assert "pekan" not in match.canonical.lower()
+        assert "pecan" in match.canonical.lower()
+
+    def test_oil_returns_english(self) -> None:
+        # "olja" is the Swedish DB canonical for oil — common enough
+        # that the e4s NEUTRAL_PROMPT update specifically targets it.
+        match = resolve_canonical_name("oil")
+        assert match is not None
+        assert match.canonical.lower() != "olja"
+
+    def test_english_canonical_unaffected(self) -> None:
+        # Sanity: ingredients whose DB canonical is already English
+        # should pass through unchanged.
+        for name, expected_substring in [
+            ("flour", "flour"),
+            ("sugar", "sugar"),
+            ("salt", "salt"),
+            ("butter", "butter"),
+        ]:
+            match = resolve_canonical_name(name)
+            assert match is not None, name
+            assert expected_substring in match.canonical.lower()

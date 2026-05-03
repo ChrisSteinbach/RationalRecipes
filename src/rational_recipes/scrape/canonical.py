@@ -153,6 +153,33 @@ SWEDISH_TO_ENGLISH: dict[str, str] = {
     "nötbuljong": "beef broth",
     # Liquids
     "kaffe": "coffee",
+    # Additional Swedish DB-canonical ingredients caught during r6w
+    # post-translation audit (see usda_match._to_english). The bias is
+    # the same as the rest of the dict: minimum-noise, exact-match
+    # entries that flip Swedish to English. Each one is a real DB
+    # canonical_name returned for an English-input query — leaving it
+    # unmapped means a regex hit would produce e.g. "spenat" while the
+    # LLM hot path emits "spinach", splitting variants downstream.
+    "spenat": "spinach",
+    "blomkål": "cauliflower",
+    "bröd": "bread",
+    "cashewnötter": "cashews",
+    "kikärtor": "chickpeas",
+    "kokosmjölk": "coconut milk",
+    "paprikapulver": "paprika",
+    "pinjenötter": "pine nuts",
+    "purjolök": "leek",
+    "röda linser": "red lentils",
+    "sesamolja": "sesame oil",
+    "solrosfrön": "sunflower seeds",
+    "svarta bönor": "black beans",
+    "vallmofrön": "poppy seeds",
+    "ärtor": "peas",
+    # Caught by the cache shadow comparison — DB synonyms whose canonical
+    # field is Swedish even though the synonym name is English.
+    "champinjoner": "mushrooms",
+    "mynta": "mint",
+    "parmesanost": "parmesan cheese",
 }
 
 
