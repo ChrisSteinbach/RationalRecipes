@@ -43,6 +43,7 @@ from rational_recipes.catalog_db import (
     parsed_from_json,
     parsed_to_json,
 )
+from rational_recipes.categories import categorize
 from rational_recipes.corpus_title_survey import (
     LANGUAGE_FILTER_ALL,
     LANGUAGE_FILTER_PREDICATES,
@@ -700,6 +701,11 @@ def _run_pass2(
                 bucket_size=bucket_size,
             )
 
+        # vwt.33: derive a category from the L1 key. Static keyword
+        # mapping (see ``rational_recipes.categories``) — None means no
+        # rule matched and the column stays NULL (PWA renders that as
+        # the "uncategorized" UI label).
+        category = categorize(key)
         for variant in variants:
             if not variant.normalized_rows:
                 continue
@@ -707,6 +713,7 @@ def _run_pass2(
             db.upsert_variant(
                 variant,
                 l1_key=key,
+                category=category,
                 language=language,
             )
 

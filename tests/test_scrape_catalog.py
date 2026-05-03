@@ -281,6 +281,34 @@ class TestRunCatalogPipeline:
         titles = {v.normalized_title for v in variants}
         assert "pannkakor" in titles
 
+    def test_category_is_populated_from_l1_key(
+        self, synthetic_corpora: tuple[Path, Path], tmp_path: Path
+    ) -> None:
+        """vwt.33: every variant's category derives from ``categorize(l1_key)``.
+
+        The synthetic corpus produces L1 groups ``pannkakor`` (→ breakfast)
+        and ``chocolate cake`` (→ dessert). Both must come back from
+        list_variants with non-NULL category set to those labels.
+        """
+        csv_path, zip_path = synthetic_corpora
+        db, _ = _open_db(tmp_path)
+        run_catalog_pipeline(
+            db=db,
+            rnlg_loader=RecipeNLGLoader(path=csv_path),
+            wdc_loader=WDCLoader(zip_path=zip_path),
+            parse_fn=_default_parse,
+            extract_fn=_default_extract,
+            corpus_revisions="rev-1",
+            l1_min=3,
+            l2_threshold=0.3,
+            l2_min=2,
+            l3_min=2,
+            do_pass3=False,
+        )
+        by_title = {v.normalized_title: v.category for v in db.list_variants()}
+        assert by_title["pannkakor"] == "breakfast"
+        assert by_title["chocolate cake"] == "dessert"
+
     def test_skips_groups_marked_fresh(
         self, synthetic_corpora: tuple[Path, Path], tmp_path: Path
     ) -> None:
