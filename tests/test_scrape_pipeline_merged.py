@@ -366,8 +366,14 @@ class TestNormalizeMergedRow:
         assert row.cells["flour"] == "1 cups"
 
     def test_alias_fallback_when_not_a_factory_synonym(self) -> None:
-        # "ounce" (singular) is not a direct UnitFactory synonym — alias
-        # maps it to "oz", which is. Cell shows the resolved canonical form.
+        # The alias map (``_UNIT_ALIASES``) is a safety net for unit names
+        # the LLM might emit that aren't direct UnitFactory synonyms.
+        # After r6w added "ounce"/"pound"/"kilogram" singulars to the
+        # factory directly, every entry in the alias table now resolves
+        # via the direct path, and the cell preserves the input wording
+        # (matches ``test_unit_synonym_registered_in_factory``). The
+        # alias map is kept as defensive code in case a future model
+        # emits something the factory hasn't seen yet.
         row, _skipped = normalize_merged_row(
             "u",
             "t",
@@ -375,7 +381,9 @@ class TestNormalizeMergedRow:
             [_parsed("flour", 2, "ounce")],
         )
         assert row is not None
-        assert row.cells["flour"] == "2 oz"
+        # "ounce" is now a direct UnitFactory synonym → cell keeps the
+        # input wording.
+        assert row.cells["flour"] == "2 ounce"
 
     def test_unknown_unit_skipped_with_note(self) -> None:
         row, skipped = normalize_merged_row(

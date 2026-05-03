@@ -130,9 +130,9 @@ def _builtin(unit: Unit) -> Unit:
 
 GRAM = _builtin(WeightUnit(["gram", "grams", "g"], 1))
 HG = _builtin(WeightUnit(["hg", "hectogram", "hectograms"], 100))
-KG = _builtin(WeightUnit(["kg", "kilos", "kilograms"], 1000))
-OZ = _builtin(WeightUnit(["oz", "ounces"], 28.3495231))
-LB = _builtin(WeightUnit(["lbs", "lb", "pounds"], 453.592))
+KG = _builtin(WeightUnit(["kg", "kilo", "kilos", "kilogram", "kilograms"], 1000))
+OZ = _builtin(WeightUnit(["oz", "ounce", "ounces"], 28.3495231))
+LB = _builtin(WeightUnit(["lbs", "lb", "pound", "pounds"], 453.592))
 
 QUART = _builtin(VolumeUnit(["quart", "quarts"], 946.353))
 US_PINT = _builtin(VolumeUnit(["US pint", "pint", "pints", "pt", "us_pint"], 473.176))
@@ -197,3 +197,29 @@ EU_SMALL = _builtin(WholeUnit(["EU SMALL"]))
 STICK = _builtin(WholeUnit(["stick", "sticks"]))
 CUBE = _builtin(WholeUnit(["cube", "cubes"]))
 KNOB = _builtin(WholeUnit(["knob", "knobs"]))
+
+# Packaging-shape WholeUnits — registered so the regex parser (r6w) can
+# accept ubiquitous "1 can soup" / "1 pkg cream cheese" / "1 jar X"
+# lines and skip the LLM round-trip. The gram-conversion path stays
+# correctly broken: these units have no entry in any ingredient's
+# portion table, so ``ingredient.wholeunits2grams("can")`` returns
+# None, ``WholeUnit.norm`` raises ``BadUnitException``, and the
+# enclosing ``normalize_merged_row`` adds the row to the ``skipped``
+# list. That's the same observable behavior as before — the LLM also
+# emits ``unit="can"`` for these lines and the row already gets
+# skipped downstream — but now we save the LLM call.
+CAN = _builtin(WholeUnit(["can", "cans"]))
+JAR = _builtin(WholeUnit(["jar", "jars"]))
+PACKAGE = _builtin(WholeUnit(["pkg", "package", "packages", "pkgs", "pkg."]))
+BOX = _builtin(WholeUnit(["box", "boxes"]))
+CARTON = _builtin(WholeUnit(["carton", "cartons"]))
+BAG = _builtin(WholeUnit(["bag", "bags"]))
+BOTTLE = _builtin(WholeUnit(["bottle", "bottles"]))
+HEAD = _builtin(WholeUnit(["head", "heads"]))
+LOAF = _builtin(WholeUnit(["loaf", "loaves"]))
+SLICE = _builtin(WholeUnit(["slice", "slices"]))
+PIECE = _builtin(WholeUnit(["piece", "pieces"]))
+CLOVE = _builtin(WholeUnit(["clove", "cloves"]))
+SPRIG = _builtin(WholeUnit(["sprig", "sprigs"]))
+LEAF = _builtin(WholeUnit(["leaf", "leaves"]))
+STALK = _builtin(WholeUnit(["stalk", "stalks"]))
