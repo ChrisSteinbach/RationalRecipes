@@ -763,15 +763,15 @@ class TestNameOverride:
 
     def test_override_lowercases_input(self) -> None:
         # canonicalize_name lowercases AND maps through IngredientFactory
-        # synonyms — "Cheddar cheese" routes to its canonical "cheese"
-        # via the cheese synonym set in ingredients.db (the over-
-        # generalization tracked under bead dfm).
+        # synonyms. After dfm (per-synonym canonical), "Cheddar cheese"
+        # preserves the cheddar identity instead of collapsing to "cheese"
+        # — different cheese varieties land in different variant clusters.
         result = regex_parse_line(
             "1/2 c. shredded Cheddar cheese",
             name_override="Cheddar cheese",
         )
         assert result is not None
-        assert result.parsed.ingredient == "cheese"
+        assert result.parsed.ingredient == "cheddar cheese"
 
     def test_override_falls_through_on_unparseable_qty(self) -> None:
         # No quantity at line start — regex still rejects regardless of NER.

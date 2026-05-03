@@ -47,6 +47,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from rational_recipes.ingredient import Factory as IngredientFactory
 from rational_recipes.scrape.canonical import canonicalize_name
 from rational_recipes.scrape.parse import ParsedIngredient
 from rational_recipes.scrape.regex_parse import regex_parse_line
@@ -95,15 +96,20 @@ def _ingredient_close(a: str, b: str) -> bool:
     """Compare ingredient names through the same canonicalization path
     that downstream variant grouping uses.
 
-    The cached LLM rows are inconsistent on Swedish→English (the e4s
-    prompt update doesn't catch every line — gemma4:e2b still
-    occasionally emits ``morot`` / ``apelsin`` / ``persilja``). The
-    regex via the r6w SWEDISH_TO_ENGLISH post-translation produces
-    English consistently. To score "would these end up in the same
-    variant cluster", we apply ``canonicalize_name`` to both sides —
-    the same call ``catalog_pipeline`` uses to build the variant
-    ingredient set. Equal-after-canonicalize means equivalent for
-    grouping purposes.
+    Three escalating tiers:
+
+    1. Exact match after ``canonicalize_name`` (per-synonym dfm canonical
+       — ``cheddar`` and ``cheese`` stay distinct, plurals collapse).
+    2. Substring / plural sibling fallback for common morphological
+       differences the canonical layer doesn't normalize (``egg`` vs
+       ``egg yolk``, ``blueberry`` vs ``blueberries``).
+    3. Same-food fallback via ``food_canonical_name()`` — counts two
+       different synonyms of the same FDC food (``bell pepper`` vs
+       ``green pepper``, ``kyckling`` vs ``chicken``, ``oleo`` vs
+       ``margarine``) as agreeing for shadow-harness purposes. They
+       intentionally land in different variant clusters downstream
+       (per-synonym intent), but for agreement scoring against the
+       cached LLM they refer to the same underlying ingredient.
     """
     a_canon = canonicalize_name(a).lower().strip()
     b_canon = canonicalize_name(b).lower().strip()
@@ -120,11 +126,35 @@ def _ingredient_close(a: str, b: str) -> bool:
     # Common English plural↔singular pairs ("blueberry" ↔ "blueberries",
     # "tomato" ↔ "tomatoes") that don't substring-match cleanly.
     for ending, replacement in [("ies", "y"), ("es", ""), ("s", "")]:
-        if a_canon.endswith(ending) and a_canon[: -len(ending)] + replacement == b_canon:
+        if (
+            a_canon.endswith(ending)
+            and a_canon[: -len(ending)] + replacement == b_canon
+        ):
             return True
-        if b_canon.endswith(ending) and b_canon[: -len(ending)] + replacement == a_canon:
+        if (
+            b_canon.endswith(ending)
+            and b_canon[: -len(ending)] + replacement == a_canon
+        ):
             return True
+    # Same-food fallback (dfm): two different synonyms of the same FDC food
+    # share a food_canonical_name — accept as agreement for the harness
+    # even though per-synonym keeps them in distinct variant clusters.
+    a_food = _food_canonical(a_canon)
+    b_food = _food_canonical(b_canon)
+    if a_food and b_food and a_food == b_food:
+        return True
     return False
+
+
+def _food_canonical(name: str) -> str | None:
+    """Look up the food's umbrella canonical for ``name`` (or None)."""
+    if not name:
+        return None
+    try:
+        ingredient = IngredientFactory.get_by_name(name)
+    except KeyError:
+        return None
+    return ingredient.food_canonical_name()
 
 
 @dataclass(frozen=True, slots=True)

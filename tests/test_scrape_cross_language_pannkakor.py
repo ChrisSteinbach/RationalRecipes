@@ -142,6 +142,13 @@ class TestCrossLanguagePannkakorAcceptance:
 
         Pre-canonicalization this was 0 (Swedish names didn't match
         English NER). Acceptance criterion: >=3.
+
+        After dfm (per-synonym canonical), specific qualifiers stay
+        distinct — ``saffron threads`` doesn't collapse to ``saffron``
+        and ``short-grain rice`` doesn't collapse to ``rice``. The
+        cross-language base staples (butter, egg, sugar) still merge
+        because the Swedish→English dict translates ``smör``/``ägg``/
+        ``socker`` to those exact umbrella forms.
         """
         rnlg_group = IngredientGroup(
             canonical_ingredients=_SAFF_RNLG.ingredient_names,
@@ -155,15 +162,23 @@ class TestCrossLanguagePannkakorAcceptance:
         assert len(vc.shared_ingredients) >= 3, (
             f"expected >=3 shared, got {sorted(vc.shared_ingredients)}"
         )
-        # Concrete staples that should always match once both sides are
-        # routed through IngredientFactory.
-        for core in ("butter", "egg", "saffron", "sugar"):
+        # Cross-language staples whose Swedish→English dict mapping
+        # produces the same umbrella both sides emit.
+        for core in ("butter", "egg", "sugar"):
             assert core in vc.shared_ingredients, (
                 f"expected {core!r} in shared, got {sorted(vc.shared_ingredients)}"
             )
 
     def test_flaskpannkaka_shared_ingredients_meets_threshold(self) -> None:
-        """Fläskpannkaka pair shares the pancake base + pork/bacon canonical."""
+        """Fläskpannkaka pair shares the pancake base.
+
+        After dfm (per-synonym canonical), ``salt pork`` (RNLG English
+        specific cut) and ``fläsk`` (Swedish, dict-translates to ``bacon``)
+        no longer merge — they're treated as distinct cuts even though
+        they alias to the same FDC food for density. Cross-language
+        merge still works for the base staples (egg, milk, flour) where
+        both sides land on the same English umbrella.
+        """
         rnlg_group = IngredientGroup(
             canonical_ingredients=_FLASK_RNLG.ingredient_names,
             recipes=[_FLASK_RNLG],
@@ -174,10 +189,10 @@ class TestCrossLanguagePannkakorAcceptance:
         )
         vc = within_variant_comparison(rnlg_group, wdc_group)
         assert len(vc.shared_ingredients) >= 3
-        # 'salt pork' (RNLG) and 'fläsk' (WDC) both canonicalize to 'bacon'
-        # — the whole reason this bead exists.
-        assert "bacon" in vc.shared_ingredients
-        assert "egg" in vc.shared_ingredients
+        for core in ("egg", "milk", "flour"):
+            assert core in vc.shared_ingredients, (
+                f"expected {core!r} in shared, got {sorted(vc.shared_ingredients)}"
+            )
 
     def test_saffranspannkaka_near_dup_positive_jaccard(self) -> None:
         """Same-title pair produces a non-zero Jaccard, whereas

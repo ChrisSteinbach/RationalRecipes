@@ -1,0 +1,1829 @@
+{
+  "schema_version": 1,
+  "db": "output/catalog/recipes.db",
+  "sample": 20000,
+  "distinct_lines": true,
+  "buckets": {
+    "total": 20000,
+    "regex_hit_llm_hit": 6004,
+    "regex_hit_llm_failed": 0,
+    "regex_decline_llm_hit": 13996,
+    "regex_decline_llm_failed": 0,
+    "ing_match": 5959,
+    "unit_match": 5636,
+    "qty_match": 5594,
+    "full_match": 5343
+  },
+  "metrics": {
+    "hit_rate": 0.3002,
+    "llm_only_share": 0.6998,
+    "ing_agreement": 0.9925049966688874,
+    "unit_agreement": 0.938707528314457,
+    "qty_agreement": 0.9317121918720853,
+    "full_agreement": 0.889906728847435
+  },
+  "disagreements": [
+    {
+      "line": "2 (8 oz.) jars peanut butter",
+      "regex": {
+        "quantity": 16.0,
+        "unit": "oz",
+        "ingredient": "peanut butter",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 10.0,
+        "unit": "oz",
+        "ingredient": "peanut butter",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1- 1/2 cup Breadcrumbs (as Needed, You May Not Use All Of Them)",
+      "regex": {
+        "quantity": 0.75,
+        "unit": "cup",
+        "ingredient": "breadcrumbs",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 1.75,
+        "unit": "cup",
+        "ingredient": "breadcrumbs",
+        "preparation": "as needed"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 1/2 cups (3/4 lb.) butter",
+      "regex": {
+        "quantity": 1.5,
+        "unit": "cups",
+        "ingredient": "butter",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 1.75,
+        "unit": "cup",
+        "ingredient": "butter",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 to 2 diced carrots",
+      "regex": {
+        "quantity": 1.5,
+        "unit": "MEDIUM",
+        "ingredient": "carrot",
+        "preparation": "diced"
+      },
+      "llm": {
+        "quantity": 1.5,
+        "unit": "diced",
+        "ingredient": "carrot",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "0.5 (10 ounce) package frozen chopped spinach, thawed",
+      "regex": {
+        "quantity": 5.0,
+        "unit": "ounce",
+        "ingredient": "spinach",
+        "preparation": "frozen chopped, thawed"
+      },
+      "llm": {
+        "quantity": 0.5,
+        "unit": "ounce",
+        "ingredient": "spinach",
+        "preparation": "thawed"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "3 1/2 lb. hamburger meat",
+      "regex": {
+        "quantity": 3.5,
+        "unit": "lb",
+        "ingredient": "hamburger meat",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 4.25,
+        "unit": "lb",
+        "ingredient": "hamburger meat",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 chopped clove garlic",
+      "regex": {
+        "quantity": 1.0,
+        "unit": "MEDIUM",
+        "ingredient": "clove garlic",
+        "preparation": "chopped"
+      },
+      "llm": {
+        "quantity": 1.0,
+        "unit": "clove",
+        "ingredient": "garlic",
+        "preparation": "chopped"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "2 (16 oz.) cans black beans",
+      "regex": {
+        "quantity": 32.0,
+        "unit": "oz",
+        "ingredient": "black beans",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 2.0,
+        "unit": "can",
+        "ingredient": "black beans",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1/2 to 3/4 c. pecans",
+      "regex": {
+        "quantity": 0.625,
+        "unit": "c",
+        "ingredient": "pecans",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 0.75,
+        "unit": "cup",
+        "ingredient": "pecan",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 stalk celery, diced (optional)",
+      "regex": {
+        "quantity": 1.0,
+        "unit": "stalk",
+        "ingredient": "celery",
+        "preparation": "diced"
+      },
+      "llm": {
+        "quantity": 1.0,
+        "unit": "MEDIUM",
+        "ingredient": "celery",
+        "preparation": "diced (optional)"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "2 (16 oz.) bags frozen broccoli, carrots and cauliflower, thawed and drained",
+      "regex": {
+        "quantity": 32.0,
+        "unit": "oz",
+        "ingredient": "broccoli",
+        "preparation": "frozen, carrots and cauliflower, thawed and drained"
+      },
+      "llm": {
+        "quantity": 2.0,
+        "unit": "bag",
+        "ingredient": "broccoli",
+        "preparation": "thawed and drained"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "6 slices bacon, diced and fried until crisp",
+      "regex": {
+        "quantity": 6.0,
+        "unit": "slice",
+        "ingredient": "bacon",
+        "preparation": "diced and fried until crisp"
+      },
+      "llm": {
+        "quantity": 6.0,
+        "unit": "slices",
+        "ingredient": "bacon",
+        "preparation": "diced and fried until crisp"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "2 boxes chili powder (1 1/4 oz. size)",
+      "regex": {
+        "quantity": 2.0,
+        "unit": "box",
+        "ingredient": "chili powder",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 1.25,
+        "unit": "oz",
+        "ingredient": "chili powder",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 (8 oz.) cream cheese, softened with 2 Tbsp. milk",
+      "regex": {
+        "quantity": 8.0,
+        "unit": "oz",
+        "ingredient": "cream cheese",
+        "preparation": "softened with 2 Tbsp. milk"
+      },
+      "llm": {
+        "quantity": 1.0,
+        "unit": "oz",
+        "ingredient": "cream cheese",
+        "preparation": "softened"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "2 cans (14 ounces each) chicken broth (4 cups)",
+      "regex": {
+        "quantity": 2.0,
+        "unit": "can",
+        "ingredient": "chicken broth",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 8.0,
+        "unit": "cup",
+        "ingredient": "broth",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "4 to 5 potatoes, cut in large cubes",
+      "regex": {
+        "quantity": 4.5,
+        "unit": "MEDIUM",
+        "ingredient": "potato",
+        "preparation": "cut in large cubes"
+      },
+      "llm": {
+        "quantity": 4.5,
+        "unit": "potato",
+        "ingredient": "potato",
+        "preparation": "cut in large cubes"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "1 large (29 oz.) can pumpkin",
+      "regex": {
+        "quantity": 1.0,
+        "unit": "LARGE",
+        "ingredient": "canned pumpkin",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 1.0,
+        "unit": "can",
+        "ingredient": "pumpkin",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "2 1/4 c. water, divided",
+      "regex": {
+        "quantity": 2.25,
+        "unit": "c",
+        "ingredient": "water",
+        "preparation": "divided"
+      },
+      "llm": {
+        "quantity": 1.75,
+        "unit": "cup",
+        "ingredient": "water",
+        "preparation": "divided"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "3 heads broccoli, wash and separate flowers, peel and slice",
+      "regex": {
+        "quantity": 3.0,
+        "unit": "head",
+        "ingredient": "broccoli",
+        "preparation": "wash and separate flowers, peel and slice"
+      },
+      "llm": {
+        "quantity": 3.0,
+        "unit": "MEDIUM",
+        "ingredient": "broccoli",
+        "preparation": "wash and separate flowers, peel and slice"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "1/2 to 3/4 c. Mozzarella, grated",
+      "regex": {
+        "quantity": 0.625,
+        "unit": "c",
+        "ingredient": "mozzarella",
+        "preparation": "grated"
+      },
+      "llm": {
+        "quantity": 2.0,
+        "unit": "cup",
+        "ingredient": "mozzarella",
+        "preparation": "grated"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "10 slices bacon, crisp-fried and crumbled",
+      "regex": {
+        "quantity": 10.0,
+        "unit": "slice",
+        "ingredient": "bacon",
+        "preparation": "crisp-fried and crumbled"
+      },
+      "llm": {
+        "quantity": 10.0,
+        "unit": "slices",
+        "ingredient": "bacon",
+        "preparation": "crisp-fried and crumbled"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "4 1/2 c. flour (about)",
+      "regex": {
+        "quantity": 4.5,
+        "unit": "c",
+        "ingredient": "flour",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 6.5,
+        "unit": "cup",
+        "ingredient": "flour",
+        "preparation": "about"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "2 c. (16 to 17 oz. can) canned pumpkin, not pie mix or filling",
+      "regex": {
+        "quantity": 2.0,
+        "unit": "c",
+        "ingredient": "pumpkin",
+        "preparation": "canned, not pie mix or filling"
+      },
+      "llm": {
+        "quantity": 16.5,
+        "unit": "oz",
+        "ingredient": "pumpkin",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "2 zucchini (about 8 to 10-inches long), sliced",
+      "regex": {
+        "quantity": 2.0,
+        "unit": "MEDIUM",
+        "ingredient": "zucchini",
+        "preparation": "sliced"
+      },
+      "llm": {
+        "quantity": 9.0,
+        "unit": "inches",
+        "ingredient": "zucchini",
+        "preparation": "sliced"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 to 1 1/2 lb. ground beef",
+      "regex": {
+        "quantity": 1.25,
+        "unit": "lb",
+        "ingredient": "beef",
+        "preparation": "ground"
+      },
+      "llm": {
+        "quantity": 1.75,
+        "unit": "lb",
+        "ingredient": "ground beef",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "2 (15 1/2 ounce) cans black beans, rinsed and drained",
+      "regex": {
+        "quantity": 31.0,
+        "unit": "ounce",
+        "ingredient": "black beans",
+        "preparation": "rinsed and drained"
+      },
+      "llm": {
+        "quantity": 3.75,
+        "unit": "ounce",
+        "ingredient": "black bean",
+        "preparation": "rinsed and drained"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 sliced banana",
+      "regex": {
+        "quantity": 1.0,
+        "unit": "MEDIUM",
+        "ingredient": "banana",
+        "preparation": "sliced"
+      },
+      "llm": {
+        "quantity": 1.0,
+        "unit": "g",
+        "ingredient": "banana",
+        "preparation": "sliced"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "1 fresh pineapple",
+      "regex": {
+        "quantity": 1.0,
+        "unit": "MEDIUM",
+        "ingredient": "pineapple",
+        "preparation": "fresh"
+      },
+      "llm": {
+        "quantity": 1.0,
+        "unit": "g",
+        "ingredient": "pineapple",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "2 stalks celery, minced",
+      "regex": {
+        "quantity": 2.0,
+        "unit": "stalk",
+        "ingredient": "celery",
+        "preparation": "minced"
+      },
+      "llm": {
+        "quantity": 2.0,
+        "unit": "MEDIUM",
+        "ingredient": "celery",
+        "preparation": "minced"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "1 3/4 c. potatoes, diced and cooked",
+      "regex": {
+        "quantity": 1.75,
+        "unit": "c",
+        "ingredient": "potato",
+        "preparation": "diced and cooked"
+      },
+      "llm": {
+        "quantity": 3.75,
+        "unit": "cup",
+        "ingredient": "potatoes",
+        "preparation": "diced and cooked"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 1/2 to 2 c. rice (Minute rice)",
+      "regex": {
+        "quantity": 1.75,
+        "unit": "c",
+        "ingredient": "rice",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 1.5,
+        "unit": "cup",
+        "ingredient": "rice",
+        "preparation": "minute rice"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "2 (8 oz.) cream cheese",
+      "regex": {
+        "quantity": 16.0,
+        "unit": "oz",
+        "ingredient": "cream cheese",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 2.0,
+        "unit": "oz",
+        "ingredient": "cream cheese",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 tablespoon chopped fresh sage leaves (or 1 teaspoon dried crumbled sage)",
+      "regex": {
+        "quantity": 1.0,
+        "unit": "tablespoon",
+        "ingredient": "sage, leaves",
+        "preparation": "chopped fresh"
+      },
+      "llm": {
+        "quantity": 1.0,
+        "unit": "tbsp",
+        "ingredient": "sage leaf",
+        "preparation": "chopped"
+      },
+      "match": {
+        "ing": false,
+        "unit": true,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "12 cup olive oil (about 1/2 cup)",
+      "regex": {
+        "quantity": 12.0,
+        "unit": "cup",
+        "ingredient": "olive oil",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 1.5,
+        "unit": "cup",
+        "ingredient": "olive oil",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "2 tblsp. butter",
+      "regex": {
+        "quantity": 2.0,
+        "unit": "tblsp",
+        "ingredient": "butter",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 2.0,
+        "unit": "tbsp",
+        "ingredient": "butter",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "5 slices bacon, diced, cooked until brown, drained and drippings reserved",
+      "regex": {
+        "quantity": 5.0,
+        "unit": "slice",
+        "ingredient": "bacon",
+        "preparation": "diced, cooked until brown, drained and drippings reserved"
+      },
+      "llm": {
+        "quantity": 5.0,
+        "unit": "slices",
+        "ingredient": "bacon",
+        "preparation": "diced, cooked until brown, drained and drippings reserved"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "1 large can V-8 juice (tomato)",
+      "regex": {
+        "quantity": 4.5,
+        "unit": "MEDIUM",
+        "ingredient": "juice",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 1.0,
+        "unit": "can",
+        "ingredient": "v-8 juice",
+        "preparation": "tomato"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "6 slices cheese",
+      "regex": {
+        "quantity": 6.0,
+        "unit": "slice",
+        "ingredient": "cheese",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 6.0,
+        "unit": "slices",
+        "ingredient": "cheese",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "2 chopped scallions (save for topping)",
+      "regex": {
+        "quantity": 2.0,
+        "unit": "MEDIUM",
+        "ingredient": "scallion",
+        "preparation": "chopped"
+      },
+      "llm": {
+        "quantity": 2.0,
+        "unit": "scallion",
+        "ingredient": "scallion",
+        "preparation": "chopped"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "7 1/2 Tbsp. cold water",
+      "regex": {
+        "quantity": 7.5,
+        "unit": "tbsp",
+        "ingredient": "cold water",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 8.5,
+        "unit": "tbsp",
+        "ingredient": "water",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "3 1/2 tsp. salt",
+      "regex": {
+        "quantity": 3.5,
+        "unit": "tsp",
+        "ingredient": "salt",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 4.5,
+        "unit": "tsp",
+        "ingredient": "salt",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "12 slices bread, buttered",
+      "regex": {
+        "quantity": 12.0,
+        "unit": "slice",
+        "ingredient": "bread",
+        "preparation": "buttered"
+      },
+      "llm": {
+        "quantity": 12.0,
+        "unit": "slices",
+        "ingredient": "bread",
+        "preparation": "buttered"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "1/8 to 1/4 c. oil",
+      "regex": {
+        "quantity": 0.1875,
+        "unit": "c",
+        "ingredient": "oil",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 0.375,
+        "unit": "cup",
+        "ingredient": "oil",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 teaspoon bacon grease, or 1-2 slices cooked crumbled bacon (optional)",
+      "regex": {
+        "quantity": 1.5,
+        "unit": "slice",
+        "ingredient": "crumbled bacon",
+        "preparation": "cooked"
+      },
+      "llm": {
+        "quantity": 1.5,
+        "unit": "tsp",
+        "ingredient": "bacon grease",
+        "preparation": "or 1-2 slices cooked crumbled bacon (optional)"
+      },
+      "match": {
+        "ing": false,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "4 to 5 potatoes, peeled",
+      "regex": {
+        "quantity": 4.5,
+        "unit": "MEDIUM",
+        "ingredient": "potato",
+        "preparation": "peeled"
+      },
+      "llm": {
+        "quantity": 4.5,
+        "unit": "potato",
+        "ingredient": "potato",
+        "preparation": "peeled"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "1 to 1 1/2 c. olives (green)",
+      "regex": {
+        "quantity": 1.25,
+        "unit": "c",
+        "ingredient": "olives",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 1.75,
+        "unit": "cup",
+        "ingredient": "olives",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1/3 (10 fluid ounce) bottle Worcestershire sauce",
+      "regex": {
+        "quantity": 3.333333333333333,
+        "unit": "fluid ounce",
+        "ingredient": "worcestershire sauce",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 10.0,
+        "unit": "fl oz",
+        "ingredient": "worcestershire sauce",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "3 to 5 Tbsp. shortening, chilled",
+      "regex": {
+        "quantity": 4.0,
+        "unit": "tbsp",
+        "ingredient": "shortening",
+        "preparation": "chilled"
+      },
+      "llm": {
+        "quantity": 4.5,
+        "unit": "tbsp",
+        "ingredient": "shortening",
+        "preparation": "chilled"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "6 to 12 slices Swiss cheese",
+      "regex": {
+        "quantity": 9.0,
+        "unit": "slice",
+        "ingredient": "swiss cheese",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 8.0,
+        "unit": "slices",
+        "ingredient": "swiss cheese",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "2 (28 ounce) cans baked beans (I plan to use vegetarian)",
+      "regex": {
+        "quantity": 56.0,
+        "unit": "ounce",
+        "ingredient": "beans",
+        "preparation": "baked"
+      },
+      "llm": {
+        "quantity": 2.0,
+        "unit": "can",
+        "ingredient": "baked beans",
+        "preparation": "I plan to use vegetarian"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 1/2 sticks oleo, melted",
+      "regex": {
+        "quantity": 1.5,
+        "unit": "stick",
+        "ingredient": "oleo",
+        "preparation": "melted"
+      },
+      "llm": {
+        "quantity": 1.5,
+        "unit": "sticks",
+        "ingredient": "margarine",
+        "preparation": "melted"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "1/3 cup cooked bacon, cut small or use prepackaged Bacon Bits",
+      "regex": {
+        "quantity": 0.3333333333333333,
+        "unit": "cup",
+        "ingredient": "bacon",
+        "preparation": "cooked, cut small or use prepackaged Bacon Bits"
+      },
+      "llm": {
+        "quantity": 1.3333333333333333,
+        "unit": "cup",
+        "ingredient": "bacon",
+        "preparation": "cut small or use prepackaged bacon bits"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1 quart (950 ml) buttermilk",
+      "regex": {
+        "quantity": 1.0,
+        "unit": "quart",
+        "ingredient": "buttermilk",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 1.25,
+        "unit": "quart",
+        "ingredient": "buttermilk",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1/2 tsp. fresh minced garlic",
+      "regex": {
+        "quantity": 0.5,
+        "unit": "tsp",
+        "ingredient": "garlic",
+        "preparation": "fresh minced"
+      },
+      "llm": {
+        "quantity": 0.25,
+        "unit": "tsp",
+        "ingredient": "garlic",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "\u2022 2 dashes Worcestershire sauce",
+      "regex": {
+        "quantity": 2.0,
+        "unit": "dashes",
+        "ingredient": "worcestershire sauce",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 2.0,
+        "unit": "tbsp",
+        "ingredient": "worcestershire sauce",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "2 cans crushed tomatoes (1 lb. 12 oz. size)",
+      "regex": {
+        "quantity": 2.0,
+        "unit": "can",
+        "ingredient": "tomato",
+        "preparation": "crushed"
+      },
+      "llm": {
+        "quantity": 1.5,
+        "unit": "lb",
+        "ingredient": "tomatoes",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "3 green onions (scallions)",
+      "regex": {
+        "quantity": 3.0,
+        "unit": "MEDIUM",
+        "ingredient": "green onions",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 3.0,
+        "unit": "green onion",
+        "ingredient": "green onion",
+        "preparation": "scallions"
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "10 clove garlic",
+      "regex": {
+        "quantity": 10.0,
+        "unit": "clove",
+        "ingredient": "garlic",
+        "preparation": ""
+      },
+      "llm": {
+        "quantity": 10.0,
+        "unit": "MEDIUM",
+        "ingredient": "vitl\u00f6k",
+        "preparation": ""
+      },
+      "match": {
+        "ing": true,
+        "unit": false,
+        "qty": true,
+        "all": false
+      }
+    },
+    {
+      "line": "2 -4 tablespoons chopped onions",
+      "regex": {
+        "quantity": 3.0,
+        "unit": "tablespoons",
+        "ingredient": "onion",
+        "preparation": "chopped"
+      },
+      "llm": {
+        "quantity": 2.0,
+        "unit": "tbsp",
+        "ingredient": "onion",
+        "preparation": "chopped"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    },
+    {
+      "line": "1-1/2 cups sliced fresh mushrooms",
+      "regex": {
+        "quantity": 0.75,
+        "unit": "cups",
+        "ingredient": "mushrooms",
+        "preparation": "sliced fresh"
+      },
+      "llm": {
+        "quantity": 1.5,
+        "unit": "cup",
+        "ingredient": "mushroom",
+        "preparation": "sliced"
+      },
+      "match": {
+        "ing": true,
+        "unit": true,
+        "qty": false,
+        "all": false
+      }
+    }
+  ],
+  "declines": [
+    {
+      "line": "4 strips cooked and crumbled bacon",
+      "llm": {
+        "quantity": 4.0,
+        "unit": "strips",
+        "ingredient": "bacon",
+        "preparation": "cooked and crumbled"
+      }
+    },
+    {
+      "line": "12 granny smith apples, peeled and chopped (green)",
+      "llm": {
+        "quantity": 12.0,
+        "unit": "MEDIUM",
+        "ingredient": "apple",
+        "preparation": "peeled and chopped"
+      }
+    },
+    {
+      "line": "1 (5 oz.) jar pimento cheese",
+      "llm": {
+        "quantity": 5.0,
+        "unit": "oz",
+        "ingredient": "pimento cheese",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "2/3 cup plain (or Greek) yogurt",
+      "llm": {
+        "quantity": 0.6666666666666666,
+        "unit": "cup",
+        "ingredient": "yogurt",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 pkg (16 oz) frozen puff pastry sheets, thawed for 10 mins and cut into 10 rough ovals",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "pkg",
+        "ingredient": "puff pastry sheet",
+        "preparation": "thawed for 10 mins and cut into 10 rough ovals"
+      }
+    },
+    {
+      "line": "1 1/2 tsp. freeze-dried chives",
+      "llm": {
+        "quantity": 1.5,
+        "unit": "tsp",
+        "ingredient": "chives",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "5 strips bacon or bacon bits",
+      "llm": {
+        "quantity": 5.0,
+        "unit": "strips",
+        "ingredient": "bacon",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/2 tsp. red pepper sauce",
+      "llm": {
+        "quantity": 0.25,
+        "unit": "tsp",
+        "ingredient": "red pepper sauce",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "4 or 5 dashes hot pepper sauce",
+      "llm": {
+        "quantity": 4.5,
+        "unit": "dash",
+        "ingredient": "hot pepper sauce",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 c. diced apricots",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "cup",
+        "ingredient": "apricot",
+        "preparation": "diced"
+      }
+    },
+    {
+      "line": "2 whole peeled and sliced bananas",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "MEDIUM",
+        "ingredient": "banana",
+        "preparation": "peeled and sliced"
+      }
+    },
+    {
+      "line": "2 c Leftover Asian rice pilaf",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "cup",
+        "ingredient": "rice pilaf",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "6 heaping Tbsp. shortening",
+      "llm": {
+        "quantity": 6.0,
+        "unit": "tbsp",
+        "ingredient": "shortening",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 pk cake mix, yellow",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "pk",
+        "ingredient": "cake mix",
+        "preparation": "yellow"
+      }
+    },
+    {
+      "line": "1/2 cups Coconut Milk",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "cup",
+        "ingredient": "coconut milk",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "lemon juice to taste",
+      "llm": {
+        "quantity": 0.0,
+        "unit": "to taste",
+        "ingredient": "lemon juice",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "3/4 cups Pecans Or Walnuts, Chopped",
+      "llm": {
+        "quantity": 0.75,
+        "unit": "cup",
+        "ingredient": "pecan",
+        "preparation": "chopped"
+      }
+    },
+    {
+      "line": "2 (8 oz.) jars Kraft pimento cheese spread",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "oz",
+        "ingredient": "cheese spread",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/2 jar Pimiento-stuffed green olives or possibly to taste (half a 9 1/2-oz jar)",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "jar",
+        "ingredient": "olive",
+        "preparation": "pimiento-stuffed green olives"
+      }
+    },
+    {
+      "line": "1 lb. grated Cheddar cheese or Velveeta Mexican (mild hot cheese)",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "lb",
+        "ingredient": "cheddar cheese",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 c. brown syrup",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "cup",
+        "ingredient": "syrup",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 cup Shredded Gruyere Cheese",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "cup",
+        "ingredient": "gruyere cheese",
+        "preparation": "shredded"
+      }
+    },
+    {
+      "line": "1/2 c. pecan halves for garnish",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "cup",
+        "ingredient": "pecan",
+        "preparation": "for garnish"
+      }
+    },
+    {
+      "line": "2-2,5 litre su 2 k\u00fcp \u015feker (yar\u0131m yemek kas\u0327\u0131g\u0306\u0131) s\u0327eker",
+      "llm": {
+        "quantity": 2.25,
+        "unit": "litre",
+        "ingredient": "sueker",
+        "preparation": "yar\u0131m yemek ka\u015f\u0131\u011f\u0131"
+      }
+    },
+    {
+      "line": "about 4 chunked and peeled apples",
+      "llm": {
+        "quantity": 4.0,
+        "unit": "MEDIUM",
+        "ingredient": "apple",
+        "preparation": "chunked and peeled"
+      }
+    },
+    {
+      "line": "powdered sugar as needed",
+      "llm": {
+        "quantity": 0.0,
+        "unit": "g",
+        "ingredient": "sugar",
+        "preparation": "as needed"
+      }
+    },
+    {
+      "line": "1/2 tsp. Season-All salt and garlic salt",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "tsp",
+        "ingredient": "season-all salt and garlic salt",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "4 tablespoons sour milk",
+      "llm": {
+        "quantity": 4.0,
+        "unit": "tbsp",
+        "ingredient": "milk",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "3 teaspoons almonds ground",
+      "llm": {
+        "quantity": 3.0,
+        "unit": "tsp",
+        "ingredient": "almond",
+        "preparation": "ground"
+      }
+    },
+    {
+      "line": "1 can (17 oz.) whole kernel corn, drained",
+      "llm": {
+        "quantity": 17.0,
+        "unit": "oz",
+        "ingredient": "corn",
+        "preparation": "drained"
+      }
+    },
+    {
+      "line": "3 minute steaks, cubed",
+      "llm": {
+        "quantity": 3.0,
+        "unit": "minute",
+        "ingredient": "steak",
+        "preparation": "cubed"
+      }
+    },
+    {
+      "line": "1 medium can baked beans",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "can",
+        "ingredient": "beans",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 lt stock (chicken fish or possibly vegetable as appropriate)",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "lt",
+        "ingredient": "stock",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/2 cole slaw dressing",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "unknown",
+        "ingredient": "cole slaw dressing",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 medium can chunk pineapple, drained",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "can",
+        "ingredient": "pineapple",
+        "preparation": "drained"
+      }
+    },
+    {
+      "line": "2 cups (475 ml) self-rising flour",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "cup",
+        "ingredient": "flour",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 (26 oz.) jar Aunt Millie's meatless sauce",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "jar",
+        "ingredient": "sauce",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "2 x Ripe bananas, mashed",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "MEDIUM",
+        "ingredient": "banana",
+        "preparation": "mashed"
+      }
+    },
+    {
+      "line": "8 oz. sharp cheese",
+      "llm": {
+        "quantity": 8.0,
+        "unit": "oz",
+        "ingredient": "cheese",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "Desired Garnishes, Such As Avocado, Cheddar Cheese, Lime Wedges, Red Onions (optional)",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "N/A",
+        "ingredient": "garnishes",
+        "preparation": "such as avocado, cheddar cheese, lime wedges, red onions (optional)"
+      }
+    },
+    {
+      "line": "1/2 c. unsalted butter - (1 stick) chilled, and cut into 1/2\" cubes",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "cup",
+        "ingredient": "butter",
+        "preparation": "chilled, and cut into 1/2\" cubes"
+      }
+    },
+    {
+      "line": "1 1/2 c. ground black walnuts",
+      "llm": {
+        "quantity": 1.5,
+        "unit": "cup",
+        "ingredient": "walnut",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 jar pimientos",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "jar",
+        "ingredient": "pimientos",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1 md. sweet red pepper, chopped",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "md",
+        "ingredient": "pepper",
+        "preparation": "chopped"
+      }
+    },
+    {
+      "line": "2 c. Kraft mayonnaise",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "cup",
+        "ingredient": "mayonnaise",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "1/4 c. unsalted margarine, softened",
+      "llm": {
+        "quantity": 0.25,
+        "unit": "cup",
+        "ingredient": "margarine",
+        "preparation": "softened"
+      }
+    },
+    {
+      "line": "Small mushroom caps",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "item",
+        "ingredient": "mushroom",
+        "preparation": "small"
+      }
+    },
+    {
+      "line": "1/2 tsp. cloves *",
+      "llm": {
+        "quantity": 0.5,
+        "unit": "tsp",
+        "ingredient": "cloves",
+        "preparation": "*"
+      }
+    },
+    {
+      "line": "sausage or ham",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "g",
+        "ingredient": "sausage",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "3 or 4 chopped apples",
+      "llm": {
+        "quantity": 3.5,
+        "unit": "MEDIUM",
+        "ingredient": "apple",
+        "preparation": "chopped"
+      }
+    },
+    {
+      "line": "5 to 6 baking apples",
+      "llm": {
+        "quantity": 5.5,
+        "unit": "MEDIUM",
+        "ingredient": "apple",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "2 cups cooked boneless skinless chicken breasts, cubed",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "cup",
+        "ingredient": "chicken breast",
+        "preparation": "cubed"
+      }
+    },
+    {
+      "line": "lime juice, a splash",
+      "llm": {
+        "quantity": 0.0,
+        "unit": "pinch",
+        "ingredient": "juice",
+        "preparation": "lime"
+      }
+    },
+    {
+      "line": "1 large bag Tater Tots",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "bag",
+        "ingredient": "tater tot",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "2 (21 ounce) cans pie filling (any kind)",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "can",
+        "ingredient": "pie filling",
+        "preparation": "any kind"
+      }
+    },
+    {
+      "line": "1/4 teaspoon dried oregano leaves",
+      "llm": {
+        "quantity": 0.25,
+        "unit": "tsp",
+        "ingredient": "oregano leaves",
+        "preparation": ""
+      }
+    },
+    {
+      "line": "3/4 tsp grnd cloves",
+      "llm": {
+        "quantity": 0.75,
+        "unit": "tsp",
+        "ingredient": "clove",
+        "preparation": "grnd"
+      }
+    },
+    {
+      "line": "1-1/3 c. drained whole-kernel corn",
+      "llm": {
+        "quantity": 1.8333333333333333,
+        "unit": "cup",
+        "ingredient": "corn",
+        "preparation": "drained whole-kernel"
+      }
+    },
+    {
+      "line": "1 cup applesauce, at room temperature",
+      "llm": {
+        "quantity": 1.0,
+        "unit": "cup",
+        "ingredient": "applesauce",
+        "preparation": "at room temperature"
+      }
+    },
+    {
+      "line": "1 (2 ounce) jar diced pimentos",
+      "llm": {
+        "quantity": 2.0,
+        "unit": "ounce",
+        "ingredient": "diced pimentos",
+        "preparation": "jar"
+      }
+    }
+  ]
+}

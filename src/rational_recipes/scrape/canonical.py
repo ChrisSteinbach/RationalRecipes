@@ -180,20 +180,116 @@ SWEDISH_TO_ENGLISH: dict[str, str] = {
     "champinjoner": "mushrooms",
     "mynta": "mint",
     "parmesanost": "parmesan cheese",
+    # Pannkakor + recipe-staple Swedish words that previously routed
+    # through ``food.canonical_name``. Now that the DB returns per-synonym
+    # canonicals (dfm), bare Swedish words need an explicit translation
+    # to land on the English umbrella for variant clustering. Auto-extend
+    # below adds ASCII-folded siblings (``socker`` already ASCII) so OCR
+    # pipelines that strip diacritics still hit the same target.
+    "vetemjöl": "flour",
+    "mjölk": "milk",
+    "ägg": "egg",
+    "socker": "sugar",
+    "smör": "butter",
+    "grädde": "cream",
+    "bakpulver": "baking powder",
+    "kanel": "cinnamon",
+    "kardemumma": "cardamom",
+    "fläsk": "bacon",
+    "saffran": "saffron",
+    "havregryn": "oats",
+    "jäst": "yeast",
+    "vatten": "water",
+    "honung": "honey",
+    # Spice/herb Swedish staples that didn't have explicit dict entries
+    "ris": "rice",
+    "mandel": "almond",
+    # Additional words found in the DB whose food canonicals are themselves
+    # Swedish — translating the synonym directly avoids the food-umbrella
+    # round-trip.
+    "kidneybönor": "kidney beans",
+    "mörk choklad": "dark chocolate",
+    "morötter": "carrots",
 }
 
 
+# ASCII-folded variants extend the static dict so a corpus that strips
+# diacritics (OCR pipelines, some HTML normalizers) still hits the
+# Swedish→English path. Each diacritic key auto-generates the å→a /
+# ä→a / ö→o folded sibling at module load — explicit dict entries
+# override (so adding e.g. ``"agg": "egg"`` directly stays canonical).
+_ASCII_FOLD = str.maketrans(
+    {"å": "a", "ä": "a", "ö": "o", "Å": "A", "Ä": "A", "Ö": "O"}
+)
+
+_EXTENDED_SWEDISH_TO_ENGLISH: dict[str, str] = dict(SWEDISH_TO_ENGLISH)
+for _sv, _en in SWEDISH_TO_ENGLISH.items():
+    _ascii_form = _sv.translate(_ASCII_FOLD)
+    if _ascii_form != _sv:
+        _EXTENDED_SWEDISH_TO_ENGLISH.setdefault(_ascii_form, _en)
+
+
 def _translate_swedish(name: str) -> str:
-    """Apply the Swedish→English dictionary; passthrough on miss."""
-    return SWEDISH_TO_ENGLISH.get(name, name)
+    """Apply the Swedish→English dictionary (incl. ASCII-folded forms)."""
+    return _EXTENDED_SWEDISH_TO_ENGLISH.get(name, name)
+
+
+_SWEDISH_DIACRITICS = frozenset("åäöÅÄÖ")
+
+# Common English plural↔singular endings used to collapse morphological
+# variants (``eggs`` → ``egg``, ``tomatoes`` → ``tomato``) onto their
+# food's English umbrella canonical. Listed longest-first so ``"ies"`` is
+# tried before ``"es"`` and ``"s"``.
+_PLURAL_ENDINGS: tuple[tuple[str, str], ...] = (
+    ("ies", "y"),
+    ("es", ""),
+    ("s", ""),
+)
+
+
+def _collapse_plural(lookup: str, canonical: str) -> str | None:
+    """Return ``canonical`` if ``lookup`` is a plural/singular variant.
+
+    Used to merge ``eggs`` / ``egg`` and ``tomatoes`` / ``tomato`` onto a
+    single canonical even though per-synonym semantics would otherwise
+    keep them distinct. Returns ``None`` when the two strings aren't a
+    morphological pair (so callers fall through to the per-synonym form).
+    """
+    if not lookup or not canonical:
+        return None
+    if lookup == canonical:
+        return canonical
+    for ending, replacement in _PLURAL_ENDINGS:
+        if (
+            lookup.endswith(ending)
+            and lookup[: -len(ending)] + replacement == canonical
+        ):
+            return canonical
+        if (
+            canonical.endswith(ending)
+            and canonical[: -len(ending)] + replacement == lookup
+        ):
+            return canonical
+    return None
 
 
 def canonicalize_name(name: str) -> str:
     """Map a raw ingredient name to a canonical English form.
 
-    Pre-translates Swedish nouns via ``SWEDISH_TO_ENGLISH``, looks the
-    result up in the ingredient synonym table, then post-translates the
-    DB result for the few foods whose stored canonical is Swedish.
+    Per-synonym resolution (dfm) with three rules:
+
+    1. **Specific synonyms preserve identity.** Pre-translate via
+       ``SWEDISH_TO_ENGLISH``; if the result resolves as a DB synonym,
+       return it. ``cheddar`` and ``cheese`` stay distinct even though
+       both alias to the same FDC food.
+    2. **Plural/singular morphological pairs collapse.** ``eggs`` and
+       ``egg`` (sharing food canonical ``egg``) both return ``egg`` so
+       variant clustering treats them as one.
+    3. **Foreign-language synonyms fall to the food umbrella.** A
+       Swedish word with diacritics that the dict can't translate
+       (``körsbärstomater``) routes through the food's English
+       umbrella ``food_canonical_name`` (``tomato``).
+
     Returns the lowercased-stripped original on miss (empty input yields
     empty string).
     """
@@ -201,11 +297,49 @@ def canonicalize_name(name: str) -> str:
     if not normalized:
         return ""
     pre_translated = _translate_swedish(normalized)
+
+    # Tier 1: pre-translated form is a known synonym.
     try:
-        result = IngredientFactory.get_by_name(pre_translated).canonical_name()
+        ingredient = IngredientFactory.get_by_name(pre_translated)
     except KeyError:
-        result = pre_translated
-    return _translate_swedish(result)
+        ingredient = None
+    if ingredient is not None:
+        # Foreign-not-translated guard: a Swedish diacritic word that the
+        # dict couldn't map needs the food umbrella, not the per-synonym.
+        looks_foreign = (
+            pre_translated == normalized
+            and any(c in _SWEDISH_DIACRITICS for c in normalized)
+        )
+        food_canon_raw = ingredient.food_canonical_name()
+        food_canon_en = (
+            _translate_swedish(food_canon_raw) if food_canon_raw else None
+        )
+        if looks_foreign:
+            return food_canon_en or pre_translated
+        # Plural/singular collapse against the food's English umbrella.
+        if food_canon_en:
+            collapsed = _collapse_plural(pre_translated, food_canon_en)
+            if collapsed is not None:
+                return collapsed
+        return pre_translated
+
+    # Tier 2: pre-translated isn't a DB synonym. The original might be —
+    # useful for Swedish words whose dict translation produces a longer
+    # phrase that's not itself a synonym (e.g. ``krossade tomater`` →
+    # ``crushed tomatoes``: the LHS is in the synonym table, the RHS is
+    # not).
+    try:
+        ingredient = IngredientFactory.get_by_name(normalized)
+    except KeyError:
+        return pre_translated
+    # Prefer the dict translation when present — it's an intentional,
+    # often-more-specific mapping than the food umbrella.
+    if pre_translated != normalized:
+        return pre_translated
+    food_canon_raw = ingredient.food_canonical_name()
+    if food_canon_raw:
+        return _translate_swedish(food_canon_raw)
+    return pre_translated
 
 
 def canonicalize_names(names: Iterable[str]) -> frozenset[str]:

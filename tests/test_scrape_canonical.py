@@ -100,7 +100,10 @@ class TestSwedishStaticDictionary:
             "rågmjöl": "rye flour",
             "krossade tomater": "crushed tomatoes",
             "tomatpuré": "tomato paste",
-            "vispgrädde": "cream",  # DB canonical for whipping cream
+            # Per-synonym (dfm): preserve specificity for words that map to a
+            # specific English form via SWEDISH_TO_ENGLISH, even when the
+            # food's umbrella canonical is more generic.
+            "vispgrädde": "whipping cream",
             "gräddfil": "sour cream",
             "kvarg": "quark",
             "filmjölk": "buttermilk",
@@ -115,9 +118,11 @@ class TestSwedishStaticDictionary:
             "ingefära": "ginger",
             "muskot": "nutmeg",
             "olivolja": "olive oil",
-            "rapsolja": "oil",  # falls through DB synonym chain
+            "rapsolja": "canola oil",  # explicit dict entry
             "russin": "raisin",  # DB canonical singular
-            "rödlök": "onion",  # DB collapses red onion to onion canonical
+            # Per-synonym (dfm): "rödlök" is Swedish for the SPECIFIC red
+            # variety, not the generic onion umbrella. Preserve.
+            "rödlök": "red onion",
             "vitlök": "garlic",
             "morot": "carrot",
             "äpple": "apple",

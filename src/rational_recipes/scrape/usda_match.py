@@ -32,7 +32,10 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from rational_recipes.ingredient import Factory as IngredientFactory
-from rational_recipes.scrape.canonical import SWEDISH_TO_ENGLISH
+from rational_recipes.scrape.canonical import (
+    SWEDISH_TO_ENGLISH,
+    canonicalize_name,
+)
 
 DEFAULT_SIMILARITY_THRESHOLD = 0.85
 """Minimum SequenceMatcher.ratio() for fuzzy matches to be accepted.
@@ -85,10 +88,11 @@ def resolve_canonical_name(
     number of LIKE-matched synonyms scored for fuzzy similarity — kept
     small because each is a string-distance computation.
 
-    English-canonical guarantee (r6w): pre-translates the input via
-    SWEDISH_TO_ENGLISH so a Swedish noun is matched against its English
-    cognate, then post-translates the DB result so a Swedish-canonical
-    row (``valnötter``, ``tomat``, ``olja``) returns English.
+    Per-synonym canonical (dfm): exact hits return ``canonicalize_name``'s
+    output (which preserves specificity — ``cheddar`` vs ``cheese``,
+    ``red onion`` vs ``onion`` — while still collapsing plural/singular
+    pairs and translating Swedish to English). Fuzzy hits route through
+    the same function so all paths share one canonical vocabulary.
     """
     if not name:
         return None
@@ -97,24 +101,15 @@ def resolve_canonical_name(
         return None
     pre_translated = _to_english(normalized)
 
-    # Tier 1: exact synonym hit (the canonical resolution path used by
-    # canonicalize_name + the rest of the pipeline). Try the English
-    # form first, then the original — covers both Swedish-input and
-    # English-input cases.
-    ingredient = None
+    # Tier 1: exact synonym hit (per-synonym canonical via canonicalize_name).
     for candidate in {pre_translated, normalized}:
         try:
-            ingredient = IngredientFactory.get_by_name(candidate)
+            IngredientFactory.get_by_name(candidate)
         except KeyError:
             continue
-        else:
-            break
-    if ingredient is not None:
-        canonical = ingredient.canonical_name()
+        canonical = canonicalize_name(candidate)
         if canonical:
-            return CanonicalMatch(
-                canonical=_to_english(canonical), similarity=1.0
-            )
+            return CanonicalMatch(canonical=canonical, similarity=1.0)
 
     # Tier 2: fuzzy. Pull a small candidate set whose synonym contains
     # at least one query word, then score by SequenceMatcher.
@@ -135,20 +130,12 @@ def resolve_canonical_name(
     if best_synonym is None or best_score < threshold:
         return None
 
-    # Promote the fuzzy synonym to its canonical name so downstream
-    # variant grouping sees the same shared vocabulary as exact matches.
-    try:
-        fuzzy_ingredient = IngredientFactory.get_by_name(best_synonym.lower())
-    except KeyError:
-        return None
-    fuzzy_canonical = (
-        fuzzy_ingredient.canonical_name() if fuzzy_ingredient else None
-    )
+    # Route the fuzzy synonym through canonicalize_name so it lands on the
+    # same per-synonym/plural-collapsed/post-translated form as exact hits.
+    fuzzy_canonical = canonicalize_name(best_synonym.lower())
     if not fuzzy_canonical:
         return None
-    return CanonicalMatch(
-        canonical=_to_english(fuzzy_canonical), similarity=best_score
-    )
+    return CanonicalMatch(canonical=fuzzy_canonical, similarity=best_score)
 
 
 def _candidate_synonyms(name: str, *, limit: int) -> list[str]:
