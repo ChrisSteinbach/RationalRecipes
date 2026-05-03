@@ -1298,6 +1298,58 @@ FDC_SYNONYM_ALIASES: list[tuple[str, str]] = [
     ("feta cheese", "Cheese, feta"),
     ("feta", "Cheese, feta"),
     ("crumbled feta", "Cheese, feta"),
+    # --- Round 5 (30c): r6w regex-shadow misses, 2026-05-03 ---
+    # Names surfaced by scripts/benchmark_data/shadow_cache_final.json as
+    # frequent regex-decline rows that the LLM hot path resolved trivially.
+    # Each cost one LLM call per cached row; "lettuce" alone covers ~568
+    # mentions of "1 head [of] lettuce" in the current cache.
+    #
+    # Lettuce — bare "lettuce" defaults to green-leaf (matches the existing
+    # Swedish 'sallad' convention); 'leaf lettuce' likewise. Iceberg /
+    # romaine variants stay distinct so density-relevant differences survive.
+    ("lettuce", "Lettuce, green leaf, raw"),
+    ("leaf lettuce", "Lettuce, green leaf, raw"),
+    ("shredded lettuce", "Lettuce, green leaf, raw"),
+    ("iceberg lettuce", "Lettuce, iceberg (includes crisphead types), raw"),
+    ("romaine", "Lettuce, cos or romaine, raw"),
+    ("romaine lettuce", "Lettuce, cos or romaine, raw"),
+    ("kale", "Kale, raw"),
+    ("fresh kale", "Kale, raw"),
+    ("chopped kale", "Kale, raw"),
+    ("arugula", "Arugula, raw"),
+    # Marjoram — FDC has only the dried form; common recipe context.
+    ("marjoram", "Spices, marjoram, dried"),
+    ("dried marjoram", "Spices, marjoram, dried"),
+    # Leek — singular missing alongside the existing Swedish 'purjolök'.
+    ("leek", "Leeks, (bulb and lower leaf-portion), raw"),
+    ("leeks", "Leeks, (bulb and lower leaf-portion), raw"),
+    # Gingerroot — single-word form of "ginger root" frequent in older
+    # American recipe sources.
+    ("gingerroot", "Ginger root, raw"),
+    # Mandarin oranges — recipe context is almost always canned in juice;
+    # FDC's "Tangerines, (mandarin oranges)" entry is the canonical anchor.
+    ("mandarin oranges", "Tangerines, (mandarin oranges), canned, juice pack"),
+    ("mandarin orange", "Tangerines, (mandarin oranges), canned, juice pack"),
+    ("mandarin orange segments", "Tangerines, (mandarin oranges), canned, juice pack"),
+    # Thousand Island dressing — FDC has the regular (non-reduced-fat) entry.
+    (
+        "thousand island dressing",
+        "Salad dressing, thousand island, commercial, regular",
+    ),
+    ("thousand island", "Salad dressing, thousand island, commercial, regular"),
+    # Seasoning salt / seasoned salt — predominantly salt + spice mix; alias
+    # to table salt preserves density/weight at recipe precision (parallel
+    # to the existing 'garlic salt' rationale).
+    ("seasoning salt", "Salt, table"),
+    ("seasoned salt", "Salt, table"),
+    # Cool Whip — FDC's "Whipped topping, frozen, low fat" is the closest
+    # generic anchor for the frozen non-dairy topping category.
+    ("cool whip", "Whipped topping, frozen, low fat"),
+    ("whipped topping", "Whipped topping, frozen, low fat"),
+    ("frozen whipped topping", "Whipped topping, frozen, low fat"),
+    # Cheez Whiz / cheese whiz — FDC carries the KRAFT entry directly.
+    ("cheese whiz", "KRAFT CHEEZ WHIZ Pasteurized Process Cheese Sauce"),
+    ("cheez whiz", "KRAFT CHEEZ WHIZ Pasteurized Process Cheese Sauce"),
 ]
 
 # Supplementary portion data (whole-unit weights not in FDC)

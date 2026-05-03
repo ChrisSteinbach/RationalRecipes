@@ -148,3 +148,62 @@ class TestEnglishCanonicalGuarantee:
             match = resolve_canonical_name(name)
             assert match is not None, name
             assert expected_substring in match.canonical.lower()
+
+
+class TestRegexShadowMisses30c:
+    """Bead 30c: English names surfaced by the r6w regex-shadow audit
+    (scripts/benchmark_data/shadow_cache_final.json) that previously fell
+    through to the LLM. Each must now resolve via the synonym table so the
+    regex hot path handles them without an LLM round trip.
+
+    "1 head lettuce" / "1 head of lettuce" alone accounted for 568 mentions
+    in the cache — the bare-noun aliases below cover that long tail.
+    """
+
+    @staticmethod
+    def _expect_resolves(name: str) -> None:
+        match = resolve_canonical_name(name)
+        assert match is not None, f"{name!r} did not resolve"
+        assert match.similarity == 1.0, (
+            f"{name!r} resolved only fuzzy ({match.similarity}); "
+            "expected exact synonym hit"
+        )
+
+    def test_lettuce_resolves(self) -> None:
+        self._expect_resolves("lettuce")
+
+    def test_kale_resolves(self) -> None:
+        self._expect_resolves("kale")
+
+    def test_arugula_resolves(self) -> None:
+        self._expect_resolves("arugula")
+
+    def test_marjoram_resolves(self) -> None:
+        self._expect_resolves("marjoram")
+
+    def test_leek_resolves(self) -> None:
+        self._expect_resolves("leek")
+
+    def test_leeks_resolves(self) -> None:
+        self._expect_resolves("leeks")
+
+    def test_gingerroot_resolves(self) -> None:
+        self._expect_resolves("gingerroot")
+
+    def test_mandarin_oranges_resolves(self) -> None:
+        self._expect_resolves("mandarin oranges")
+
+    def test_thousand_island_dressing_resolves(self) -> None:
+        # Case-insensitive — recipes title-case it inconsistently.
+        self._expect_resolves("Thousand Island dressing")
+        self._expect_resolves("thousand island dressing")
+
+    def test_seasoning_salt_resolves(self) -> None:
+        self._expect_resolves("seasoning salt")
+
+    def test_cool_whip_resolves(self) -> None:
+        self._expect_resolves("Cool Whip")
+        self._expect_resolves("cool whip")
+
+    def test_cheese_whiz_resolves(self) -> None:
+        self._expect_resolves("cheese whiz")
