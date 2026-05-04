@@ -257,6 +257,16 @@ Output: {"ingredient": "blueberries", "quantity": 250.0, "unit": "g",\
 
 Input: "smör"
 Output: {"ingredient": "butter", "quantity": 1.0, "unit": "", "preparation": ""}
+
+Input: "3 tablespoons oil"
+Output: {"ingredient": "oil", "quantity": 3.0, "unit": "tablespoons", "preparation": ""}
+
+Input: "1 cup all-purpose flour, sifted"
+Output: {"ingredient": "flour", "quantity": 1.0, "unit": "cup", "preparation": "sifted"}
+
+Input: "2 lbs boneless skinless chicken breast"
+Output: {"ingredient": "chicken breast", "quantity": 2.0, "unit": "lbs",\
+ "preparation": "boneless, skinless"}
 """
 
 
