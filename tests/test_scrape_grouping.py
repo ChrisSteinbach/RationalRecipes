@@ -1,8 +1,6 @@
-"""Tests for Level 1 (title), Level 2 (ingredient-set),
-and Level 3 (cookingMethod) grouping."""
+"""Tests for Level 1 (title) and Level 2 (ingredient-set) grouping."""
 
 from rational_recipes.scrape.grouping import (
-    group_by_cooking_method,
     group_by_ingredients,
     group_by_title,
     jaccard_similarity,
@@ -168,82 +166,3 @@ class TestGroupByIngredientsWDC:
         assert groups[0].size == 4
 
 
-class TestGroupByCookingMethod:
-    """Level 3: partition within an L2 group by cookingMethod tag set."""
-
-    def _r(self, cooking_methods: frozenset[str], row_id: int = 0) -> WDCRecipe:
-        return _wdc_recipe(
-            "pannkakor",
-            ingredient_names=frozenset({"flour"}),
-            row_id=row_id,
-            cooking_methods=cooking_methods,
-        )
-
-    def test_splits_by_method_tag_set(self) -> None:
-        stekt = [self._r(frozenset({"stekt"}), i) for i in range(3)]
-        oven = [self._r(frozenset({"i ugn"}), i + 10) for i in range(4)]
-        result = group_by_cooking_method(stekt + oven, min_variant_size=2)
-        assert len(result) == 2
-        # Largest first.
-        assert result[0].cooking_methods == frozenset({"i ugn"})
-        assert result[0].size == 4
-        assert result[1].cooking_methods == frozenset({"stekt"})
-        assert result[1].size == 3
-
-    def test_drops_subgroup_below_min_variant_size(self) -> None:
-        big = [self._r(frozenset({"stekt"}), i) for i in range(3)]
-        small = [self._r(frozenset({"grillad"}), 100)]
-        result = group_by_cooking_method(big + small, min_variant_size=2)
-        assert len(result) == 1
-        assert result[0].cooking_methods == frozenset({"stekt"})
-
-    def test_singleton_unknown_bucket_merges_into_largest(self) -> None:
-        """One empty-method row should not splinter off on its own."""
-        named = [self._r(frozenset({"stekt"}), i) for i in range(3)]
-        stray = [self._r(frozenset(), 100)]  # single empty-method row
-        result = group_by_cooking_method(named + stray, min_variant_size=2)
-        assert len(result) == 1
-        merged = result[0]
-        assert merged.cooking_methods == frozenset({"stekt"})
-        assert merged.size == 4  # 3 named + 1 stray
-
-    def test_multi_unknown_stays_as_its_own_bucket(self) -> None:
-        """An unknown bucket with 2+ rows is not a singleton — no merge."""
-        named = [self._r(frozenset({"stekt"}), i) for i in range(3)]
-        unknown = [self._r(frozenset(), i + 10) for i in range(3)]
-        result = group_by_cooking_method(named + unknown, min_variant_size=2)
-        assert len(result) == 2
-        method_sets = {v.cooking_methods for v in result}
-        assert method_sets == {frozenset({"stekt"}), frozenset()}
-
-    def test_all_empty_method_stays_as_unknown_bucket(self) -> None:
-        """RecipeNLG-only input: no cookingMethod anywhere → single
-        unknown bucket, which passes the min-size filter and survives."""
-        rows = [self._r(frozenset(), i) for i in range(5)]
-        result = group_by_cooking_method(rows, min_variant_size=3)
-        assert len(result) == 1
-        assert result[0].cooking_methods == frozenset()
-        assert result[0].size == 5
-
-    def test_distinct_multi_tag_sets_separate(self) -> None:
-        """{stekt} and {stekt, i_ugn} are distinct tag sets."""
-        a = [self._r(frozenset({"stekt"}), i) for i in range(3)]
-        b = [self._r(frozenset({"stekt", "i ugn"}), i + 10) for i in range(3)]
-        result = group_by_cooking_method(a + b, min_variant_size=2)
-        assert len(result) == 2
-
-    def test_empty_input_returns_empty_list(self) -> None:
-        assert group_by_cooking_method([], min_variant_size=2) == []
-
-    def test_singleton_unknown_merged_when_only_one_named_bucket_too_small(
-        self,
-    ) -> None:
-        """Singleton unknown merges into largest even if that largest
-        would itself fall below min after merge — merge happens first,
-        filter applies to the merged result."""
-        named = [self._r(frozenset({"stekt"}), 0)]  # 1 row
-        stray = [self._r(frozenset(), 100)]
-        # After merge: {stekt} has 2 rows. min_variant_size=2 → survives.
-        result = group_by_cooking_method(named + stray, min_variant_size=2)
-        assert len(result) == 1
-        assert result[0].size == 2

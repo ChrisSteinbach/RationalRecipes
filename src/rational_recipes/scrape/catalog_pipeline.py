@@ -50,7 +50,7 @@ from rational_recipes.corpus_title_survey import (
 )
 from rational_recipes.scrape.canonical import canonicalize_names
 from rational_recipes.scrape.grouping import (
-    DEFAULT_L3_MIN_VARIANT_SIZE,
+    DEFAULT_MIN_VARIANT_SIZE,
     normalize_title,
 )
 from rational_recipes.scrape.merge import (
@@ -633,7 +633,7 @@ def _run_pass2(
     corpus_revisions: str,
     l2_threshold: float,
     l2_min: int,
-    l3_min: int,
+    min_variant_size: int,
     bucket_size: float,
     near_dup_threshold: float,
     now_fn: Callable[[], str],
@@ -697,7 +697,7 @@ def _run_pass2(
                 l1_min_group_size=1,
                 l2_similarity_threshold=l2_threshold,
                 l2_min_group_size=l2_min,
-                l3_min_variant_size=l3_min,
+                min_variant_size=min_variant_size,
                 bucket_size=bucket_size,
             )
 
@@ -751,7 +751,7 @@ def run_catalog_pipeline(
     l1_min: int = 5,
     l2_threshold: float = 0.6,
     l2_min: int = 3,
-    l3_min: int = DEFAULT_L3_MIN_VARIANT_SIZE,
+    min_variant_size: int = DEFAULT_MIN_VARIANT_SIZE,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
     near_dup_threshold: float = DEFAULT_NEAR_DUP_THRESHOLD,
     title_filter: str | None = None,
@@ -856,7 +856,7 @@ def run_catalog_pipeline(
             corpus_revisions=corpus_revisions,
             l2_threshold=l2_threshold,
             l2_min=l2_min,
-            l3_min=l3_min,
+            min_variant_size=min_variant_size,
             bucket_size=bucket_size,
             near_dup_threshold=near_dup_threshold,
             now_fn=now_fn,

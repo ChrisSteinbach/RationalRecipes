@@ -448,7 +448,7 @@ class TestBuildVariants:
         assert variants == []
 
     def test_identical_rows_deduped_below_min_are_dropped(self) -> None:
-        """3 identical recipes dedup to 1 unique row — below l3_min."""
+        """3 identical recipes dedup to 1 unique row — below min_variant_size."""
         lines = ("200 g flour", "200 ml milk")
         merged = [
             _make_merged(
@@ -470,7 +470,7 @@ class TestBuildVariants:
             l2_similarity_threshold=0.6,
             l2_min_group_size=2,
         )
-        # 3 identical rows dedup to 1 — below the default l3_min of 3.
+        # 3 identical rows dedup to 1 — below the default min_variant_size of 3.
         assert stats.rows_parsed == 3
         assert stats.rows_dedup_dropped == 2
         assert len(variants) == 0
@@ -558,8 +558,14 @@ class TestBuildVariants:
         # Each of 3 recipes produced one unresolved "zzzunknownfood".
         assert stats.db_misses.get("zzzunknownfood") == 3
 
-    def test_l3_splits_l2_group_by_cooking_method(self) -> None:
-        """Two cooking_methods at sufficient size → two separate variants."""
+    def test_cooking_methods_never_split_variants(self) -> None:
+        """RationalRecipes-gc7: L3 cookingMethod partition removed.
+
+        Recipes with different cooking_methods sharing one L1+L2 cluster
+        now collapse into a single variant whose ``cooking_methods`` is
+        the empty frozenset. Per-recipe method data is still available
+        through the underlying MergedRecipe.
+        """
         # Quantities vary by 50g per recipe so dedup buckets don't collide
         # (bucket width is 2 g-per-100g; 50g shift in a ~400g recipe ≈ 12%).
         fried = [
@@ -601,16 +607,14 @@ class TestBuildVariants:
             l1_min_group_size=2,
             l2_similarity_threshold=0.6,
             l2_min_group_size=2,
-            l3_min_variant_size=3,
+            min_variant_size=3,
         )
 
-        assert len(variants) == 2
-        method_sets = {v.cooking_methods for v in variants}
-        assert method_sets == {frozenset({"stekt"}), frozenset({"i ugn"})}
-        assert variants[0].variant_id != variants[1].variant_id
+        assert len(variants) == 1
+        assert variants[0].cooking_methods == frozenset()
 
-    def test_l3_noop_on_pure_recipenlg_stream(self) -> None:
-        """RecipeNLG rows carry no cooking_methods — all in unknown bucket."""
+    def test_cooking_methods_empty_on_pure_recipenlg_stream(self) -> None:
+        """RecipeNLG rows carry no cooking_methods — variant gets empty set."""
         # Two ingredients with varying proportions so dedup doesn't collapse.
         rows = [
             _make_merged(
@@ -637,7 +641,7 @@ class TestBuildVariants:
             l1_min_group_size=2,
             l2_similarity_threshold=0.6,
             l2_min_group_size=2,
-            l3_min_variant_size=3,
+            min_variant_size=3,
         )
         assert len(variants) == 1
         assert variants[0].cooking_methods == frozenset()
@@ -679,7 +683,7 @@ class TestIngredientFrequencyFilter:
             l1_min_group_size=2,
             l2_similarity_threshold=0.6,
             l2_min_group_size=2,
-            l3_min_variant_size=3,
+            min_variant_size=3,
         )
         assert len(variants) == 1
         assert "ketchup" not in variants[0].canonical_ingredients
@@ -717,7 +721,7 @@ class TestIngredientFrequencyFilter:
             l1_min_group_size=2,
             l2_similarity_threshold=0.6,
             l2_min_group_size=2,
-            l3_min_variant_size=3,
+            min_variant_size=3,
         )
         assert len(variants) == 1
         assert "ketchup" in variants[0].canonical_ingredients
@@ -764,7 +768,7 @@ class TestIngredientFrequencyFilter:
             l1_min_group_size=2,
             l2_similarity_threshold=0.6,
             l2_min_group_size=2,
-            l3_min_variant_size=3,
+            min_variant_size=3,
         )
         assert len(variants) == 1
         expected = compute_variant_id(

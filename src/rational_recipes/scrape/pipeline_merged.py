@@ -32,8 +32,7 @@ from pathlib import Path
 from rational_recipes.ingredient import Factory as IngredientFactory
 from rational_recipes.scrape.canonical import canonicalize_name
 from rational_recipes.scrape.grouping import (
-    DEFAULT_L3_MIN_VARIANT_SIZE,
-    group_by_cooking_method,
+    DEFAULT_MIN_VARIANT_SIZE,
     group_by_ingredients,
     group_by_title,
     normalize_title,
@@ -418,16 +417,21 @@ def build_variants(
     l1_min_group_size: int,
     l2_similarity_threshold: float,
     l2_min_group_size: int,
-    l3_min_variant_size: int = DEFAULT_L3_MIN_VARIANT_SIZE,
+    min_variant_size: int = DEFAULT_MIN_VARIANT_SIZE,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
 ) -> tuple[list[MergedVariantResult], PipelineRunStats]:
     """Group merged recipes, LLM-parse each, normalize, and dedup.
 
-    Runs L1 (title), L2 (ingredient set), L3 (cookingMethod) in order,
-    then LLM-parses and normalizes each surviving L3 sub-group into one
-    variant. Pure orchestration over injectable ``parse_fn`` — tests
-    pass a stub that returns canned parsed lines, so this function
-    exercises full variant-building without Ollama.
+    Runs L1 (title) then L2 (ingredient set), LLM-parses and normalizes
+    each surviving L2 cluster into one variant. Pure orchestration over
+    injectable ``parse_fn`` — tests pass a stub that returns canned
+    parsed lines, so this function exercises full variant-building
+    without Ollama.
+
+    L3 cookingMethod partitioning was removed in RationalRecipes-gc7;
+    ``cooking_methods`` on the resulting variant is always
+    ``frozenset()``. Per-recipe ``cooking_methods`` data still flows
+    through ``MergedRecipe`` for downstream PWA filtering.
     """
     l1_groups = group_by_title(merged_recipes, min_group_size=l1_min_group_size)
     logger.info("L1: %d title groups kept", len(l1_groups))
@@ -452,74 +456,63 @@ def build_variants(
         )
 
         for cluster in l2_clusters:
-            l3_variants = group_by_cooking_method(
-                cluster.recipes,
-                min_variant_size=l3_min_variant_size,
-            )
-            logger.info(
-                "    L2 (%d recipes) → %d L3 sub-group(s)",
-                len(cluster.recipes),
-                len(l3_variants),
-            )
+            canonical_ingredients: set[str] = set()
+            normalized_rows: list[MergedNormalizedRow] = []
 
-            for l3_variant in l3_variants:
-                canonical_ingredients: set[str] = set()
-                normalized_rows: list[MergedNormalizedRow] = []
-
-                for recipe in l3_variant.recipes:
-                    rows_parsed += 1
-                    raw_parsed = parse_fn(list(recipe.ingredients))
-                    parsed = [p for p in raw_parsed if p is not None]
-                    if not parsed:
-                        continue
-
-                    row, skipped = normalize_merged_row(
-                        url=recipe.url,
-                        title=recipe.title,
-                        corpus=recipe.corpus,
-                        parsed_ingredients=parsed,
-                    )
-                    for miss in skipped:
-                        base = miss.split(" (")[0]
-                        db_misses[base] = db_misses.get(base, 0) + 1
-                    if row is None:
-                        continue
-
-                    normalized_rows.append(row)
-                    canonical_ingredients.update(row.cells.keys())
-                    rows_normalized += 1
-
-                if len(normalized_rows) < l3_min_variant_size:
+            for recipe in cluster.recipes:
+                rows_parsed += 1
+                raw_parsed = parse_fn(list(recipe.ingredients))
+                parsed = [p for p in raw_parsed if p is not None]
+                if not parsed:
                     continue
 
-                filtered_canonical = _apply_freq_filter(
-                    canonical_ingredients, normalized_rows
+                row, skipped = normalize_merged_row(
+                    url=recipe.url,
+                    title=recipe.title,
+                    corpus=recipe.corpus,
+                    parsed_ingredients=parsed,
                 )
-                if not filtered_canonical:
+                for miss in skipped:
+                    base = miss.split(" (")[0]
+                    db_misses[base] = db_misses.get(base, 0) + 1
+                if row is None:
                     continue
 
-                header = _derive_header(normalized_rows, filtered_canonical)
-                if not header:
-                    continue
+                normalized_rows.append(row)
+                canonical_ingredients.update(row.cells.keys())
+                rows_normalized += 1
 
-                variant = MergedVariantResult(
-                    variant_title=title_key,
-                    canonical_ingredients=frozenset(filtered_canonical),
-                    cooking_methods=l3_variant.cooking_methods,
-                    normalized_rows=normalized_rows,
-                    header_ingredients=header,
-                )
-                dropped = variant.dedup_in_place(bucket_size=bucket_size)
-                rows_dedup_dropped += dropped
-                if len(variant.normalized_rows) >= l3_min_variant_size:
-                    variants.append(variant)
+            if len(normalized_rows) < min_variant_size:
+                continue
+
+            filtered_canonical = _apply_freq_filter(
+                canonical_ingredients, normalized_rows
+            )
+            if not filtered_canonical:
+                continue
+
+            header = _derive_header(normalized_rows, filtered_canonical)
+            if not header:
+                continue
+
+            variant = MergedVariantResult(
+                variant_title=title_key,
+                canonical_ingredients=frozenset(filtered_canonical),
+                cooking_methods=frozenset(),
+                normalized_rows=normalized_rows,
+                header_ingredients=header,
+            )
+            dropped = variant.dedup_in_place(bucket_size=bucket_size)
+            rows_dedup_dropped += dropped
+            if len(variant.normalized_rows) >= min_variant_size:
+                variants.append(variant)
 
     variants, merge_dedup_dropped = _merge_duplicate_variants(
         variants, bucket_size=bucket_size
     )
     rows_dedup_dropped += merge_dedup_dropped
     variants = [
-        v for v in variants if len(v.normalized_rows) >= l3_min_variant_size
+        v for v in variants if len(v.normalized_rows) >= min_variant_size
     ]
 
     stats = PipelineRunStats(
@@ -546,7 +539,7 @@ def run_merged_pipeline(
     l1_min_group_size: int = 3,
     l2_similarity_threshold: float = 0.6,
     l2_min_group_size: int = 3,
-    l3_min_variant_size: int = DEFAULT_L3_MIN_VARIANT_SIZE,
+    min_variant_size: int = DEFAULT_MIN_VARIANT_SIZE,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
     llm_model: str = "gemma4:e2b",
     ollama_url: str = OLLAMA_BASE_URL,
@@ -591,7 +584,7 @@ def run_merged_pipeline(
         l1_min_group_size=l1_min_group_size,
         l2_similarity_threshold=l2_similarity_threshold,
         l2_min_group_size=l2_min_group_size,
-        l3_min_variant_size=l3_min_variant_size,
+        min_variant_size=min_variant_size,
         bucket_size=bucket_size,
     )
 

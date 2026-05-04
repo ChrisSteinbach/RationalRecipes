@@ -140,7 +140,15 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--l1-min", type=int, default=5)
     parser.add_argument("--l2-threshold", type=float, default=0.6)
     parser.add_argument("--l2-min", type=int, default=3)
-    parser.add_argument("--l3-min", type=int, default=3)
+    parser.add_argument(
+        "--min-variant-size",
+        type=int,
+        default=3,
+        help=(
+            "Minimum recipes per variant after L2 clustering. Smaller variants "
+            "are dropped (their stats would be too noisy to report)."
+        ),
+    )
     parser.add_argument("--bucket-size", type=float, default=DEFAULT_BUCKET_SIZE)
     parser.add_argument(
         "--title-filter",
@@ -439,7 +447,7 @@ def run(
             l1_min=args.l1_min,
             l2_threshold=args.l2_threshold,
             l2_min=args.l2_min,
-            l3_min=args.l3_min,
+            min_variant_size=args.min_variant_size,
             bucket_size=args.bucket_size,
             near_dup_threshold=args.near_dup_threshold,
             title_filter=args.title_filter,

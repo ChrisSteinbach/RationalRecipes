@@ -1,17 +1,16 @@
-"""Level 1 (title-based), Level 2 (ingredient-set), and Level 3
-(cookingMethod) grouping.
+"""Level 1 (title-based) and Level 2 (ingredient-set) grouping.
 
 Level 1 normalizes recipe titles and groups by exact match on the
 normalized form. Level 2 clusters within each L1 group by Jaccard
-similarity of ingredient sets (from the NER column). Level 3 splits
-within each L2 group by distinct cookingMethod tag sets — the finest-
-grained dish-identity signal WDC carries directly (ugnsmannkaka vs
-stekpannkaka: same batter, different technique).
+similarity of ingredient sets (from the NER column).
 
-RecipeNLG rows carry no cookingMethod, so L3 is a no-op on pure-
-RecipeNLG input. On mixed RecipeNLG+WDC streams, L3 partitions the
-WDC portion while the RecipeNLG portion falls into the "unknown-method"
-bucket.
+A Level 3 cookingMethod partition existed historically but was dropped
+in RationalRecipes-gc7: 100% of variants in production recipes.db
+carried empty ``cooking_methods`` (RecipeNLG, 99.86% of corpus, has no
+cookingMethod field), so L3 collapsed to a single 'unknown-method'
+bucket per L2 cluster — variant_ids were unaffected by the step.
+``cooking_methods`` survives as a recipe-level metadata field for PWA
+filtering, but is no longer used as a clustering dimension.
 """
 
 from __future__ import annotations
@@ -29,12 +28,6 @@ class GroupableRecipe(Protocol):
     def title(self) -> str: ...
     @property
     def ingredient_names(self) -> frozenset[str]: ...
-
-
-@runtime_checkable
-class MethodedRecipe(Protocol):
-    @property
-    def cooking_methods(self) -> frozenset[str]: ...
 
 
 # --- Level 1: Title normalization and grouping ---
@@ -148,69 +141,10 @@ def group_by_ingredients[R: GroupableRecipe](
     return result
 
 
-# --- Level 3: cookingMethod partition ---
+DEFAULT_MIN_VARIANT_SIZE = 3
+"""Default minimum recipe count for a variant to survive.
 
-
-DEFAULT_L3_MIN_VARIANT_SIZE = 3
-"""Default min_variant_size for L3 sub-group filtering.
-
-Matches L1/L2 defaults. Too small → unstable stats. Too large → over-drops
-variants from smaller dish families. Tune empirically (bead 7eo acceptance)
-by running the full pipeline on 3+ dish families and reporting sensitivity.
+Used as the post-clustering filter on each L2 cluster. Too small →
+unstable stats. Too large → over-drops variants from smaller dish
+families.
 """
-
-
-@dataclass(frozen=True)
-class MethodVariant[R: MethodedRecipe]:
-    """One L3 sub-group: recipes sharing a cookingMethod tag set."""
-
-    cooking_methods: frozenset[str]
-    recipes: list[R]
-
-    @property
-    def size(self) -> int:
-        return len(self.recipes)
-
-
-def group_by_cooking_method[R: MethodedRecipe](
-    recipes: Sequence[R],
-    *,
-    min_variant_size: int = DEFAULT_L3_MIN_VARIANT_SIZE,
-) -> list[MethodVariant[R]]:
-    """Level 3: partition recipes by distinct cookingMethod tag set.
-
-    Algorithm (docs/design/recipe-scraping.md § Level 3):
-
-    1. Bucket rows by their ``cooking_methods`` frozenset. Rows with
-       empty methods form an "unknown-method" bucket.
-    2. If the unknown bucket is a singleton, merge it into the largest
-       non-empty bucket — a single un-tagged row should not splinter
-       off as its own variant.
-    3. Drop any resulting bucket below ``min_variant_size``.
-
-    Returns buckets sorted by size (largest first).
-
-    Pure-RecipeNLG input (no cookingMethod anywhere) degenerates to a
-    single "unknown-method" bucket, which after the singleton-merge
-    step and min-size filter either survives as-is (if large enough) or
-    is dropped.
-    """
-    buckets: dict[frozenset[str], list[R]] = defaultdict(list)
-    for recipe in recipes:
-        buckets[recipe.cooking_methods].append(recipe)
-
-    empty_key: frozenset[str] = frozenset()
-    if empty_key in buckets and len(buckets[empty_key]) == 1:
-        non_empty = {k: v for k, v in buckets.items() if k != empty_key}
-        if non_empty:
-            largest_key = max(non_empty, key=lambda k: len(non_empty[k]))
-            stragglers = buckets.pop(empty_key)
-            buckets[largest_key].extend(stragglers)
-
-    result = [
-        MethodVariant(cooking_methods=k, recipes=v)
-        for k, v in buckets.items()
-        if len(v) >= min_variant_size
-    ]
-    result.sort(key=lambda v: v.size, reverse=True)
-    return result

@@ -268,7 +268,7 @@ class TestRunCatalogPipeline:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
             now_fn=lambda: "2026-04-24T00:00:00+00:00",
         )
         # pannkakor + chocolate cake clear --l1-min=3; banana bread doesn't.
@@ -302,7 +302,7 @@ class TestRunCatalogPipeline:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
             do_pass3=False,
         )
         by_title = {v.normalized_title: v.category for v in db.list_variants()}
@@ -332,7 +332,7 @@ class TestRunCatalogPipeline:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
         )
         assert stats.l1_groups_skipped == 1
         assert stats.l1_groups_processed == 1  # chocolate cake
@@ -358,7 +358,7 @@ class TestRunCatalogPipeline:
                 l1_min=3,
                 l2_threshold=0.3,
                 l2_min=2,
-                l3_min=2,
+                min_variant_size=2,
             )
 
         first = _run("rev-1")
@@ -387,7 +387,7 @@ class TestRunCatalogPipeline:
                 l1_min=3,
                 l2_threshold=0.3,
                 l2_min=2,
-                l3_min=2,
+                min_variant_size=2,
             )
 
         _run("rev-1")
@@ -410,7 +410,7 @@ class TestRunCatalogPipeline:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
             title_filter="pannkak",
         )
         assert stats.l1_groups_total == 1
@@ -462,7 +462,7 @@ class TestRunCatalogPipeline:
                 l1_min=3,
                 l2_threshold=0.3,
                 l2_min=2,
-                l3_min=2,
+                min_variant_size=2,
             )
 
         # "chocolate cake" sorts before "pannkakor" alphabetically, so the
@@ -484,7 +484,7 @@ class TestRunCatalogPipeline:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
         )
         assert stats.l1_groups_processed == 2
         assert stats.l1_groups_skipped == 0
@@ -517,7 +517,7 @@ class TestRunCatalogPipeline:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
         )
         # chocolate cake is skipped; pannkakor is processed.
         assert stats.l1_groups_skipped == 1
@@ -559,7 +559,7 @@ class TestRunCatalogPipeline:
                 l1_min=3,
                 l2_threshold=0.3,
                 l2_min=2,
-                l3_min=2,
+                min_variant_size=2,
                 now_fn=lambda: "2026-04-24T00:00:00+00:00",
             )
             db.close()
@@ -580,7 +580,7 @@ class TestRunCatalogPipeline:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
             now_fn=lambda: "2026-04-28T00:00:00+00:00",
         )
 
@@ -636,7 +636,7 @@ class TestRunCatalogPipeline:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
         )
 
         # RecipeNLG lines have NER substring matches and were resolved off
@@ -677,7 +677,7 @@ class TestRunCatalogPipeline:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
         )
         # WDC pannkakor has 3 recipes × 2 lines = 6 lines that need LLM
         # because no NER list flows through. The exact count depends on
@@ -721,7 +721,7 @@ class TestRunCatalogPipeline:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
             on_group_done=lambda key, _variants: observed.append(key),
         )
         assert observed == sorted(observed)
@@ -761,7 +761,7 @@ class TestCli:
                 "0.3",
                 "--l2-min",
                 "2",
-                "--l3-min",
+                "--min-variant-size",
                 "2",
                 "--title-filter",
                 "pannkak",
@@ -857,7 +857,7 @@ class TestHeartbeat:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
             heartbeat=beats.append,
         )
         passes = {b.pass_name for b in beats}
@@ -892,7 +892,7 @@ class TestHeartbeat:
             l1_min=3,
             l2_threshold=0.3,
             l2_min=2,
-            l3_min=2,
+            min_variant_size=2,
         )
         assert stats.l1_groups_processed >= 1
 
