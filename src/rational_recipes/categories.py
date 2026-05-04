@@ -102,7 +102,10 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Sweet puddings: "bread pudding" must beat "bread"; "rice pudding"
     # must beat "rice" (side); etc. Also catches "X roll" desserts so
     # they don't fall through to bread's "rolls" or get miscategorized
-    # by the side/dessert catch-all.
+    # by the side/dessert catch-all. "Punch bowl cake" is a layered
+    # no-bake dessert assembled in a punch bowl — must beat beverage's
+    # "punch". "Peanut butter pie/fudge/cookies" must beat condiment's
+    # "peanut butter" (the spread).
     (
         "dessert",
         (
@@ -126,15 +129,24 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "ice cream roll",
             "ice cream cake",
             "cookie roll",
+            "punch bowl cake",
+            "peanut butter pie",
+            "peanut butter pies",
+            "peanut butter fudge",
+            "peanut butter cookies",
+            "peanut butter cookie",
         ),
     ),
-    # Savory dishes that resemble a dessert by name. Pre-empts the
-    # later dessert catch-all (squares, etc.).
+    # Savory dishes whose surface tokens would otherwise route them to
+    # the wrong category: spinach squares / zucchini appetizers would
+    # hit the dessert catch-all on "squares"; taco dip would hit main
+    # on "taco" before reaching the appetizer "dip" rule.
     (
         "appetizer",
         (
             "spinach squares",
             "zucchini appetizers",
+            "taco dip",
         ),
     ),
     # Savory "puddings"/breads that look dessert-shaped but aren't,
@@ -513,7 +525,7 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "ketchup",
             "mayonnaise",
             "apple butter",
-            "peanut butter",  # the spread; "peanut butter cookies" caught by dessert
+            "peanut butter",  # the spread; pie/fudge/cookies → dessert (above)
             "chow chow",
             "chow-chow",
             "bread and butter pickles",

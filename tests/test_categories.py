@@ -181,3 +181,65 @@ class TestCategorize:
         assert categorize("Banana Bread") == "bread"
         assert categorize("PUMPKIN PIE") == "dessert"
         assert categorize("ChIcKeN PoT PiE") == "main"
+
+    @pytest.mark.parametrize(
+        ("title", "expected"),
+        [
+            # "Punch bowl cake" is a layered no-bake dessert assembled in
+            # a punch bowl — must beat beverage's "punch" substring rule.
+            # Real variant titles from the corpus.
+            ("punch bowl cake", "dessert"),
+            ("pineapple pecan punch bowl cake", "dessert"),
+            ("pineapple nut punch bowl cake", "dessert"),
+            ("sour cream punch bowl cake", "dessert"),
+            ("coconut punch bowl cake", "dessert"),
+            # Plain "punch" still routes to beverage.
+            ("rum punch", "beverage"),
+            ("hawaiian punch", "beverage"),
+        ],
+    )
+    def test_punch_bowl_cake_overrides_beverage(
+        self, title: str, expected: str
+    ) -> None:
+        assert categorize(title) == expected, f"{title!r} → {categorize(title)!r}"
+
+    @pytest.mark.parametrize(
+        ("title", "expected"),
+        [
+            # Peanut butter desserts must beat condiment's "peanut butter"
+            # (which targets the spread itself). Real variant titles.
+            ("peanut butter pie", "dessert"),
+            ("milk peanut butter pie", "dessert"),
+            ("cool whip confectioners sugar peanut butter pie", "dessert"),
+            ("peanut butter fudge", "dessert"),
+            ("cocoa peanut butter fudge", "dessert"),
+            ("margarine peanut butter fudge", "dessert"),
+            ("peanut butter cookies", "dessert"),
+            ("light brown sugar peanut butter cookies", "dessert"),
+            ("crisco peanut butter cookies", "dessert"),
+            ("soda peanut butter cookies", "dessert"),
+            ("white sugar butter peanut butter cookies", "dessert"),
+            # Bare "peanut butter" (the spread) still routes to condiment.
+            ("peanut butter", "condiment"),
+            ("homemade peanut butter", "condiment"),
+        ],
+    )
+    def test_peanut_butter_desserts_override_condiment(
+        self, title: str, expected: str
+    ) -> None:
+        assert categorize(title) == expected, f"{title!r} → {categorize(title)!r}"
+
+    @pytest.mark.parametrize(
+        ("title", "expected"),
+        [
+            # Taco dip is a layered party appetizer — must beat main's
+            # "taco" substring rule. Real variant title.
+            ("taco dip", "appetizer"),
+            ("black olives taco dip", "appetizer"),
+            # Plain tacos still route to main.
+            ("beef tacos", "main"),
+            ("chicken tacos", "main"),
+        ],
+    )
+    def test_taco_dip_overrides_main(self, title: str, expected: str) -> None:
+        assert categorize(title) == expected, f"{title!r} → {categorize(title)!r}"
