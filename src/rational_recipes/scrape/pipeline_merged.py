@@ -38,6 +38,7 @@ from rational_recipes.scrape.grouping import (
     group_by_title,
     normalize_title,
 )
+from rational_recipes.scrape.ingredient_fold import apply_fold_to_variant
 from rational_recipes.scrape.manifest import (
     Manifest,
     VariantManifestEntry,
@@ -545,6 +546,10 @@ def build_variants(
                 normalized_rows=normalized_rows,
                 header_ingredients=header,
             )
+            # RationalRecipes-2p6: collapse generic/specific sibling
+            # forms (e.g. salt + kosher salt) before dedup so post-fold
+            # rows that became identical can collide and dedup naturally.
+            apply_fold_to_variant(variant)
             dropped = variant.dedup_in_place(bucket_size=bucket_size)
             rows_dedup_dropped += dropped
             if len(variant.normalized_rows) >= min_variant_size:
