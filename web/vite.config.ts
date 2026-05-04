@@ -7,4 +7,9 @@ const base = process.env.VITE_BASE ?? "/";
 
 export default defineConfig({
   base,
+  server: {
+    // Bind to all interfaces so the dev server is reachable from
+    // other machines on the LAN (e.g. mobile testing).
+    host: true,
+  },
 });
