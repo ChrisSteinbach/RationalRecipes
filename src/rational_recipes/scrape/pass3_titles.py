@@ -77,6 +77,128 @@ def apply_ambiguous_suffix(
     return title + suffix
 
 
+# RationalRecipes-0ki: descriptors the LLM picker tends to default to when
+# nothing better surfaces in its prompt. They give the user no signal —
+# every recipe in the corpus contains water/flour/sugar/leavening, so
+# 'Water Punch' or 'Pecan Baking Soda Zucchini Bread' is just noise. The
+# post-LLM substitution step strips these tokens from the descriptor and,
+# if nothing distinctive remains, replaces the whole descriptor with the
+# highest-ordinal non-stop-list ingredient from the variant's stats. The
+# stop-list is overridden when no alternative is available — a generic
+# descriptor still beats a bare family name.
+#
+# 'shortening' is a judgment call: as a generic fat it rarely
+# differentiates, but a shortening-vs-butter pair is sometimes the most
+# distinctive split between two cookie variants. Keeping it on the list
+# for now; revisit if real titles regress.
+STOP_LIST_DESCRIPTORS: frozenset[str] = frozenset({
+    "water",
+    "flour",
+    "sugar",
+    "white sugar",
+    "soda",
+    "baking soda",
+    "baking powder",
+    "salt",
+    "oil",
+    "vegetable oil",
+    "shortening",
+})
+
+
+def _substitute_stop_list_descriptor(
+    title: str,
+    family: str,
+    ingredients_ordered: Sequence[str],
+) -> tuple[str, bool]:
+    """Strip stop-list tokens from ``title``'s descriptor; if nothing
+    distinctive remains, swap in the highest-ordinal non-stop-list
+    ingredient from ``ingredients_ordered``. Returns ``(new_title,
+    substituted)``; ``new_title == title`` when ``substituted`` is False.
+
+    No-op when the title has no descriptor (bare-family case), the
+    descriptor contains no stop-list tokens, or every descriptor token is
+    stop-list AND no non-stop-list alternative exists in stats.
+
+    ``ingredients_ordered`` is the variant's canonical ingredient list in
+    ordinal order (most-prevalent first), as produced by
+    ``CatalogDB.bulk_ingredient_names``. Substitution picks the first
+    candidate that is not stop-list, not part of the family name, and
+    not already in the descriptor — i.e. the highest-coverage informative
+    alternative.
+
+    Re-validates the result against ``validate_title_ends_with_family``
+    so a malformed substitution falls back to the original title rather
+    than regressing the wqy contract.
+    """
+    descriptor = _extract_descriptor(title, family)
+    if descriptor is None:
+        return title, False
+
+    desc_words = descriptor.split()
+    multi_phrases = sorted(
+        (s for s in STOP_LIST_DESCRIPTORS if " " in s),
+        key=lambda s: -len(s.split()),
+    )
+    single_words = frozenset(s for s in STOP_LIST_DESCRIPTORS if " " not in s)
+
+    cleaned: list[str] = []
+    dropped_any = False
+    i = 0
+    while i < len(desc_words):
+        matched_n: int | None = None
+        for phrase in multi_phrases:
+            phrase_words = phrase.split()
+            n = len(phrase_words)
+            if i + n > len(desc_words):
+                continue
+            if [w.lower() for w in desc_words[i:i + n]] == phrase_words:
+                matched_n = n
+                break
+        if matched_n is not None:
+            dropped_any = True
+            i += matched_n
+            continue
+        if desc_words[i].lower() in single_words:
+            dropped_any = True
+            i += 1
+            continue
+        cleaned.append(desc_words[i])
+        i += 1
+
+    if not dropped_any:
+        return title, False
+
+    # Preserve the original casing/spacing of the family suffix.
+    family_suffix = title[len(descriptor):]
+
+    if cleaned:
+        candidate = " ".join(cleaned) + family_suffix
+        if validate_title_ends_with_family(candidate, family):
+            return candidate, True
+        return title, False
+
+    # Whole descriptor was stop-list — try a stats-driven replacement.
+    # Use ``_stem_match`` for the family-word check so that singular
+    # canonical names like 'potato' are recognized as the family word
+    # 'potatoes' (otherwise we'd produce 'Potato Scalloped Potatoes').
+    family_words = [w.lower() for w in family.split()]
+    desc_words_lc = {w.lower() for w in desc_words}
+    for ing in ingredients_ordered:
+        ing_lc = ing.lower()
+        if ing_lc in STOP_LIST_DESCRIPTORS:
+            continue
+        if any(_stem_match(ing_lc, fw) for fw in family_words):
+            continue
+        if ing_lc in desc_words_lc:
+            continue
+        candidate = ing.title() + family_suffix
+        if validate_title_ends_with_family(candidate, family):
+            return candidate, True
+
+    return title, False
+
+
 TITLE_SYSTEM_PROMPT = """\
 You name dish variants. Given a dish family name and the ingredients of
 ONE variant alongside its sibling variants' ingredients, choose a SHORT
@@ -91,6 +213,10 @@ Rules:
 - Pick ONE descriptor (an ingredient, method, or modifier) that is
   present in this variant but absent from every sibling. If multiple
   qualify, pick the most distinctive single word.
+- Avoid generic descriptors like "water", "flour", "sugar", "baking
+  soda", "baking powder", "salt", "oil", "vegetable oil", or
+  "shortening" unless they are the only thing distinguishing this
+  variant from its siblings.
 - If nothing distinguishes this variant from its siblings, return the
   family name unchanged in Title Case.
 
@@ -120,11 +246,20 @@ family name. Tests inject deterministic stubs that bypass Ollama.
 
 @dataclass(frozen=True, slots=True)
 class _VariantSlot:
-    """Lightweight carrier for one variant's data inside a batched call."""
+    """Lightweight carrier for one variant's data inside a batched call.
+
+    ``ingredients_ordered`` mirrors ``ingredients`` but preserves the
+    ordinal ordering from ``variant_ingredient_stats`` (most-prevalent
+    first). Used by the stop-list descriptor substitution
+    (RationalRecipes-0ki) to pick the highest-coverage alternative.
+    Defaults to an empty tuple so legacy test fixtures that only set
+    ``ingredients``/``methods`` keep working.
+    """
 
     variant_id: str
     ingredients: frozenset[str]
     methods: frozenset[str]
+    ingredients_ordered: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +358,12 @@ class Pass3Stats:
     the tiered validate-and-escalate path (RationalRecipes-wqy): when
     the small primary model returns a title that drops the L1 family
     name, we retry with a stronger fallback model, and salvage by
-    appending the family if that also fails."""
+    appending the family if that also fails.
+
+    ``stop_list_substitutions`` counts how often the post-LLM stop-list
+    cleanup (RationalRecipes-0ki) replaced or stripped a generic
+    descriptor (water, flour, baking soda, etc.) on a successfully-titled
+    variant."""
 
     variants_total: int = 0
     variants_singleton: int = 0
@@ -236,6 +376,7 @@ class Pass3Stats:
     escalations: int = 0
     validation_failures_fallback: int = 0
     reconstructed_titles: int = 0
+    stop_list_substitutions: int = 0
     db_write_seconds_total: float = 0.0
     db_write_count: int = 0
     timings: list[Pass3CallTiming] = field(default_factory=list)
@@ -527,6 +668,7 @@ def _variants_to_slots(
             variant_id=v.variant_id,
             ingredients=frozenset(ingredient_names.get(v.variant_id, ())),
             methods=frozenset(v.cooking_methods),
+            ingredients_ordered=ingredient_names.get(v.variant_id, ()),
         )
         for v in variants
     ]
@@ -785,6 +927,20 @@ def run_pass3(
                 fallback_title_fn=fallback_title_fn,
                 stats=stats,
             )
+            # Strip / substitute generic stop-list descriptors BEFORE the
+            # ambiguous-family suffix runs (so the suffix sees the
+            # post-substitution title) but AFTER ``_resolve_title``'s wqy
+            # validator (so we never substitute on a malformed title).
+            # RationalRecipes-0ki.
+            if title is not None:
+                substituted_title, substituted = (
+                    _substitute_stop_list_descriptor(
+                        title, family, slot.ingredients_ordered,
+                    )
+                )
+                if substituted:
+                    stats.stop_list_substitutions += 1
+                    title = substituted_title
             # Append the dish-type suffix AFTER the wqy validator
             # inside ``_resolve_title`` has approved the LLM output (so
             # the validator sees the LLM's raw string) and BEFORE dedup

@@ -9,12 +9,14 @@ from rational_recipes.catalog_db import CatalogDB
 from rational_recipes.scrape.merge import MergedRecipe
 from rational_recipes.scrape.pass3_titles import (
     AMBIGUOUS_FAMILY_SUFFIXES,
+    STOP_LIST_DESCRIPTORS,
     Pass3CallTiming,
     Pass3Stats,
     TitleFn,
     _deduplicate_titles,
     _extract_descriptor,
     _ollama_title_call,
+    _substitute_stop_list_descriptor,
     _variants_to_slots,
     _VariantSlot,
     apply_ambiguous_suffix,
@@ -1168,12 +1170,13 @@ class TestEscalationAndReconstruction:
         assert stats.reconstructed_titles == 0
 
     def test_double_failure_reconstructs(self) -> None:
-        """Both primary AND fallback return malformed 'Flour Potato' —
-        reconstruction must yield 'Flour Scalloped Potatoes' and
-        increment reconstructed_titles."""
+        """Both primary AND fallback return malformed 'Bourbon Potato' —
+        reconstruction must yield 'Bourbon Scalloped Potatoes' and
+        increment reconstructed_titles. (Uses a non-stop-list descriptor
+        so the 0ki post-pass leaves the reconstruction intact.)"""
         db = self._make_collision_db()
-        primary = _make_constant_title_fn("Flour Potato")
-        fallback = _make_constant_title_fn("Flour Potato")
+        primary = _make_constant_title_fn("Bourbon Potato")
+        fallback = _make_constant_title_fn("Bourbon Potato")
 
         stats = run_pass3(
             db=db, title_fn=primary, fallback_title_fn=fallback,
@@ -1181,11 +1184,12 @@ class TestEscalationAndReconstruction:
         # Every stored title ends with the (Title-cased) family name.
         for v in db.list_variants():
             assert v.display_title.lower().endswith("scalloped potatoes")
-            assert "Flour" in v.display_title
+            assert "Bourbon" in v.display_title
         assert stats.validation_failures_primary == 2
         assert stats.escalations == 2
         assert stats.validation_failures_fallback == 2
         assert stats.reconstructed_titles == 2
+        assert stats.stop_list_substitutions == 0
 
     def test_double_failure_no_descriptor_falls_through_to_dedup(self) -> None:
         """Both models return just 'Potato' (only a family word, no
@@ -1385,6 +1389,234 @@ class TestRunPass3AmbiguousFamilySuffix:
             assert not v.display_title.endswith(" Soup")
             # The LLM-picked descriptor + family is intact.
             assert v.display_title.lower().endswith("chili")
+
+
+# --- Stop-list descriptor substitution (RationalRecipes-0ki) -----------
+
+
+class TestStopListDescriptorsSeed:
+    """The stop-list must contain every descriptor called out in the bead."""
+
+    def test_known_stop_list_entries(self) -> None:
+        for descriptor in (
+            "water",
+            "flour",
+            "sugar",
+            "white sugar",
+            "soda",
+            "baking soda",
+            "baking powder",
+            "salt",
+            "oil",
+            "vegetable oil",
+            "shortening",
+        ):
+            assert descriptor in STOP_LIST_DESCRIPTORS
+
+
+class TestSubstituteStopListDescriptor:
+    """Pure-function checks for the post-LLM stop-list cleanup."""
+
+    def test_water_substituted_with_lemon(self) -> None:
+        title, substituted = _substitute_stop_list_descriptor(
+            "Water Punch", "punch", ("water", "lemon"),
+        )
+        assert title == "Lemon Punch"
+        assert substituted is True
+
+    def test_only_water_no_alternative_falls_back(self) -> None:
+        """No non-stop-list ingredient available → keep the original title.
+        A generic descriptor still beats a bare-family collision."""
+        title, substituted = _substitute_stop_list_descriptor(
+            "Water Punch", "punch", ("water",),
+        )
+        assert title == "Water Punch"
+        assert substituted is False
+
+    def test_baking_soda_substituted_with_pecan(self) -> None:
+        """Multi-word stop-list phrase replaced wholesale by a stats
+        ingredient when nothing else differentiates."""
+        title, substituted = _substitute_stop_list_descriptor(
+            "Baking Soda Zucchini Bread",
+            "zucchini bread",
+            ("baking soda", "pecan"),
+        )
+        assert title == "Pecan Zucchini Bread"
+        assert substituted is True
+
+    def test_drops_stop_list_keeps_distinctive_remainder(self) -> None:
+        """When the descriptor mixes a stop-list phrase with a real
+        descriptor, drop just the generic part. Mirrors the actual
+        production case 'Pecan Baking Soda Zucchini Bread'."""
+        title, substituted = _substitute_stop_list_descriptor(
+            "Pecan Baking Soda Zucchini Bread",
+            "zucchini bread",
+            ("pecan", "baking soda"),
+        )
+        assert title == "Pecan Zucchini Bread"
+        assert substituted is True
+
+    def test_white_sugar_keeps_butter(self) -> None:
+        title, substituted = _substitute_stop_list_descriptor(
+            "White Sugar Butter Peanut Butter Cookies",
+            "peanut butter cookies",
+            ("white sugar", "butter"),
+        )
+        assert title == "Butter Peanut Butter Cookies"
+        assert substituted is True
+
+    def test_vegetable_oil_substituted(self) -> None:
+        title, substituted = _substitute_stop_list_descriptor(
+            "Vegetable Oil Fresh Apple Cake",
+            "fresh apple cake",
+            ("vegetable oil", "cinnamon", "apple"),
+        )
+        assert title == "Cinnamon Fresh Apple Cake"
+        assert substituted is True
+
+    def test_non_stop_list_descriptor_unchanged(self) -> None:
+        """A title with a distinctive descriptor passes through intact."""
+        title, substituted = _substitute_stop_list_descriptor(
+            "Bourbon Pecan Pie", "pecan pie", ("bourbon", "pecan"),
+        )
+        assert title == "Bourbon Pecan Pie"
+        assert substituted is False
+
+    def test_bare_family_title_unchanged(self) -> None:
+        title, substituted = _substitute_stop_list_descriptor(
+            "Pecan Pie", "pecan pie", ("pecan",),
+        )
+        assert title == "Pecan Pie"
+        assert substituted is False
+
+    def test_stop_list_only_with_only_family_in_stats(self) -> None:
+        """When the only non-stop-list ingredients are family words
+        (e.g. 'potato' for family 'scalloped potatoes'), there's no
+        valid alternative — fall back to the original title."""
+        title, substituted = _substitute_stop_list_descriptor(
+            "Flour Scalloped Potatoes",
+            "scalloped potatoes",
+            ("flour", "potato"),
+        )
+        assert title == "Flour Scalloped Potatoes"
+        assert substituted is False
+
+    def test_skips_replacement_already_in_descriptor(self) -> None:
+        """If the only candidate replacement is already present elsewhere
+        in the descriptor, skip it and try the next one."""
+        title, substituted = _substitute_stop_list_descriptor(
+            "Pecan Flour Pie", "pie", ("pecan", "flour", "walnut"),
+        )
+        # 'flour' (stop-list) gets dropped → cleaned=['Pecan'] → no
+        # need to dip into stats since something distinctive survives.
+        assert title == "Pecan Pie"
+        assert substituted is True
+
+    def test_soda_alias_for_baking_soda(self) -> None:
+        """'soda' alone is on the stop-list (covers the LLM emitting the
+        canonicalized short form before the 0hq fold normalizes it)."""
+        title, substituted = _substitute_stop_list_descriptor(
+            "Soda Peanut Butter Cookies",
+            "peanut butter cookies",
+            ("baking soda", "molasses"),
+        )
+        assert title == "Molasses Peanut Butter Cookies"
+        assert substituted is True
+
+
+class TestRunPass3StopListSubstitution:
+    """End-to-end checks: run_pass3 wires the substitution into the
+    pipeline AFTER ``_resolve_title`` and BEFORE ``apply_ambiguous_suffix``,
+    and the counter on Pass3Stats tracks each fired substitution."""
+
+    def test_counter_increments_per_substitution(self) -> None:
+        """Two variants with stop-list descriptors → two substitutions."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="punch",
+            canonical_ingredients=frozenset({"water", "lemon"}),
+        )
+        _make_variant(
+            db,
+            l1_title="punch",
+            canonical_ingredients=frozenset({"water", "orange"}),
+        )
+
+        # Stub returns "Water Punch" for every variant — exactly the
+        # production failure mode the bead targets.
+        def water_fn(
+            family: str,
+            my: frozenset[str],
+            methods: frozenset[str],
+            siblings: Sequence[frozenset[str]],
+        ) -> str | None:
+            return f"Water {family.title()}"
+
+        stats = run_pass3(db=db, title_fn=water_fn)
+        assert stats.stop_list_substitutions == 2
+        titles = {v.display_title for v in db.list_variants()}
+        for t in titles:
+            assert "Water" not in t, f"stop-list 'Water' should be substituted ({t})"
+            assert t.endswith("Punch")
+        assert "Lemon Punch" in titles
+        assert "Orange Punch" in titles
+
+    def test_no_substitution_when_descriptor_distinctive(self) -> None:
+        """Distinctive descriptors → counter stays at zero."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="pecan pie",
+            canonical_ingredients=frozenset({"pecan", "egg", "bourbon"}),
+        )
+        _make_variant(
+            db,
+            l1_title="pecan pie",
+            canonical_ingredients=frozenset({"pecan", "egg", "maple"}),
+        )
+
+        stats = run_pass3(db=db, title_fn=_stub_title_fn())
+        assert stats.stop_list_substitutions == 0
+        titles = {v.display_title for v in db.list_variants()}
+        assert "Bourbon Pecan Pie" in titles
+        assert "Maple Pecan Pie" in titles
+
+    def test_substitution_runs_before_ambiguous_suffix(self) -> None:
+        """For an ambiguous family ('chili' → ' Soup' suffix), the 0ki
+        substitution must fire on the descriptor BEFORE bt9e adds the
+        suffix — so the final title is e.g. 'Beef Chili Soup', not
+        'Water Chili Soup'."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="chili",
+            canonical_ingredients=frozenset({"water", "beef", "tomato"}),
+            category="soup",
+        )
+        _make_variant(
+            db,
+            l1_title="chili",
+            canonical_ingredients=frozenset({"water", "pepper", "tomato"}),
+            category="soup",
+        )
+
+        # Stub returns "Water Chili" — the bt9e suffix would turn that
+        # into "Water Chili Soup" without 0ki.
+        def water_fn(
+            family: str,
+            my: frozenset[str],
+            methods: frozenset[str],
+            siblings: Sequence[frozenset[str]],
+        ) -> str | None:
+            return f"Water {family.title()}"
+
+        stats = run_pass3(db=db, title_fn=water_fn)
+        assert stats.stop_list_substitutions == 2
+        titles = {v.display_title for v in db.list_variants()}
+        for t in titles:
+            assert t.endswith(" Soup")
+            assert "Water" not in t
 
 
 # Suppress unused-import lint guards for fixtures shared with other suites.
