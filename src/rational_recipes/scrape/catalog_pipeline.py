@@ -60,7 +60,12 @@ from rational_recipes.scrape.merge import (
     merge_corpora,
 )
 from rational_recipes.scrape.ner_match import resolve_ner_for_line
-from rational_recipes.scrape.parse import ParsedIngredient
+from rational_recipes.scrape.parse import (
+    ParsedIngredient,
+    format_batch_stats_summary,
+    get_batch_stats,
+    reset_batch_stats,
+)
 from rational_recipes.scrape.pass3_titles import (
     Pass3Stats,
     TitleFn,
@@ -500,6 +505,10 @@ def _run_pass1(
     if start_monotonic is None:
         start_monotonic = time.monotonic()
 
+    # Zero the bisect-rate counters (RationalRecipes-6bc) so this Pass 1
+    # invocation reports its own batch-failure distribution at the end.
+    reset_batch_stats()
+
     # Flatten all recipes into a work list. RecipeNLG rows carry the NER
     # list through so the am5 hot path can resolve names without the LLM;
     # WDC rows pass None and use the regex+LLM path unchanged.
@@ -555,6 +564,21 @@ def _run_pass1(
             for i, future in enumerate(as_completed(futures), start=1):
                 future.result()
                 _beat(i)
+
+    # Bead RationalRecipes-6bc: report the batched-parse bisect distribution
+    # so we can decide whether the batching path pays for itself in the
+    # post-r6w regex-first/LLM-fallback world. Print rather than log so the
+    # summary shows without -v, matching the rest of the CLI's end-of-pass
+    # summary lines. No behavior change — pure observability.
+    snapshot = get_batch_stats()
+    if snapshot.total_top_level_batches:
+        print(format_batch_stats_summary(snapshot), flush=True)
+    else:
+        print(
+            "Batched-parse stats: no LLM batches recorded "
+            "(regex covered all lines)",
+            flush=True,
+        )
 
 
 # --- Pass 2: No-LLM clustering + variant assembly from the cache table ---

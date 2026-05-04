@@ -9,7 +9,9 @@ from unittest.mock import patch
 
 from rational_recipes.scrape.parse import (
     ParsedIngredient,
+    get_batch_stats,
     parse_ingredient_lines,
+    reset_batch_stats,
 )
 
 
@@ -290,3 +292,86 @@ class TestBatchedParseChunking:
             )
             # User asked for 64; 10 lines × 80 + 100 = 900 floor.
             assert captured == [900]
+
+
+class TestBatchStatsCounters:
+    """Bisect-rate observability counters (bead RationalRecipes-6bc)."""
+
+    def test_full_success_records_max_depth_zero(self) -> None:
+        reset_batch_stats()
+        with patch("rational_recipes.scrape.parse._ollama_generate") as mock_gen:
+            mock_gen.return_value = (
+                '{"results": ['
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "flour", "preparation": ""},'
+                '{"quantity": 2.0, "unit": "MEDIUM",'
+                ' "ingredient": "egg", "preparation": ""}'
+                "]}"
+            )
+            _llm_parse(["1 cup flour", "2 eggs"])
+        snap = get_batch_stats()
+        assert snap.total_top_level_batches == 1
+        assert snap.total_top_level_lines == 2
+        assert snap.total_llm_calls == 1
+        assert snap.max_depth_counts == {0: 1}
+        assert snap.size_histogram_total == {2: 1}
+        assert snap.size_histogram_succeeded_root == {2: 1}
+
+    def test_one_bisect_records_max_depth_one(self) -> None:
+        reset_batch_stats()
+        responses = iter(
+            [
+                # 4-line batch: length mismatch
+                '{"results": ['
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "x", "preparation": ""}'
+                "]}",
+                # Left half (2 lines) succeeds
+                '{"results": ['
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "flour", "preparation": ""},'
+                '{"quantity": 2.0, "unit": "MEDIUM",'
+                ' "ingredient": "egg", "preparation": ""}'
+                "]}",
+                # Right half (2 lines) succeeds
+                '{"results": ['
+                '{"quantity": 0.5, "unit": "tsp",'
+                ' "ingredient": "salt", "preparation": ""},'
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "milk", "preparation": ""}'
+                "]}",
+            ]
+        )
+        with patch(
+            "rational_recipes.scrape.parse._ollama_generate",
+            side_effect=lambda *a, **kw: next(responses),
+        ):
+            _llm_parse(
+                ["1 cup flour", "2 eggs", "1/2 tsp salt", "1 cup milk"]
+            )
+        snap = get_batch_stats()
+        assert snap.total_top_level_batches == 1
+        assert snap.total_top_level_lines == 4
+        # 1 failed top-level + 2 successful halves = 3 LLM calls
+        assert snap.total_llm_calls == 3
+        assert snap.max_depth_counts == {1: 1}
+        assert snap.size_histogram_total == {4: 1}
+        # Original batch did NOT succeed at root (it had to bisect)
+        assert snap.size_histogram_succeeded_root.get(4, 0) == 0
+
+    def test_reset_zeroes_counters(self) -> None:
+        reset_batch_stats()
+        with patch("rational_recipes.scrape.parse._ollama_generate") as mock_gen:
+            mock_gen.return_value = (
+                '{"results": ['
+                '{"quantity": 1.0, "unit": "cup",'
+                ' "ingredient": "flour", "preparation": ""}'
+                "]}"
+            )
+            _llm_parse(["1 cup flour", "2 cups flour"])
+        assert get_batch_stats().total_top_level_batches == 1
+        reset_batch_stats()
+        snap = get_batch_stats()
+        assert snap.total_top_level_batches == 0
+        assert snap.total_llm_calls == 0
+        assert snap.max_depth_counts == {}

@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +355,149 @@ def _llm_parse_lines(
     return results
 
 
+@dataclass
+class _BatchTreeState:
+    """Per-original-batch state passed through the bisect recursion.
+
+    Tracks the maximum recursion depth reached so the top-level call can
+    classify the original batch as depth-0 (full success), depth-1 (one
+    bisect needed), depth-N, etc. (bead RationalRecipes-6bc).
+    """
+
+    original_size: int
+    max_depth: int = 0
+
+
+@dataclass
+class BatchStatsSnapshot:
+    """Snapshot of bisect-rate counters from a Pass 1 run (RationalRecipes-6bc).
+
+    All counters are top-level (per-original-batch) except total_llm_calls
+    which counts every actual Ollama call (batched + singleton fallback).
+    """
+
+    total_top_level_batches: int = 0
+    total_top_level_lines: int = 0
+    total_llm_calls: int = 0
+    max_depth_counts: dict[int, int] = field(default_factory=dict)
+    size_histogram_total: dict[int, int] = field(default_factory=dict)
+    size_histogram_succeeded_root: dict[int, int] = field(default_factory=dict)
+
+
+class _BatchStats:
+    """Thread-safe accumulator for batched-parse bisect metrics."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._reset_locked()
+
+    def _reset_locked(self) -> None:
+        self.total_top_level_batches = 0
+        self.total_top_level_lines = 0
+        self.total_llm_calls = 0
+        self.max_depth_counts: dict[int, int] = defaultdict(int)
+        self.size_histogram_total: dict[int, int] = defaultdict(int)
+        self.size_histogram_succeeded_root: dict[int, int] = defaultdict(int)
+
+    def reset(self) -> None:
+        with self._lock:
+            self._reset_locked()
+
+    def record_llm_call(self, n: int = 1) -> None:
+        with self._lock:
+            self.total_llm_calls += n
+
+    def record_top_level_start(self, size: int) -> None:
+        with self._lock:
+            self.total_top_level_batches += 1
+            self.total_top_level_lines += size
+            self.size_histogram_total[size] += 1
+
+    def record_top_level_finish(self, state: _BatchTreeState) -> None:
+        with self._lock:
+            self.max_depth_counts[state.max_depth] += 1
+            if state.max_depth == 0:
+                self.size_histogram_succeeded_root[state.original_size] += 1
+
+    def snapshot(self) -> BatchStatsSnapshot:
+        with self._lock:
+            return BatchStatsSnapshot(
+                total_top_level_batches=self.total_top_level_batches,
+                total_top_level_lines=self.total_top_level_lines,
+                total_llm_calls=self.total_llm_calls,
+                max_depth_counts=dict(self.max_depth_counts),
+                size_histogram_total=dict(self.size_histogram_total),
+                size_histogram_succeeded_root=dict(self.size_histogram_succeeded_root),
+            )
+
+
+_BATCH_STATS = _BatchStats()
+
+
+def reset_batch_stats() -> None:
+    """Zero the bisect-rate counters (RationalRecipes-6bc)."""
+    _BATCH_STATS.reset()
+
+
+def get_batch_stats() -> BatchStatsSnapshot:
+    """Read-only snapshot of the current bisect-rate counters."""
+    return _BATCH_STATS.snapshot()
+
+
+def format_batch_stats_summary(snapshot: BatchStatsSnapshot | None = None) -> str:
+    """Human-readable summary of bisect-rate metrics (RationalRecipes-6bc).
+
+    Reports the seven metrics called out by the bead:
+      1. Total batches attempted
+      2-5. % of batches at max-depth 0 / 1 / 2 / >=3
+      6. Per-size success/total histogram
+      7. Effective LLM calls per line
+    """
+    if snapshot is None:
+        snapshot = get_batch_stats()
+    if snapshot.total_top_level_batches == 0:
+        return "Batched-parse stats: no batches recorded."
+
+    total = snapshot.total_top_level_batches
+    lines = snapshot.total_top_level_lines
+    calls = snapshot.total_llm_calls
+
+    depth_pct: dict[int, float] = {}
+    for depth, count in snapshot.max_depth_counts.items():
+        depth_pct[depth] = 100.0 * count / total
+
+    lines_out: list[str] = []
+    lines_out.append("Batched-parse stats (bead RationalRecipes-6bc):")
+    lines_out.append(
+        f"  total top-level batches: {total} "
+        f"(total lines: {lines}, total LLM calls: {calls})"
+    )
+    lines_out.append(
+        f"  effective calls/line: {calls / lines:.3f}" if lines else
+        "  effective calls/line: n/a"
+    )
+
+    def _depth_line(depth: int) -> str:
+        c = snapshot.max_depth_counts.get(depth, 0)
+        p = depth_pct.get(depth, 0.0)
+        return f"    max-depth {depth}: {c} ({p:.1f}%)"
+
+    lines_out.append("  bisect tree (max recursion depth per original batch):")
+    for d in sorted(snapshot.max_depth_counts):
+        lines_out.append(_depth_line(d))
+
+    lines_out.append("  size histogram (size: succeeded@root / total):")
+    for size in sorted(snapshot.size_histogram_total):
+        total_at_size = snapshot.size_histogram_total[size]
+        ok_at_size = snapshot.size_histogram_succeeded_root.get(size, 0)
+        pct = 100.0 * ok_at_size / total_at_size if total_at_size else 0.0
+        lines_out.append(
+            f"    size {size}: {ok_at_size}/{total_at_size} ({pct:.1f}%)"
+        )
+
+    return "\n".join(lines_out)
+
+
 def _parse_batch_with_fallback(
     lines: list[str],
     *,
@@ -361,6 +506,8 @@ def _parse_batch_with_fallback(
     system_prompt: str | None,
     timeout: float,
     num_predict: int,
+    _state: _BatchTreeState | None = None,
+    _depth: int = 0,
 ) -> list[ParsedIngredient | None]:
     """Try one batched call; on failure, bisect (vwt.21).
 
@@ -368,57 +515,79 @@ def _parse_batch_with_fallback(
     This costs O(log N) extra calls instead of N when only a few items in a
     big batch trip up the model, while still degrading to per-line for the
     singletons at the leaves.
+
+    Records bisect-rate stats into the module-level counter so a Pass 1 run
+    can report effective calls-per-line (bead RationalRecipes-6bc). The
+    ``_state`` and ``_depth`` parameters are private — callers always pass
+    neither, and recursion threads them through.
     """
-    if len(lines) <= 1:
-        # Skip the batched-call hop for singletons — the per-line system
-        # prompt and response shape are simpler and more reliable.
-        return [
-            parse_ingredient_line(
-                line,
-                model=model,
-                base_url=base_url,
-                system_prompt=system_prompt,
-                timeout=timeout,
-                num_predict=num_predict,
-            )
-            for line in lines
-        ]
+    is_root = _state is None
+    if _state is None:
+        _state = _BatchTreeState(original_size=len(lines))
+        _BATCH_STATS.record_top_level_start(len(lines))
+    if _depth > _state.max_depth:
+        _state.max_depth = _depth
 
-    batched = _parse_batch(
-        lines,
-        model=model,
-        base_url=base_url,
-        system_prompt=system_prompt,
-        timeout=timeout,
-        num_predict=num_predict,
-    )
-    if batched is not None:
-        return batched
+    try:
+        if len(lines) <= 1:
+            # Skip the batched-call hop for singletons — the per-line system
+            # prompt and response shape are simpler and more reliable.
+            _BATCH_STATS.record_llm_call(len(lines))
+            return [
+                parse_ingredient_line(
+                    line,
+                    model=model,
+                    base_url=base_url,
+                    system_prompt=system_prompt,
+                    timeout=timeout,
+                    num_predict=num_predict,
+                )
+                for line in lines
+            ]
 
-    mid = len(lines) // 2
-    logger.warning(
-        "Batched parse failed for %d lines; bisecting into %d + %d",
-        len(lines),
-        mid,
-        len(lines) - mid,
-    )
-    left = _parse_batch_with_fallback(
-        lines[:mid],
-        model=model,
-        base_url=base_url,
-        system_prompt=system_prompt,
-        timeout=timeout,
-        num_predict=num_predict,
-    )
-    right = _parse_batch_with_fallback(
-        lines[mid:],
-        model=model,
-        base_url=base_url,
-        system_prompt=system_prompt,
-        timeout=timeout,
-        num_predict=num_predict,
-    )
-    return left + right
+        _BATCH_STATS.record_llm_call(1)
+        batched = _parse_batch(
+            lines,
+            model=model,
+            base_url=base_url,
+            system_prompt=system_prompt,
+            timeout=timeout,
+            num_predict=num_predict,
+        )
+        if batched is not None:
+            return batched
+
+        mid = len(lines) // 2
+        logger.warning(
+            "Batched parse failed for %d lines; bisecting into %d + %d",
+            len(lines),
+            mid,
+            len(lines) - mid,
+        )
+        left = _parse_batch_with_fallback(
+            lines[:mid],
+            model=model,
+            base_url=base_url,
+            system_prompt=system_prompt,
+            timeout=timeout,
+            num_predict=num_predict,
+            _state=_state,
+            _depth=_depth + 1,
+        )
+        right = _parse_batch_with_fallback(
+            lines[mid:],
+            model=model,
+            base_url=base_url,
+            system_prompt=system_prompt,
+            timeout=timeout,
+            num_predict=num_predict,
+            _state=_state,
+            _depth=_depth + 1,
+        )
+        return left + right
+    finally:
+        if is_root:
+            _BATCH_STATS.record_top_level_finish(_state)
 
 
 def _parse_batch(
