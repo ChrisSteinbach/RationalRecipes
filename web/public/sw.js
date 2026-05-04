@@ -7,14 +7,16 @@
 //    immediately. Cached under a versioned name; activate clears older
 //    versions.
 //
-// 2. Runtime cache (fetch): network-first for /curated_recipes.json (so a
-//    fresh pipeline export is picked up on the next online load) and
-//    cache-first for everything else same-origin (fingerprinted JS/CSS,
-//    /ingredients.db, SVGs). Responses are cached on success.
+// 2. Runtime cache (fetch): network-first for /catalog.json and
+//    /curated_recipes.json (so a fresh pipeline export is picked up on
+//    the next online load) and cache-first for everything else
+//    same-origin (fingerprinted JS/CSS, SVGs). Responses are cached on
+//    success.
 //
-// The cache version must bump whenever the precache list changes.
+// The cache version must bump whenever the precache list changes or
+// the asset set changes (e.g. the y43 sql.js retirement).
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const PRECACHE = `rr-precache-${CACHE_VERSION}`;
 const RUNTIME = `rr-runtime-${CACHE_VERSION}`;
 
@@ -32,7 +34,10 @@ const APP_SHELL = [
 
 // Same-origin paths that should always go network-first so a new
 // pipeline export overrides the cached copy as soon as online.
-const NETWORK_FIRST = new Set([`${BASE}curated_recipes.json`]);
+const NETWORK_FIRST = new Set([
+  `${BASE}catalog.json`,
+  `${BASE}curated_recipes.json`,
+]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

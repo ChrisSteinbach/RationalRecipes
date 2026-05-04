@@ -2,11 +2,12 @@
 //
 // Pure DOM — no framework. Render is idempotent: the caller owns a
 // container element and calls render(state) after any state change.
-// Filters compile to SQL in main.ts via CatalogRepo.listRecipes (vwt.4);
-// this view receives the pre-filtered list and only paints it.
+// The view receives the pre-filtered list (computed in main.ts via
+// `inMemoryFilter`, vwt.y43) and only paints it.
 
 import { type Catalog, type CuratedRecipe, categoriesOf } from "./catalog.ts";
-import type { CatalogOrderBy } from "./catalog_repo.ts";
+
+export type CatalogOrderBy = "sample_size" | "title";
 
 export interface CatalogViewState {
   query: string;

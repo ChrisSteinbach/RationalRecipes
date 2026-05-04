@@ -11,17 +11,13 @@
     "build": "npm run prepare-assets && tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "verify-db": "node scripts/verify-db.mjs"
+    "test": "vitest run"
   },
   "devDependencies": {
-    "@types/sql.js": "^1.4.11",
     "jsdom": "^26.1.0",
     "typescript": "~5.9.3",
     "vite": "^8.0.1",
     "vitest": "^4.1.2"
   },
-  "dependencies": {
-    "sql.js": "^1.14.1"
-  }
+  "dependencies": {}
 }

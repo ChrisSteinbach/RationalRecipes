@@ -5,10 +5,9 @@
 //   #/              → catalog
 //   #/recipe/<id>   → detail
 //
-// Since vwt.4 the catalog list queries recipes.db through CatalogRepo
-// per render, so the filter UI compiles to SQL WHERE clauses. The full
-// in-memory Catalog stays loaded for detail-view lookup and toolbar
-// metadata (categories, total count).
+// Since RationalRecipes-y43 the catalog ships as a static JSON manifest
+// (catalog.json). The PWA fetches it once on boot and filters in
+// memory via `inMemoryFilter` from app_routing.ts.
 
 import "./styles.css";
 import {
@@ -17,10 +16,8 @@ import {
   inMemoryFilter,
   parseRoute,
   routeToHash,
-  viewStateToFilters,
 } from "./app_routing.ts";
 import { type Catalog, type CuratedRecipe, loadCatalog } from "./catalog.ts";
-import { type CatalogRepo, loadCatalogRepo } from "./catalog_repo.ts";
 import {
   type CatalogViewState,
   initialCatalogState,
@@ -35,14 +32,12 @@ import { registerServiceWorker } from "./sw-register.ts";
 
 interface AppState {
   catalog: Catalog;
-  repo: CatalogRepo | null;
   catalogView: CatalogViewState;
   detailView: DetailViewState;
   route: Route;
 }
 
 function filteredRecipes(state: AppState): CuratedRecipe[] {
-  if (state.repo) return state.repo.listRecipes(viewStateToFilters(state.catalogView));
   return inMemoryFilter(state.catalog, state.catalogView);
 }
 
@@ -100,16 +95,9 @@ async function main(): Promise<void> {
   if (!app) return;
   app.innerHTML = `<p class="app-loading">Loading catalog…</p>`;
 
-  const useJson = new URLSearchParams(location.search).get("source") === "json";
   let catalog: Catalog;
-  let repo: CatalogRepo | null = null;
   try {
-    if (useJson) {
-      catalog = await loadCatalog();
-    } else {
-      repo = await loadCatalogRepo();
-      catalog = repo.toCatalog();
-    }
+    catalog = await loadCatalog();
   } catch (err) {
     app.innerHTML = `<p class="app-error">Failed to load catalog: ${(err as Error).message}</p>`;
     throw err;
@@ -117,7 +105,6 @@ async function main(): Promise<void> {
 
   rootState = {
     catalog,
-    repo,
     catalogView: initialCatalogState(),
     detailView: initialDetailState(),
     route: parseRoute(location.hash),

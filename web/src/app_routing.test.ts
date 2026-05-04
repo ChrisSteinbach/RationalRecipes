@@ -5,7 +5,6 @@ import {
   inMemoryFilter,
   parseRoute,
   routeToHash,
-  viewStateToFilters,
 } from "./app_routing.ts";
 import type { Catalog, CuratedRecipe } from "./catalog.ts";
 import type { CatalogViewState } from "./catalog_view.ts";
@@ -103,52 +102,6 @@ describe("findRecipe", () => {
 
   it("returns null when no match", () => {
     expect(findRecipe(aCatalog([aRecipe()]), "missing")).toBeNull();
-  });
-});
-
-describe("viewStateToFilters", () => {
-  it("default state passes only orderBy", () => {
-    expect(viewStateToFilters(aViewState())).toEqual({ orderBy: "sample_size" });
-  });
-
-  it("includes minSampleSize when > 0", () => {
-    expect(viewStateToFilters(aViewState({ minSampleSize: 10 }))).toEqual({
-      orderBy: "sample_size",
-      minSampleSize: 10,
-    });
-  });
-
-  it("omits minSampleSize when 0", () => {
-    expect(viewStateToFilters(aViewState({ minSampleSize: 0 }))).not.toHaveProperty(
-      "minSampleSize",
-    );
-  });
-
-  it("includes category unless 'all'", () => {
-    expect(viewStateToFilters(aViewState({ category: "bread" }))).toMatchObject({
-      category: "bread",
-    });
-    expect(viewStateToFilters(aViewState({ category: "all" }))).not.toHaveProperty(
-      "category",
-    );
-  });
-
-  it("trims and forwards non-empty query as titleSearch", () => {
-    expect(viewStateToFilters(aViewState({ query: "  pancakes  " }))).toMatchObject({
-      titleSearch: "pancakes",
-    });
-  });
-
-  it("omits titleSearch when query is whitespace-only", () => {
-    expect(viewStateToFilters(aViewState({ query: "   " }))).not.toHaveProperty(
-      "titleSearch",
-    );
-  });
-
-  it("forwards orderBy='title'", () => {
-    expect(viewStateToFilters(aViewState({ orderBy: "title" }))).toMatchObject({
-      orderBy: "title",
-    });
   });
 });
 

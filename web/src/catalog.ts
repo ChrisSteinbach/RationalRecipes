@@ -1,11 +1,11 @@
 // CuratedRecipe types and catalog-loading façade.
 //
-// Data source since bead vwt.6: SQLite (recipes.db) via sql.js, wrapped
-// by CatalogRepo (catalog_repo.ts). The historical JSON source
-// (curated_recipes.json) is a dev fallback behind ?source=json.
-//
-// The types CuratedRecipe / CatalogIngredient / CatalogSource stay
-// stable: catalog_view.ts and detail_view.ts consume them unchanged.
+// Data source since bead vwt.y43: a static JSON manifest
+// (catalog.json) produced by `scripts/export_catalog_json.py`. The
+// historical sql.js + recipes.db path was retired — gzipped JSON at
+// the v1 scope (n_recipes >= 100) is ~75 KB, so the WASM/DB overhead
+// bought nothing. See `docs/design/full-catalog.md` for the inflection
+// point at ~5,000 variants where sql.js becomes worth re-introducing.
 
 import { Ratio, type RatioIngredient, type WholeUnit } from "./ratio.ts";
 
@@ -55,16 +55,13 @@ export interface Catalog {
   recipes: CuratedRecipe[];
 }
 
-const JSON_CATALOG_FILE = "curated_recipes.json";
+const CATALOG_FILE = "catalog.json";
 
-/** Legacy JSON path kept for the dev fallback and validation tests. */
-export const JSON_CATALOG_PATH = `${import.meta.env.BASE_URL}${JSON_CATALOG_FILE}`;
+/** Path to the JSON catalog manifest under the Vite base URL. */
+export const CATALOG_PATH = `${import.meta.env.BASE_URL}${CATALOG_FILE}`;
 
-/** Back-compat alias — some code paths still import CATALOG_PATH. */
-export const CATALOG_PATH = JSON_CATALOG_PATH;
-
-/** Fetch the JSON catalog (dev fallback). Prefer loadCatalogFromDb. */
-export async function loadCatalog(path: string = JSON_CATALOG_PATH): Promise<Catalog> {
+/** Fetch and validate the JSON catalog. */
+export async function loadCatalog(path: string = CATALOG_PATH): Promise<Catalog> {
   const response = await fetch(path);
   if (!response.ok) {
     throw new Error(
@@ -73,13 +70,6 @@ export async function loadCatalog(path: string = JSON_CATALOG_PATH): Promise<Cat
   }
   const data = (await response.json()) as unknown;
   return validateCatalog(data);
-}
-
-/** Hydrate a full Catalog from recipes.db via sql.js. */
-export async function loadCatalogFromDb(): Promise<Catalog> {
-  const { loadCatalogRepo } = await import("./catalog_repo.ts");
-  const repo = await loadCatalogRepo();
-  return repo.toCatalog();
 }
 
 /** Minimal runtime shape check — full validation lives in the JSON schema. */

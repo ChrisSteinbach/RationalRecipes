@@ -1,13 +1,14 @@
-// Copy the catalog artifact(s) from artifacts/ into the Vite public/
-// directory so `npm run dev` and `npm run build` can serve them.
+// Copy the catalog artifact(s) from artifacts/ or output/catalog/ into
+// the Vite public/ directory so `npm run dev` and `npm run build` can
+// serve them.
 //
-// Default source is SQLite: artifacts/recipes.db → public/recipes.db.
-// The JSON file (curated_recipes.json) ships as a dev fallback for
-// ?source=json. Pass --source=json to copy only the JSON path.
+// Since RationalRecipes-y43 the catalog ships as a static JSON manifest
+// (catalog.json) — sql.js is gone. Source of truth is
+// `output/catalog/catalog.json`, written by
+// `scripts/export_catalog_json.py` after the pipeline finishes.
 //
-// The artifacts live outside web/ because the Python side owns them
-// (scripts/migrate_curated_to_db.py writes recipes.db from the
-// historical curated_recipes.json seed). Re-run this after rebuilding.
+// `curated_recipes.json` still ships as a small dev/seed asset so
+// designers can iterate on the UI without rebuilding the catalog.
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -16,11 +17,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..", "..");
 const destDir = join(__dirname, "..", "public");
 mkdirSync(destDir, { recursive: true });
-
-const args = new Set(process.argv.slice(2));
-const source = [...args]
-  .find((a) => a.startsWith("--source="))
-  ?.split("=")[1] ?? "db";
 
 function copy(srcName, destName, options = {}) {
   // Pipeline output is the primary source; fall back to artifacts/
@@ -35,9 +31,9 @@ function copy(srcName, destName, options = {}) {
       return false;
     }
     console.error(`Required source not found (checked ${primary} and ${fallback})`);
-    if (srcName === "recipes.db") {
+    if (srcName === "catalog.json") {
       console.error(
-        "Run `python3 scripts/scrape_catalog.py` from the repo root first.",
+        "Run `python3 scripts/export_catalog_json.py` from the repo root first.",
       );
     }
     process.exit(1);
@@ -47,9 +43,5 @@ function copy(srcName, destName, options = {}) {
   return true;
 }
 
-if (source === "json") {
-  copy("curated_recipes.json", "curated_recipes.json");
-} else {
-  copy("recipes.db", "recipes.db");
-  copy("curated_recipes.json", "curated_recipes.json", { optional: true });
-}
+copy("catalog.json", "catalog.json");
+copy("curated_recipes.json", "curated_recipes.json", { optional: true });
