@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from rational_recipes.catalog_db import CatalogDB
 from rational_recipes.scrape.merge import MergedRecipe
 from rational_recipes.scrape.pass3_titles import (
+    AMBIGUOUS_FAMILY_SUFFIXES,
     Pass3CallTiming,
     Pass3Stats,
     TitleFn,
@@ -16,6 +17,7 @@ from rational_recipes.scrape.pass3_titles import (
     _ollama_title_call,
     _variants_to_slots,
     _VariantSlot,
+    apply_ambiguous_suffix,
     build_default_title_fn,
     build_title_prompt,
     format_pass3_summary,
@@ -38,6 +40,7 @@ def _make_variant(
     l1_title: str,
     canonical_ingredients: frozenset[str],
     cooking_methods: frozenset[str] = frozenset(),
+    category: str | None = None,
 ) -> str:
     """Insert one variant via upsert_variant; return the variant_id."""
     row = MergedNormalizedRow(
@@ -56,7 +59,7 @@ def _make_variant(
         normalized_rows=[row],
         header_ingredients=sorted(canonical_ingredients),
     )
-    db.upsert_variant(variant, l1_key=l1_title)
+    db.upsert_variant(variant, l1_key=l1_title, category=category)
     return variant.variant_id
 
 
@@ -1237,6 +1240,151 @@ class TestEscalationAndReconstruction:
         assert stats.llm_failures == 2  # primary returned None
         assert stats.validation_failures_primary == 0  # not a malformed string
         assert stats.escalations == 2
+
+
+# --- Ambiguous-family dish-type suffix (RationalRecipes-bt9e) ----------
+
+
+class TestApplyAmbiguousSuffix:
+    """Pure-function checks for the post-LLM dish-type suffix."""
+
+    def test_chili_soup_appends_suffix(self) -> None:
+        assert (
+            apply_ambiguous_suffix("Celery Chili", "chili", "soup")
+            == "Celery Chili Soup"
+        )
+
+    def test_no_entry_for_family_unchanged(self) -> None:
+        assert (
+            apply_ambiguous_suffix(
+                "Spice Pumpkin Bread", "pumpkin bread", "bread"
+            )
+            == "Spice Pumpkin Bread"
+        )
+
+    def test_category_not_in_inner_dict_unchanged(self) -> None:
+        # Even though 'chili' is an ambiguous family, only the 'soup'
+        # category triggers a suffix; other categories pass through.
+        assert (
+            apply_ambiguous_suffix("Celery Chili", "chili", "condiment")
+            == "Celery Chili"
+        )
+
+    def test_none_category_returns_unchanged(self) -> None:
+        assert (
+            apply_ambiguous_suffix("Celery Chili", "chili", None)
+            == "Celery Chili"
+        )
+
+    def test_idempotent(self) -> None:
+        """Re-applying must not double the suffix — Pass 3 re-runs with
+        ``force=True`` would otherwise produce 'Chili Soup Soup'."""
+        assert (
+            apply_ambiguous_suffix("Celery Chili Soup", "chili", "soup")
+            == "Celery Chili Soup"
+        )
+
+    def test_idempotent_case_insensitive(self) -> None:
+        assert (
+            apply_ambiguous_suffix("celery chili soup", "chili", "soup")
+            == "celery chili soup"
+        )
+
+    def test_lookup_contains_chili_soup_seed(self) -> None:
+        """The initial seed entry from the bead must remain intact."""
+        assert AMBIGUOUS_FAMILY_SUFFIXES["chili"]["soup"] == " Soup"
+
+
+class TestRunPass3AmbiguousFamilySuffix:
+    """End-to-end checks: run_pass3 must apply the suffix to LLM-validated
+    titles and to singleton fallbacks alike."""
+
+    def test_chili_soup_multi_variant_gets_suffix(self) -> None:
+        """family='chili', category='soup' → titles end in ' Soup' and the
+        LLM-picked descriptor is preserved before the suffix."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="chili",
+            canonical_ingredients=frozenset({"celery", "tomato", "beef"}),
+            category="soup",
+        )
+        _make_variant(
+            db,
+            l1_title="chili",
+            canonical_ingredients=frozenset({"pepper", "tomato", "beef"}),
+            category="soup",
+        )
+        run_pass3(db=db, title_fn=_stub_title_fn())
+        titles = {v.display_title for v in db.list_variants()}
+        for t in titles:
+            assert t is not None
+            assert t.endswith(" Soup"), f"expected ' Soup' suffix on {t!r}"
+        assert "Celery Chili Soup" in titles
+        assert "Pepper Chili Soup" in titles
+
+    def test_chili_soup_singleton_gets_suffix(self) -> None:
+        """The singleton path skips the LLM but must still suffix."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="chili",
+            canonical_ingredients=frozenset({"tomato", "beef", "bean"}),
+            category="soup",
+        )
+        run_pass3(db=db, title_fn=_stub_title_fn())
+        v = db.list_variants()[0]
+        assert v.display_title == "Chili Soup"
+
+    def test_pumpkin_bread_no_suffix(self) -> None:
+        """family='pumpkin bread' has no entry in the lookup — the title
+        must not get a suffix regardless of category."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="pumpkin bread",
+            canonical_ingredients=frozenset({"flour", "pumpkin", "sugar"}),
+            category="bread",
+        )
+        _make_variant(
+            db,
+            l1_title="pumpkin bread",
+            canonical_ingredients=frozenset({"flour", "pumpkin", "molasses"}),
+            category="bread",
+        )
+        run_pass3(db=db, title_fn=_stub_title_fn())
+        for v in db.list_variants():
+            assert v.display_title is not None
+            # No bonus suffix; the title still ends in the family name.
+            assert v.display_title.lower().endswith("pumpkin bread")
+            assert " Soup" not in v.display_title
+
+    def test_chili_non_soup_category_no_suffix(self) -> None:
+        """family='chili' with a non-'soup' category (e.g. condiment) must
+        not pick up the suffix — only the {chili: soup} entry triggers."""
+        db = CatalogDB.in_memory()
+        # categorize('chili') returns 'soup' by default but the catalog
+        # may legitimately label some chili variants as condiment/sauce
+        # (the very ambiguity that motivates this bead). Force category
+        # explicitly so we exercise the inner-key non-match branch.
+        _make_variant(
+            db,
+            l1_title="chili",
+            canonical_ingredients=frozenset({"celery", "tomato", "vinegar"}),
+            category="condiment",
+        )
+        _make_variant(
+            db,
+            l1_title="chili",
+            canonical_ingredients=frozenset({"pepper", "tomato", "vinegar"}),
+            category="condiment",
+        )
+        run_pass3(db=db, title_fn=_stub_title_fn())
+        for v in db.list_variants():
+            assert v.display_title is not None
+            assert not v.display_title.endswith(" Soup")
+            # The LLM-picked descriptor + family is intact.
+            assert v.display_title.lower().endswith("chili")
 
 
 # Suppress unused-import lint guards for fixtures shared with other suites.

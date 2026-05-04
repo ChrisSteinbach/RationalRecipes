@@ -37,6 +37,46 @@ from rational_recipes.scrape.parse import OLLAMA_BASE_URL
 logger = logging.getLogger(__name__)
 
 
+# RationalRecipes-bt9e: some L1 family names are intrinsically ambiguous
+# — they refer to multiple dish types. When Pass 3 picks just
+# `[descriptor] [family]`, the resulting title strips category context
+# and reads as nonsense (e.g. 'Celery Chili' could be a soup, sauce,
+# dip, or just 'celery chilli pepper'). For known-ambiguous families we
+# append a category-specific suffix as a post-step on the LLM-validated
+# title.
+#
+# Outer key: normalized family name (lowercased L1 key). Inner key: the
+# category whose suffix to apply. Value: the literal suffix string with
+# its leading space. Add new entries here as feedback surfaces them.
+AMBIGUOUS_FAMILY_SUFFIXES: dict[str, dict[str, str]] = {
+    "chili": {"soup": " Soup"},
+}
+
+
+def apply_ambiguous_suffix(
+    title: str, family: str, category: str | None
+) -> str:
+    """Append a dish-type suffix when ``family`` is a known-ambiguous L1
+    name and ``category`` matches an entry in ``AMBIGUOUS_FAMILY_SUFFIXES``.
+
+    Returns ``title`` unchanged when there's no entry for ``family``,
+    when ``category`` is ``None``, when ``category`` doesn't match any
+    inner key, or when ``title`` already ends with the suffix
+    (idempotent — re-running Pass 3 over an already-suffixed catalog
+    must not double-suffix)."""
+    if not category:
+        return title
+    suffixes = AMBIGUOUS_FAMILY_SUFFIXES.get(family.lower())
+    if not suffixes:
+        return title
+    suffix = suffixes.get(category)
+    if not suffix:
+        return title
+    if title.lower().endswith(suffix.lower()):
+        return title
+    return title + suffix
+
+
 TITLE_SYSTEM_PROMPT = """\
 You name dish variants. Given a dish family name and the ingredients of
 ONE variant alongside its sibling variants' ingredients, choose a SHORT
@@ -680,14 +720,25 @@ def run_pass3(
     groups = _group_by_l1(variants)
     ingredient_names = db.bulk_ingredient_names()
 
-    # Build per-group work items.
-    _WorkItem = tuple[str, list[_VariantSlot], list[_VariantSlot], frozenset[str]]
+    # Build per-group work items. The trailing ``str | None`` carries the
+    # group's category (shared across all members because ``categorize``
+    # is keyed off the L1 ``normalized_title``); ``apply_ambiguous_suffix``
+    # uses it post-LLM (RationalRecipes-bt9e).
+    _WorkItem = tuple[
+        str,
+        list[_VariantSlot],
+        list[_VariantSlot],
+        frozenset[str],
+        str | None,
+    ]
     work: list[_WorkItem] = []
     for family, members in groups.items():
         if len(members) <= 1:
             stats.variants_singleton += len(members)
-            titled = family.title()
             for v in members:
+                titled = apply_ambiguous_suffix(
+                    family.title(), family, v.category
+                )
                 if v.display_title != titled:
                     db.update_display_title(v.variant_id, titled)
             continue
@@ -701,7 +752,10 @@ def run_pass3(
                 continue
             needs_title.append(slot)
         if needs_title:
-            work.append((family, needs_title, all_slots, frozenset(existing)))
+            category = members[0].category
+            work.append(
+                (family, needs_title, all_slots, frozenset(existing), category)
+            )
 
     if not work:
         return stats
@@ -712,7 +766,7 @@ def run_pass3(
     )
 
     def _process_group(item: _WorkItem) -> None:
-        family, needs_title, all_slots, existing_titles = item
+        family, needs_title, all_slots, existing_titles, category = item
 
         # One primary LLM call per variant, with capped sibling context.
         # Validation + escalation + reconstruction live inside
@@ -731,6 +785,13 @@ def run_pass3(
                 fallback_title_fn=fallback_title_fn,
                 stats=stats,
             )
+            # Append the dish-type suffix AFTER the wqy validator
+            # inside ``_resolve_title`` has approved the LLM output (so
+            # the validator sees the LLM's raw string) and BEFORE dedup
+            # below (so collisions are computed on the final
+            # user-facing title). RationalRecipes-bt9e.
+            if title is not None:
+                title = apply_ambiguous_suffix(title, family, category)
             raw_titles.append(title)
 
         # Deduplicate titles within this group (vwt.32).
