@@ -471,6 +471,39 @@ class TestNeutralPrompt:
     def test_prompt_mentions_translate(self) -> None:
         assert "Translate" in NEUTRAL_PROMPT
 
+    def test_plural_unit_few_shot_keeps_unit_as_typed(self) -> None:
+        """Bead fdv: the plural-unit shot must show "tablespoons" surviving as-is.
+
+        Pre-fdv shots only modeled singular forms ("3 dl", "1 cup"). The
+        ``"3 tablespoons oil"`` example demonstrates the model should NOT
+        strip plural-s — it should emit ``"tablespoons"`` verbatim.
+        """
+        assert '"3 tablespoons oil"' in NEUTRAL_PROMPT
+        # Output line for that input must surface the plural unit verbatim.
+        idx = NEUTRAL_PROMPT.index('"3 tablespoons oil"')
+        # Look at the immediately-following Output line.
+        following = NEUTRAL_PROMPT[idx : idx + 300]
+        assert '"unit": "tablespoons"' in following
+        assert '"ingredient": "oil"' in following
+
+    def test_comma_modifier_few_shot_extracts_preparation(self) -> None:
+        """Bead fdv: comma-trailing modifier must populate "preparation"."""
+        assert '"1 cup all-purpose flour, sifted"' in NEUTRAL_PROMPT
+        idx = NEUTRAL_PROMPT.index('"1 cup all-purpose flour, sifted"')
+        following = NEUTRAL_PROMPT[idx : idx + 300]
+        # Ingredient drops the preparation; unit stays singular ("cup").
+        assert '"ingredient": "flour"' in following
+        assert '"preparation": "sifted"' in following
+
+    def test_multiword_prep_few_shot_joins_with_comma(self) -> None:
+        """Bead fdv: pre-ingredient adjectives must be folded into preparation."""
+        assert '"2 lbs boneless skinless chicken breast"' in NEUTRAL_PROMPT
+        idx = NEUTRAL_PROMPT.index('"2 lbs boneless skinless chicken breast"')
+        following = NEUTRAL_PROMPT[idx : idx + 400]
+        assert '"ingredient": "chicken breast"' in following
+        # Multi-word preparation rendered as comma-joined English.
+        assert '"preparation": "boneless, skinless"' in following
+
 
 class TestExtractBatch:
     def test_uses_cache(self) -> None:

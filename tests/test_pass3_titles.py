@@ -622,6 +622,59 @@ class TestRunPass3:
         stats = run_pass3(db=db, title_fn=_stub_title_fn())
         assert stats.variants_deduped == 0
 
+    def test_on_group_done_fires_once_per_group(self) -> None:
+        """Hook must fire total_groups times with monotonic position == total."""
+        db = CatalogDB.in_memory()
+        # Three L1 families each with two variants → three groups need titling.
+        groups: list[tuple[str, list[set[str]]]] = [
+            ("pecan pie", [
+                {"pecan", "egg", "bourbon"}, {"pecan", "egg", "maple"},
+            ]),
+            ("apple cake", [
+                {"apple", "flour", "cinnamon"}, {"apple", "flour", "cardamom"},
+            ]),
+            ("banana bread", [
+                {"banana", "flour", "walnut"}, {"banana", "flour", "chocolate"},
+            ]),
+        ]
+        for family, ings in groups:
+            for ing in ings:
+                _make_variant(
+                    db, l1_title=family, canonical_ingredients=frozenset(ing),
+                )
+
+        beats: list[tuple[int, int]] = []
+        run_pass3(
+            db=db,
+            title_fn=_stub_title_fn(),
+            on_group_done=lambda pos, tot: beats.append((pos, tot)),
+        )
+
+        # Three multi-variant L1 groups → three beats.
+        assert len(beats) == 3
+        # Total is constant; position counts up 1..N (in serial order).
+        totals = {tot for _pos, tot in beats}
+        assert totals == {3}
+        positions = [pos for pos, _tot in beats]
+        assert sorted(positions) == [1, 2, 3]
+
+    def test_on_group_done_default_is_noop(self) -> None:
+        """Omitting on_group_done must not raise (default None path)."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="pecan pie",
+            canonical_ingredients=frozenset({"pecan", "egg", "bourbon"}),
+        )
+        _make_variant(
+            db,
+            l1_title="pecan pie",
+            canonical_ingredients=frozenset({"pecan", "egg", "maple"}),
+        )
+        # No on_group_done supplied: must complete cleanly.
+        stats = run_pass3(db=db, title_fn=_stub_title_fn())
+        assert stats.variants_titled == 2
+
 
 # --- Determinism contract for the live Ollama path ---
 
