@@ -2,7 +2,7 @@
 # Catalog rebuild — wipe and re-run.
 # Usage:
 #   ./rebuild-catalog.sh                  # full corpus (days)
-#   ./rebuild-catalog.sh --smoke          # ~20 L1 groups for prompt validation
+#   ./rebuild-catalog.sh --smoke          # bilingual pancake slice for prompt validation
 #
 # The pipeline writes to recipes.db, then export_catalog_json.py
 # emits the static JSON manifest the PWA actually consumes (vwt.y43).
@@ -37,21 +37,33 @@ DELETE FROM query_runs;
 SQL
 echo "  cleared."
 
-FILTER_ARGS=()
 if $SMOKE; then
-    # Mix of English, Swedish-heavy, and mixed-language groups
-    echo "=== Smoke-test mode: ~20 L1 groups ==="
-    FILTER_ARGS=(--title-filter "pancak")
+    # Bilingual pancake slice for prompt validation.
+    # --title-filter is a substring match on L1 keys, so "pancake"
+    # covers pancake/pancakes (English) and "pannkaka" covers
+    # pannkaka/pannkakor (Swedish). Run the pipeline once per filter
+    # so both languages land in the same DB before export.
+    SMOKE_FILTERS=(pancake pannkaka)
+    echo "=== Smoke-test mode: bilingual pancake variants ==="
+    for f in "${SMOKE_FILTERS[@]}"; do
+        echo "--- filter: $f ---"
+        echo "=== Pass 1: LLM parse ==="
+        python3 scripts/scrape_catalog.py --pass1-only --title-filter "$f" "$@"
+        echo "=== Pass 2: cluster + write variants ==="
+        python3 scripts/scrape_catalog.py --pass2-only --title-filter "$f" "$@"
+        echo "=== Pass 3: display titles ==="
+        python3 scripts/scrape_catalog.py --pass3-only --pass3-force --title-filter "$f" "$@"
+    done
+else
+    echo "=== Pass 1: LLM parse ==="
+    python3 scripts/scrape_catalog.py --pass1-only "$@"
+
+    echo "=== Pass 2: cluster + write variants ==="
+    python3 scripts/scrape_catalog.py --pass2-only "$@"
+
+    echo "=== Pass 3: display titles ==="
+    python3 scripts/scrape_catalog.py --pass3-only --pass3-force "$@"
 fi
-
-echo "=== Pass 1: LLM parse ==="
-python3 scripts/scrape_catalog.py --pass1-only "${FILTER_ARGS[@]}" "$@"
-
-echo "=== Pass 2: cluster + write variants ==="
-python3 scripts/scrape_catalog.py --pass2-only "${FILTER_ARGS[@]}" "$@"
-
-echo "=== Pass 3: display titles ==="
-python3 scripts/scrape_catalog.py --pass3-only --pass3-force "${FILTER_ARGS[@]}" "$@"
 
 echo "=== Export catalog.json (min_recipes=$EXPORT_MIN_RECIPES) ==="
 python3 scripts/export_catalog_json.py \
