@@ -800,6 +800,7 @@ def run_catalog_pipeline(
     pass3_workers: int = 1,
     pass3_force: bool = False,
     title_fn: TitleFn | None = None,
+    fallback_title_fn: TitleFn | None = None,
     max_siblings: int = 20,
     now_fn: Callable[[], str] = _utcnow_iso,
     on_group_done: Callable[[str, list[MergedVariantResult]], None] | None = None,
@@ -920,6 +921,7 @@ def run_catalog_pipeline(
         run_pass3(
             db=db,
             title_fn=resolved_title_fn,
+            fallback_title_fn=fallback_title_fn,
             max_workers=pass3_workers,
             max_siblings=max_siblings,
             force=pass3_force,

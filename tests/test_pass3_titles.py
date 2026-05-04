@@ -12,6 +12,7 @@ from rational_recipes.scrape.pass3_titles import (
     Pass3Stats,
     TitleFn,
     _deduplicate_titles,
+    _extract_descriptor,
     _ollama_title_call,
     _variants_to_slots,
     _VariantSlot,
@@ -21,6 +22,7 @@ from rational_recipes.scrape.pass3_titles import (
     parse_title_response,
     run_pass3,
     summarize_pass3_timings,
+    validate_title_ends_with_family,
 )
 from rational_recipes.scrape.pipeline_merged import (
     MergedNormalizedRow,
@@ -977,6 +979,264 @@ class TestFormatPass3Summary:
         assert "pass 3 ollama" in joined
         assert "pass 3 overhead" in joined
         assert "pass 3 by siblings" in joined
+
+
+# --- Validator + escalation + reconstruction (RationalRecipes-wqy) ---
+
+
+# The six bad titles seen in the catalog (reproduced verbatim from the bead),
+# with their L1 family. These MUST all be rejected by the validator.
+_KNOWN_BAD_TITLES: tuple[tuple[str, str], ...] = (
+    ("Flour Potato", "scalloped potatoes"),
+    ("Egg Potato Salad", "german potato salad"),
+    ("Nutmeg Apple Cake", "fresh apple cake"),
+    ("Oatmeal Peanut Butter Cookies", "no bake cookies"),
+    ("Flour Pie", "sweet potato pie"),
+    ("Simple Chicken", "mexican chicken"),
+)
+
+# A representative sample from the 844 good titles in the current catalog —
+# every one of these MUST pass the validator.
+_KNOWN_GOOD_TITLES: tuple[tuple[str, str], ...] = (
+    ("Bourbon Pecan Pie", "pecan pie"),
+    ("Maple Pecan Pie", "pecan pie"),
+    ("Pecan Pie", "pecan pie"),  # bare-family case (legitimate per prompt)
+    ("Cocoa Chocolate Cake", "chocolate cake"),
+    ("Cream Of Mushroom Scalloped Potatoes", "scalloped potatoes"),
+    ("Onion German Potato Salad", "german potato salad"),
+    ("Cinnamon Fresh Apple Cake", "fresh apple cake"),
+    ("Walnut No Bake Cookies", "no bake cookies"),
+    ("Vanilla Sweet Potato Pie", "sweet potato pie"),
+    ("Tomato Mexican Chicken", "mexican chicken"),
+)
+
+
+class TestValidateTitleEndsWithFamily:
+    def test_known_bad_titles_rejected(self) -> None:
+        for title, family in _KNOWN_BAD_TITLES:
+            assert not validate_title_ends_with_family(title, family), (
+                f"validator should reject {title!r} for family {family!r}"
+            )
+
+    def test_known_good_titles_accepted(self) -> None:
+        for title, family in _KNOWN_GOOD_TITLES:
+            assert validate_title_ends_with_family(title, family), (
+                f"validator should accept {title!r} for family {family!r}"
+            )
+
+    def test_case_insensitive(self) -> None:
+        assert validate_title_ends_with_family("BOURBON PECAN PIE", "pecan pie")
+        assert validate_title_ends_with_family("bourbon Pecan Pie", "PECAN PIE")
+
+    def test_none_rejected(self) -> None:
+        assert not validate_title_ends_with_family(None, "pecan pie")
+
+    def test_empty_rejected(self) -> None:
+        assert not validate_title_ends_with_family("", "pecan pie")
+
+    def test_word_boundary_required(self) -> None:
+        """A substring match in the middle of a word must NOT pass —
+        otherwise 'Cuttiepie' would falsely validate against family 'pie'."""
+        assert not validate_title_ends_with_family("Cuttiepie", "pie")
+        assert not validate_title_ends_with_family("Apppie", "pie")
+        # But the legitimate single-word case still passes.
+        assert validate_title_ends_with_family("Pie", "pie")
+        assert validate_title_ends_with_family("Apple Pie", "pie")
+
+
+class TestExtractDescriptor:
+    def test_six_known_bad_titles_salvage(self) -> None:
+        """All six bad titles in the bead must reconstruct to the
+        intended salvaged form once the family is appended."""
+        expected = {
+            ("Flour Potato", "scalloped potatoes"): "Flour Scalloped Potatoes",
+            ("Egg Potato Salad", "german potato salad"): (
+                "Egg German Potato Salad"
+            ),
+            ("Nutmeg Apple Cake", "fresh apple cake"): (
+                "Nutmeg Fresh Apple Cake"
+            ),
+            ("Oatmeal Peanut Butter Cookies", "no bake cookies"): (
+                "Oatmeal Peanut Butter No Bake Cookies"
+            ),
+            ("Flour Pie", "sweet potato pie"): "Flour Sweet Potato Pie",
+            ("Simple Chicken", "mexican chicken"): "Simple Mexican Chicken",
+        }
+        for (title, family), reconstructed in expected.items():
+            descriptor = _extract_descriptor(title, family)
+            assert descriptor is not None, f"failed to salvage {title!r}"
+            assert (
+                f"{descriptor} {family.title()}" == reconstructed
+            ), f"unexpected salvage for {title!r}"
+
+    def test_no_descriptor_returns_none(self) -> None:
+        """When the bad title is just a family word (e.g. 'Potato' for
+        family 'scalloped potatoes'), descriptor extraction returns None
+        and the dedup pipeline takes over."""
+        assert _extract_descriptor("Potato", "scalloped potatoes") is None
+        assert _extract_descriptor("Pie", "pecan pie") is None
+        assert _extract_descriptor("Pecan Pie", "pecan pie") is None
+
+    def test_plural_singular_match(self) -> None:
+        """'potato' should match 'potatoes' (and vice versa)."""
+        assert _extract_descriptor("Flour Potato", "scalloped potatoes") == "Flour"
+        assert _extract_descriptor("Flour Potatoes", "scalloped potato") == "Flour"
+
+
+# A configurable stub that lets tests pretend to be the LLM. It returns
+# whatever the test sets ``output`` to without inspecting context.
+def _make_constant_title_fn(output: str | None) -> TitleFn:
+    def fn(
+        family: str,
+        my: frozenset[str],
+        methods: frozenset[str],
+        siblings: Sequence[frozenset[str]],
+    ) -> str | None:
+        return output
+
+    return fn
+
+
+class TestEscalationAndReconstruction:
+    """Wires up two stub TitleFns to exercise the full validate→escalate
+    →salvage pipeline added in RationalRecipes-wqy."""
+
+    def _make_collision_db(self) -> CatalogDB:
+        """Two variants in the same L1 family — enough for run_pass3 to
+        actually invoke the title fns (singletons skip the LLM)."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="scalloped potatoes",
+            canonical_ingredients=frozenset({"potato", "flour", "milk"}),
+        )
+        _make_variant(
+            db,
+            l1_title="scalloped potatoes",
+            canonical_ingredients=frozenset({"potato", "cheese", "cream"}),
+        )
+        return db
+
+    def test_primary_valid_no_escalation(self) -> None:
+        """When primary returns a title that passes the validator, the
+        fallback must NOT be invoked."""
+        db = self._make_collision_db()
+        primary = _make_constant_title_fn("Flour Scalloped Potatoes")
+        fallback_calls: list[str] = []
+
+        def fallback(
+            family: str,
+            my: frozenset[str],
+            methods: frozenset[str],
+            siblings: Sequence[frozenset[str]],
+        ) -> str | None:
+            fallback_calls.append(family)
+            return "should not be invoked"
+
+        stats = run_pass3(
+            db=db, title_fn=primary, fallback_title_fn=fallback,
+        )
+        assert fallback_calls == []
+        assert stats.escalations == 0
+        assert stats.validation_failures_primary == 0
+        assert stats.validation_failures_fallback == 0
+        assert stats.reconstructed_titles == 0
+
+    def test_primary_malformed_fallback_succeeds(self) -> None:
+        """Primary returns a malformed title, fallback returns a valid
+        one — final stored title is the fallback's, escalations == 2
+        (one per variant)."""
+        db = self._make_collision_db()
+        primary = _make_constant_title_fn("Flour Potato")  # invalid
+        fallback = _make_constant_title_fn("Flour Scalloped Potatoes")  # valid
+
+        stats = run_pass3(
+            db=db, title_fn=primary, fallback_title_fn=fallback,
+        )
+        # Both variants got the (deduped) fallback title.
+        titles = sorted({v.display_title for v in db.list_variants()})
+        assert "Scalloped Potatoes" not in titles
+        # All titles end with the family.
+        for title in titles:
+            assert title.lower().endswith("scalloped potatoes")
+        assert stats.validation_failures_primary == 2
+        assert stats.escalations == 2
+        assert stats.validation_failures_fallback == 0
+        assert stats.reconstructed_titles == 0
+
+    def test_double_failure_reconstructs(self) -> None:
+        """Both primary AND fallback return malformed 'Flour Potato' —
+        reconstruction must yield 'Flour Scalloped Potatoes' and
+        increment reconstructed_titles."""
+        db = self._make_collision_db()
+        primary = _make_constant_title_fn("Flour Potato")
+        fallback = _make_constant_title_fn("Flour Potato")
+
+        stats = run_pass3(
+            db=db, title_fn=primary, fallback_title_fn=fallback,
+        )
+        # Every stored title ends with the (Title-cased) family name.
+        for v in db.list_variants():
+            assert v.display_title.lower().endswith("scalloped potatoes")
+            assert "Flour" in v.display_title
+        assert stats.validation_failures_primary == 2
+        assert stats.escalations == 2
+        assert stats.validation_failures_fallback == 2
+        assert stats.reconstructed_titles == 2
+
+    def test_double_failure_no_descriptor_falls_through_to_dedup(self) -> None:
+        """Both models return just 'Potato' (only a family word, no
+        descriptor) → reconstruction returns None → _deduplicate_titles
+        picks ingredient-based names."""
+        db = self._make_collision_db()
+        primary = _make_constant_title_fn("Potato")
+        fallback = _make_constant_title_fn("Potato")
+
+        stats = run_pass3(
+            db=db, title_fn=primary, fallback_title_fn=fallback,
+        )
+        titles = sorted({v.display_title for v in db.list_variants()})
+        # Two distinct titles, both ending with the family.
+        assert len(titles) == 2
+        for title in titles:
+            assert title.lower().endswith("scalloped potatoes")
+        # No reconstruction — descriptor extraction returned None.
+        assert stats.reconstructed_titles == 0
+        assert stats.validation_failures_primary == 2
+        assert stats.validation_failures_fallback == 2
+        # Dedup pipeline produced the names — variants_deduped reflects
+        # at least one rename relative to the bare family.
+        assert stats.variants_deduped > 0
+
+    def test_no_fallback_configured_salvages_from_primary(self) -> None:
+        """When no fallback is wired up, a malformed primary title still
+        gets salvaged via reconstruction (no escalation though)."""
+        db = self._make_collision_db()
+        primary = _make_constant_title_fn("Flour Potato")
+
+        stats = run_pass3(db=db, title_fn=primary)
+        for v in db.list_variants():
+            assert v.display_title.lower().endswith("scalloped potatoes")
+        assert stats.validation_failures_primary == 2
+        assert stats.escalations == 0
+        assert stats.validation_failures_fallback == 0
+        assert stats.reconstructed_titles == 2
+
+    def test_primary_none_triggers_fallback(self) -> None:
+        """A None response from primary (e.g. HTTP error) escalates to
+        the fallback, same as a malformed string would."""
+        db = self._make_collision_db()
+        primary = _make_constant_title_fn(None)
+        fallback = _make_constant_title_fn("Flour Scalloped Potatoes")
+
+        stats = run_pass3(
+            db=db, title_fn=primary, fallback_title_fn=fallback,
+        )
+        for v in db.list_variants():
+            assert v.display_title.lower().endswith("scalloped potatoes")
+        assert stats.llm_failures == 2  # primary returned None
+        assert stats.validation_failures_primary == 0  # not a malformed string
+        assert stats.escalations == 2
 
 
 # Suppress unused-import lint guards for fixtures shared with other suites.

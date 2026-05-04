@@ -176,7 +176,14 @@ class Pass3Stats:
     ``timings`` is populated when an instrumented ``title_fn`` is in use
     (e.g. via ``build_default_title_fn(timing_collector=...)``). It stays
     empty for stub fns used in unit tests, which keeps the existing test
-    contract intact."""
+    contract intact.
+
+    ``validation_failures_primary``, ``escalations``,
+    ``validation_failures_fallback``, and ``reconstructed_titles`` track
+    the tiered validate-and-escalate path (RationalRecipes-wqy): when
+    the small primary model returns a title that drops the L1 family
+    name, we retry with a stronger fallback model, and salvage by
+    appending the family if that also fails."""
 
     variants_total: int = 0
     variants_singleton: int = 0
@@ -185,6 +192,10 @@ class Pass3Stats:
     variants_deduped: int = 0
     llm_calls: int = 0
     llm_failures: int = 0
+    validation_failures_primary: int = 0
+    escalations: int = 0
+    validation_failures_fallback: int = 0
+    reconstructed_titles: int = 0
     db_write_seconds_total: float = 0.0
     db_write_count: int = 0
     timings: list[Pass3CallTiming] = field(default_factory=list)
@@ -368,6 +379,63 @@ def build_title_prompt(
     )
 
 
+def validate_title_ends_with_family(title: str | None, family: str) -> bool:
+    """Title is valid iff it ends with ``family`` on a word boundary
+    (case-insensitive). RationalRecipes-wqy: the system prompt instructs
+    the LLM to end every title with the family name, but gemma4:e2b
+    (2B params) drops it ~5.6% of the time. This is the rejection
+    predicate that gates the escalation path."""
+    if not title:
+        return False
+    title_lc = title.lower()
+    family_lc = family.lower()
+    if title_lc == family_lc:
+        return True
+    return title_lc.endswith(" " + family_lc)
+
+
+def _stem_match(a: str, b: str) -> bool:
+    """Equal or off-by-one-suffix (s/es) comparison for crude singular/plural
+    tolerance. Used by ``_extract_descriptor`` to recognize that 'potato'
+    and 'potatoes' refer to the same family word when the LLM
+    singularized the family in its output."""
+    a_lc = a.lower()
+    b_lc = b.lower()
+    if a_lc == b_lc:
+        return True
+    short, long = (a_lc, b_lc) if len(a_lc) <= len(b_lc) else (b_lc, a_lc)
+    if not long.startswith(short):
+        return False
+    suffix = long[len(short):]
+    return suffix in ("s", "es")
+
+
+def _extract_descriptor(title: str, family: str) -> str | None:
+    """Strip the family-overlapping suffix from ``title``; return the
+    remaining prefix, or ``None`` when nothing remains.
+
+    Walks backwards over ``title`` and ``family`` together, popping
+    word pairs that match (with simple plural tolerance via ``_stem_match``).
+    The remaining title prefix is the descriptor — e.g.
+    'Flour Potato' / 'scalloped potatoes' → 'Flour' (the trailing
+    'Potato' matches 'potatoes' as a plural variant, then 'Flour' has
+    no counterpart in the family). Pure salvage path (RationalRecipes-wqy);
+    only invoked when both primary and fallback models returned a title
+    that fails ``validate_title_ends_with_family``."""
+    title_words = title.split()
+    family_words = family.split()
+    while (
+        title_words
+        and family_words
+        and _stem_match(title_words[-1], family_words[-1])
+    ):
+        title_words.pop()
+        family_words.pop()
+    if not title_words:
+        return None
+    return " ".join(title_words)
+
+
 def parse_title_response(raw: str) -> str | None:
     """Pull a clean title string out of the LLM's JSON response."""
     text = (raw or "").strip()
@@ -503,10 +571,77 @@ def _deduplicate_titles(
     return resolved
 
 
+def _resolve_title(
+    *,
+    family: str,
+    slot: _VariantSlot,
+    sibling_sets: Sequence[frozenset[str]],
+    title_fn: TitleFn,
+    fallback_title_fn: TitleFn | None,
+    stats: Pass3Stats,
+) -> str | None:
+    """Per-variant tiered resolver (RationalRecipes-wqy).
+
+    1. Call ``title_fn`` (primary, e.g. gemma4:e2b). Validate.
+    2. If invalid and ``fallback_title_fn`` is configured, call it
+       (escalate to e.g. qwen3.6:35b-a3b). Validate.
+    3. If both fail, salvage by extracting the descriptor from the
+       fallback's output (or primary's, if no fallback) and reconstructing
+       as ``f"{descriptor} {family.title()}"``.
+    4. If no descriptor remains, return None — the dedup pipeline in
+       ``_deduplicate_titles`` produces ingredient-based names from
+       there.
+
+    All counters on ``stats`` are mutated in-place. Thread-safety: this
+    function runs unlocked under ``run_pass3(max_workers > 1)``; counters
+    are plain ints so concurrent ``+=`` can lose updates. Acceptable for
+    the production path because the totals are observability rather
+    than control flow — if a stricter contract is needed later, wrap
+    the increments under ``run_pass3``'s existing lock.
+    """
+    stats.llm_calls += 1
+    primary = title_fn(family, slot.ingredients, slot.methods, sibling_sets)
+
+    primary_valid = validate_title_ends_with_family(primary, family)
+    if primary_valid:
+        return primary
+
+    if primary is None:
+        stats.llm_failures += 1
+    else:
+        stats.validation_failures_primary += 1
+
+    fallback: str | None = None
+    if fallback_title_fn is not None:
+        stats.escalations += 1
+        fallback = fallback_title_fn(
+            family, slot.ingredients, slot.methods, sibling_sets,
+        )
+        if validate_title_ends_with_family(fallback, family):
+            return fallback
+        if fallback is None:
+            stats.llm_failures += 1
+        else:
+            stats.validation_failures_fallback += 1
+
+    # Salvage: prefer the fallback's output (it had more capacity), then
+    # the primary's. ``_extract_descriptor`` returns None when nothing
+    # remains after stripping the family overlap, in which case we let
+    # the variant fall through to ``_deduplicate_titles``.
+    candidate = fallback if fallback else primary
+    if candidate:
+        descriptor = _extract_descriptor(candidate, family)
+        if descriptor:
+            stats.reconstructed_titles += 1
+            return f"{descriptor} {family.title()}"
+    return None
+
+
 def run_pass3(
     *,
     db: CatalogDB,
     title_fn: TitleFn,
+    fallback_title_fn: TitleFn | None = None,
     max_workers: int = 1,
     max_siblings: int = 20,
     force: bool = False,
@@ -529,6 +664,13 @@ def run_pass3(
     - ``max_siblings`` caps the number of sibling ingredient sets sent
       to the LLM prompt. Groups larger than this still get complete
       dedup coverage via the post-LLM disambiguation step.
+    - ``fallback_title_fn`` is the escalation hop (RationalRecipes-wqy):
+      when the primary returns a title that fails
+      ``validate_title_ends_with_family``, the fallback is invoked
+      with the same context. If the fallback's output is also
+      malformed, ``_extract_descriptor`` salvages by appending the
+      family name; if no descriptor remains, the variant falls through
+      to ``_deduplicate_titles`` (treated as if the LLM returned None).
     """
     if stats is None:
         stats = Pass3Stats()
@@ -572,16 +714,23 @@ def run_pass3(
     def _process_group(item: _WorkItem) -> None:
         family, needs_title, all_slots, existing_titles = item
 
-        # One LLM call per variant, with capped sibling context.
+        # One primary LLM call per variant, with capped sibling context.
+        # Validation + escalation + reconstruction live inside
+        # ``_resolve_title`` so the dedup step downstream sees only
+        # already-cleaned titles or None.
         raw_titles: list[str | None] = []
         for slot in needs_title:
             other_slots = [s for s in all_slots if s.variant_id != slot.variant_id]
             capped = other_slots[:max_siblings]
             sibling_sets: Sequence[frozenset[str]] = [s.ingredients for s in capped]
-            stats.llm_calls += 1
-            title = title_fn(family, slot.ingredients, slot.methods, sibling_sets)
-            if not title:
-                stats.llm_failures += 1
+            title = _resolve_title(
+                family=family,
+                slot=slot,
+                sibling_sets=sibling_sets,
+                title_fn=title_fn,
+                fallback_title_fn=fallback_title_fn,
+                stats=stats,
+            )
             raw_titles.append(title)
 
         # Deduplicate titles within this group (vwt.32).

@@ -193,6 +193,18 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument(
+        "--pass3-fallback-model",
+        default="qwen3.6:35b-a3b",
+        help=(
+            "RationalRecipes-wqy: model used to retry Pass 3 title "
+            "generation when the primary returns a malformed title "
+            "(one that drops the L1 family name). The prior production "
+            "model (qwen3.6:35b-a3b) is the default — slower but "
+            "~10x more parameters and much better at format-following. "
+            "Pass an empty string to disable escalation."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=DEFAULT_PARSE_SEED,
@@ -357,9 +369,10 @@ def run(
     parse_fn: ParseFn | None = None,
     extract_fn: ExtractFn | None = None,
     title_fn: TitleFn | None = None,
+    fallback_title_fn: TitleFn | None = None,
 ) -> int:
-    """CLI entrypoint. ``parse_fn``/``extract_fn``/``title_fn`` let tests
-    bypass Ollama."""
+    """CLI entrypoint. ``parse_fn``/``extract_fn``/``title_fn``/
+    ``fallback_title_fn`` let tests bypass Ollama."""
     args = _parse_args(argv)
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,
@@ -441,6 +454,19 @@ def run(
             timing_collector=collect_pass3_timing,
         )
 
+    # RationalRecipes-wqy: build the escalation TitleFn from
+    # --pass3-fallback-model unless the caller already supplied one or
+    # the user explicitly disabled it via an empty model name. The
+    # fallback shares the timing collector so escalation calls show up
+    # in the per-call profile dump alongside primary calls.
+    if fallback_title_fn is None and do_pass3 and args.pass3_fallback_model:
+        fallback_title_fn = build_default_title_fn(
+            args.pass3_fallback_model,
+            base_url=args.ollama_url,
+            num_ctx=num_ctx,
+            timing_collector=collect_pass3_timing,
+        )
+
     heartbeat: HeartbeatFn
     if args.heartbeat_seconds < 0:
         heartbeat = lambda _: None  # noqa: E731 - inline noop is clearer here
@@ -478,6 +504,7 @@ def run(
             pass3_workers=args.pass3_workers,
             pass3_force=args.pass3_force,
             title_fn=title_fn,
+            fallback_title_fn=fallback_title_fn,
             max_siblings=args.max_siblings,
             heartbeat=heartbeat,
             # Persist the cache between groups so a killed run doesn't
@@ -513,6 +540,16 @@ def run(
         f"deduped={stats.pass3.variants_deduped} "
         f"llm_calls={stats.pass3.llm_calls} "
         f"llm_failures={stats.pass3.llm_failures}"
+    )
+    # RationalRecipes-wqy: surface the validate-and-escalate counters so
+    # we can track escalation rate over time and decide whether the
+    # small-model default still pays off.
+    print(
+        f"pass 3 escalation: "
+        f"validation_failures_primary={stats.pass3.validation_failures_primary} "
+        f"escalations={stats.pass3.escalations} "
+        f"validation_failures_fallback={stats.pass3.validation_failures_fallback} "
+        f"reconstructed={stats.pass3.reconstructed_titles}"
     )
     # vwt.29: summary lines from Pass 3 instrumentation, plus optional
     # JSONL dump for offline histogram / scatter-plot analysis.
