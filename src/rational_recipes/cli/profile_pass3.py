@@ -145,6 +145,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         timing_collector=collect,
     )
 
+    def _progress(position: int, total: int) -> None:
+        pct = position / total * 100 if total else 0
+        print(
+            f"  pass3: {position}/{total} groups ({pct:.1f}%) "
+            f"titled={stats.variants_titled} llm_calls={stats.llm_calls}",
+            flush=True,
+        )
+
     db = CatalogDB.open(args.db)
     stats = Pass3Stats()
     try:
@@ -155,6 +163,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_workers=args.pass3_workers,
             force=args.force,
             stats=stats,
+            on_group_done=_progress,
         )
         wall_seconds = time.monotonic() - wall_start
     finally:

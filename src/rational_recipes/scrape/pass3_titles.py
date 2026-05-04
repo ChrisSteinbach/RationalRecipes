@@ -511,6 +511,7 @@ def run_pass3(
     max_siblings: int = 20,
     force: bool = False,
     stats: Pass3Stats | None = None,
+    on_group_done: Callable[[int, int], None] | None = None,
 ) -> Pass3Stats:
     """Generate ``display_title`` for every variant in the catalog DB.
 
@@ -602,17 +603,22 @@ def run_pass3(
                 stats.db_write_seconds_total += db_write_seconds
                 stats.db_write_count += 1
 
+    total_groups = len(work)
+    _beat = on_group_done or (lambda _pos, _tot: None)
+
     if max_workers <= 1:
-        for item in work:
+        for i, item in enumerate(work, start=1):
             _process_group(item)
+            _beat(i, total_groups)
     else:
         logger.info(
             "  pass3: %d groups across %d workers", len(work), max_workers
         )
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(_process_group, item) for item in work]
-            for future in as_completed(futures):
+            for i, future in enumerate(as_completed(futures), start=1):
                 future.result()
+                _beat(i, total_groups)
 
     return stats
 
