@@ -70,8 +70,14 @@ def main() -> int:
     parser.add_argument(
         "--min-variant-size",
         type=int,
-        default=3,
+        default=5,
         help="Minimum recipes per variant — drop L2 clusters below this",
+    )
+    parser.add_argument(
+        "--max-variants-per-l1",
+        type=int,
+        default=5,
+        help="Cap variants per L1 (top-N by n_recipes); 0 disables",
     )
     parser.add_argument(
         "--bucket-size",
@@ -116,6 +122,7 @@ def main() -> int:
         l2_similarity_threshold=args.l2_threshold,
         l2_min_group_size=args.l2_min,
         min_variant_size=args.min_variant_size,
+        max_variants_per_l1=args.max_variants_per_l1,
         bucket_size=args.bucket_size,
         llm_model=args.model,
         ollama_url=args.ollama_url,

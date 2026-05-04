@@ -32,6 +32,7 @@ from pathlib import Path
 from rational_recipes.ingredient import Factory as IngredientFactory
 from rational_recipes.scrape.canonical import canonicalize_name
 from rational_recipes.scrape.grouping import (
+    DEFAULT_MAX_VARIANTS_PER_L1,
     DEFAULT_MIN_VARIANT_SIZE,
     group_by_ingredients,
     group_by_title,
@@ -410,6 +411,38 @@ def _merge_duplicate_variants(
     return list(by_id.values()), dropped
 
 
+def _cap_per_l1(
+    variants: Sequence[MergedVariantResult],
+    *,
+    max_per_l1: int,
+) -> list[MergedVariantResult]:
+    """Keep only the top-N largest variants per L1 (normalized title).
+
+    Sort within each L1 by ``len(normalized_rows)`` descending; ties are
+    broken by ``variant_id`` so the cap is deterministic across runs.
+    Returns variants in the same group-relative order as the input,
+    flattened across L1s.
+    """
+    if max_per_l1 <= 0:
+        return list(variants)
+    by_l1: dict[str, list[MergedVariantResult]] = {}
+    order: list[str] = []
+    for v in variants:
+        key = normalize_title(v.variant_title)
+        if key not in by_l1:
+            by_l1[key] = []
+            order.append(key)
+        by_l1[key].append(v)
+    out: list[MergedVariantResult] = []
+    for key in order:
+        members = by_l1[key]
+        members.sort(
+            key=lambda v: (-len(v.normalized_rows), v.variant_id),
+        )
+        out.extend(members[:max_per_l1])
+    return out
+
+
 def build_variants(
     merged_recipes: Sequence[MergedRecipe],
     *,
@@ -418,6 +451,7 @@ def build_variants(
     l2_similarity_threshold: float,
     l2_min_group_size: int,
     min_variant_size: int = DEFAULT_MIN_VARIANT_SIZE,
+    max_variants_per_l1: int = DEFAULT_MAX_VARIANTS_PER_L1,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
 ) -> tuple[list[MergedVariantResult], PipelineRunStats]:
     """Group merged recipes, LLM-parse each, normalize, and dedup.
@@ -432,6 +466,15 @@ def build_variants(
     ``cooking_methods`` on the resulting variant is always
     ``frozenset()``. Per-recipe ``cooking_methods`` data still flows
     through ``MergedRecipe`` for downstream PWA filtering.
+
+    Variant proliferation is capped two ways (RationalRecipes-dos):
+
+    - ``min_variant_size`` (default 5) drops variants whose recipe count
+      falls below the threshold — kills the long tail of low-confidence
+      averages.
+    - ``max_variants_per_l1`` (default 5) keeps only the top-N largest
+      variants within each L1 group, ranked by ``n_recipes``. Pass 0 to
+      disable the cap entirely.
     """
     l1_groups = group_by_title(merged_recipes, min_group_size=l1_min_group_size)
     logger.info("L1: %d title groups kept", len(l1_groups))
@@ -514,6 +557,7 @@ def build_variants(
     variants = [
         v for v in variants if len(v.normalized_rows) >= min_variant_size
     ]
+    variants = _cap_per_l1(variants, max_per_l1=max_variants_per_l1)
 
     stats = PipelineRunStats(
         recipenlg_in=0,  # filled by caller
@@ -540,6 +584,7 @@ def run_merged_pipeline(
     l2_similarity_threshold: float = 0.6,
     l2_min_group_size: int = 3,
     min_variant_size: int = DEFAULT_MIN_VARIANT_SIZE,
+    max_variants_per_l1: int = DEFAULT_MAX_VARIANTS_PER_L1,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
     llm_model: str = "gemma4:e2b",
     ollama_url: str = OLLAMA_BASE_URL,
@@ -585,6 +630,7 @@ def run_merged_pipeline(
         l2_similarity_threshold=l2_similarity_threshold,
         l2_min_group_size=l2_min_group_size,
         min_variant_size=min_variant_size,
+        max_variants_per_l1=max_variants_per_l1,
         bucket_size=bucket_size,
     )
 

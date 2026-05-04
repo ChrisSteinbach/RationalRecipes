@@ -141,10 +141,22 @@ def group_by_ingredients[R: GroupableRecipe](
     return result
 
 
-DEFAULT_MIN_VARIANT_SIZE = 3
+DEFAULT_MIN_VARIANT_SIZE = 5
 """Default minimum recipe count for a variant to survive.
 
 Used as the post-clustering filter on each L2 cluster. Too small →
-unstable stats. Too large → over-drops variants from smaller dish
-families.
+unstable stats and a noisy long tail (RationalRecipes-dos: 22,597
+variants had <5 recipes pre-policy). Too large → over-drops variants
+from smaller dish families.
+"""
+
+DEFAULT_MAX_VARIANTS_PER_L1 = 5
+"""Default cap on variants emitted per L1 (normalized title) group.
+
+RationalRecipes-dos: 268 L1 groups produced more variants than the
+Pass 3 LLM could name distinctly, falling back to (2)..(39) numeric
+suffixes on 2,069 variants. Capping at the top-N largest variants by
+n_recipes per L1 keeps the meaningfully different splits and drops the
+dust. The PWA's n_recipes filter (e.g. ≥100, RationalRecipes-pqc)
+still operates as a higher bar on top of this pipeline-time cap.
 """

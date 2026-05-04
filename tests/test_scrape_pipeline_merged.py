@@ -469,8 +469,9 @@ class TestBuildVariants:
             l1_min_group_size=2,
             l2_similarity_threshold=0.6,
             l2_min_group_size=2,
+            min_variant_size=2,
         )
-        # 3 identical rows dedup to 1 — below the default min_variant_size of 3.
+        # 3 identical rows dedup to 1 — below the explicit min_variant_size of 2.
         assert stats.rows_parsed == 3
         assert stats.rows_dedup_dropped == 2
         assert len(variants) == 0
@@ -501,6 +502,7 @@ class TestBuildVariants:
             l1_min_group_size=2,
             l2_similarity_threshold=0.6,
             l2_min_group_size=2,
+            min_variant_size=2,
         )
         assert len(variants) == 1
         assert stats.rows_parsed == 3
@@ -873,3 +875,123 @@ class TestMergeDuplicateVariants:
         merged_list, dropped = _merge_duplicate_variants([v1, v2], bucket_size=2.0)
         assert len(merged_list) == 2
         assert dropped == 0
+
+
+class TestCapPerL1:
+    """RationalRecipes-dos: cap variants per L1 to top-N by n_recipes."""
+
+    def _variant(
+        self, title: str, ingredients: tuple[str, ...], n_rows: int
+    ) -> MergedVariantResult:
+        rows = [
+            _row(f"https://x/{title}/{i}", {"flour": "100 g"}, {"flour": 100.0})
+            for i in range(n_rows)
+        ]
+        return MergedVariantResult(
+            variant_title=title,
+            canonical_ingredients=frozenset(ingredients),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["flour"],
+        )
+
+    def test_keeps_top_n_per_l1(self) -> None:
+        from rational_recipes.scrape.pipeline_merged import _cap_per_l1
+
+        l1_a = [
+            self._variant("pecan pie", ("flour", f"x{i}"), n_rows=10 * (10 - i))
+            for i in range(8)
+        ]  # 8 variants, sizes 100, 90, 80, 70, 60, 50, 40, 30
+        l1_b = [
+            self._variant("brownie", ("flour", f"y{i}"), n_rows=20 - i * 2)
+            for i in range(3)
+        ]  # 3 variants, sizes 20, 18, 16
+
+        capped = _cap_per_l1(l1_a + l1_b, max_per_l1=5)
+        sizes_by_title: dict[str, list[int]] = {}
+        for v in capped:
+            sizes_by_title.setdefault(v.variant_title, []).append(
+                len(v.normalized_rows)
+            )
+        # pecan pie capped at top-5 (100, 90, 80, 70, 60); brownie unchanged.
+        assert sorted(sizes_by_title["pecan pie"], reverse=True) == [
+            100, 90, 80, 70, 60,
+        ]
+        assert sorted(sizes_by_title["brownie"], reverse=True) == [20, 18, 16]
+
+    def test_zero_disables_cap(self) -> None:
+        from rational_recipes.scrape.pipeline_merged import _cap_per_l1
+
+        variants = [
+            self._variant("pecan pie", ("flour", f"x{i}"), n_rows=10)
+            for i in range(8)
+        ]
+        capped = _cap_per_l1(variants, max_per_l1=0)
+        assert len(capped) == 8
+
+    def test_deterministic_tiebreak_by_variant_id(self) -> None:
+        from rational_recipes.scrape.pipeline_merged import _cap_per_l1
+
+        # Three variants of identical size — cap to 2 should pick a stable
+        # subset across runs (sorted by variant_id ascending after the
+        # size-descending sort).
+        a = self._variant("dish", ("flour", "a"), n_rows=10)
+        b = self._variant("dish", ("flour", "b"), n_rows=10)
+        c = self._variant("dish", ("flour", "c"), n_rows=10)
+        first = _cap_per_l1([a, b, c], max_per_l1=2)
+        second = _cap_per_l1([c, b, a], max_per_l1=2)
+        assert [v.variant_id for v in first] == [v.variant_id for v in second]
+        assert len(first) == 2
+
+    def test_build_variants_caps_proliferation(self) -> None:
+        """End-to-end: build_variants should cap top-N per L1.
+
+        Cluster N L2 groups with distinct ingredient sets but the same
+        L1 title. With max_variants_per_l1=2 only the two largest
+        survive.
+        """
+        # Real ingredients (in the IngredientFactory DB) so they survive
+        # normalize_merged_row's KeyError handling. Each cluster gets a
+        # distinct "extra" plus shared flour/milk so L2 separates them
+        # (Jaccard < 0.6).
+        extras = ["sugar", "salt", "butter", "egg"]
+        merged: list[MergedRecipe] = []
+        for cluster_idx, extra in enumerate(extras):
+            n = 7 - cluster_idx
+            for i in range(n):
+                merged.append(
+                    _make_merged(
+                        "pancakes",
+                        (
+                            f"{200 + i * 10} g flour",
+                            f"{200 - i * 10} g milk",
+                            f"100 g {extra}",
+                        ),
+                        frozenset({"flour", "milk", extra}),
+                        url=f"https://x/{cluster_idx}/{i}",
+                    )
+                )
+
+        def fake_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            out: list[ParsedIngredient | None] = []
+            for line in lines:
+                parts = line.split()
+                qty = float(parts[0])
+                ing = parts[-1]
+                out.append(_parsed(ing, qty, "g"))
+            return out
+
+        variants, _ = build_variants(
+            merged,
+            parse_fn=fake_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            min_variant_size=3,
+            max_variants_per_l1=2,
+        )
+        # 4 clusters → 4 candidate variants → top-2 survive.
+        assert len(variants) == 2
+        sizes = sorted((len(v.normalized_rows) for v in variants), reverse=True)
+        # Largest two clusters (size 7 and 6) survive.
+        assert sizes == [7, 6]

@@ -527,6 +527,45 @@ class CatalogDB:
                 (variant_id, ordinal, source_type, title, ref),
             )
 
+    def delete_stale_variants_for_l1(
+        self,
+        l1_key: str,
+        keep_variant_ids: Iterable[str],
+    ) -> int:
+        """Drop variants for ``l1_key`` whose ids aren't in ``keep_variant_ids``.
+
+        Used by the Pass 2 re-cluster path so a policy change (e.g.
+        RationalRecipes-dos top-N cap) actually shrinks the on-disk
+        variant set rather than accumulating stale rows. Cascade-deletes
+        from variant_ingredient_stats / variant_members / variant_sources
+        so nothing dangles. Returns the number of variant rows removed.
+        """
+        keep = set(keep_variant_ids)
+        with self._conn:
+            cursor = self._conn.execute(
+                "SELECT variant_id FROM variants WHERE normalized_title = ?",
+                (l1_key,),
+            )
+            existing = [row[0] for row in cursor.fetchall()]
+            stale = [vid for vid in existing if vid not in keep]
+            for vid in stale:
+                self._conn.execute(
+                    "DELETE FROM variant_ingredient_stats WHERE variant_id = ?",
+                    (vid,),
+                )
+                self._conn.execute(
+                    "DELETE FROM variant_members WHERE variant_id = ?",
+                    (vid,),
+                )
+                self._conn.execute(
+                    "DELETE FROM variant_sources WHERE variant_id = ?",
+                    (vid,),
+                )
+                self._conn.execute(
+                    "DELETE FROM variants WHERE variant_id = ?", (vid,)
+                )
+        return len(stale)
+
     def update_review_status(
         self,
         variant_id: str,

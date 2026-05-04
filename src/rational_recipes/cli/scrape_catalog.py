@@ -39,6 +39,10 @@ from rational_recipes.scrape.catalog_pipeline import (
     compute_corpus_revisions,
     run_catalog_pipeline,
 )
+from rational_recipes.scrape.grouping import (
+    DEFAULT_MAX_VARIANTS_PER_L1,
+    DEFAULT_MIN_VARIANT_SIZE,
+)
 from rational_recipes.scrape.merge import (
     DEFAULT_BUCKET_SIZE,
     DEFAULT_NEAR_DUP_THRESHOLD,
@@ -143,10 +147,22 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--min-variant-size",
         type=int,
-        default=3,
+        default=DEFAULT_MIN_VARIANT_SIZE,
         help=(
-            "Minimum recipes per variant after L2 clustering. Smaller variants "
-            "are dropped (their stats would be too noisy to report)."
+            "Minimum recipes per variant after L2 clustering "
+            "(default %(default)s). Smaller variants are dropped — their "
+            "stats would be too noisy to report."
+        ),
+    )
+    parser.add_argument(
+        "--max-variants-per-l1",
+        type=int,
+        default=DEFAULT_MAX_VARIANTS_PER_L1,
+        help=(
+            "Cap variants per L1 (normalized title) at this many largest "
+            "by n_recipes (default %(default)s). 0 disables the cap. "
+            "Curbs the (N)-suffix proliferation seen pre-RationalRecipes-dos "
+            "when fat L1s like 'pecan pie' produced 96 variants."
         ),
     )
     parser.add_argument("--bucket-size", type=float, default=DEFAULT_BUCKET_SIZE)
@@ -448,6 +464,7 @@ def run(
             l2_threshold=args.l2_threshold,
             l2_min=args.l2_min,
             min_variant_size=args.min_variant_size,
+            max_variants_per_l1=args.max_variants_per_l1,
             bucket_size=args.bucket_size,
             near_dup_threshold=args.near_dup_threshold,
             title_filter=args.title_filter,

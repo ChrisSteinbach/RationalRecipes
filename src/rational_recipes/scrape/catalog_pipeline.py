@@ -50,6 +50,7 @@ from rational_recipes.corpus_title_survey import (
 )
 from rational_recipes.scrape.canonical import canonicalize_names
 from rational_recipes.scrape.grouping import (
+    DEFAULT_MAX_VARIANTS_PER_L1,
     DEFAULT_MIN_VARIANT_SIZE,
     normalize_title,
 )
@@ -634,6 +635,7 @@ def _run_pass2(
     l2_threshold: float,
     l2_min: int,
     min_variant_size: int,
+    max_variants_per_l1: int,
     bucket_size: float,
     near_dup_threshold: float,
     now_fn: Callable[[], str],
@@ -698,6 +700,7 @@ def _run_pass2(
                 l2_similarity_threshold=l2_threshold,
                 l2_min_group_size=l2_min,
                 min_variant_size=min_variant_size,
+                max_variants_per_l1=max_variants_per_l1,
                 bucket_size=bucket_size,
             )
 
@@ -706,6 +709,13 @@ def _run_pass2(
         # rule matched and the column stays NULL (PWA renders that as
         # the "uncategorized" UI label).
         category = categorize(key)
+        # RationalRecipes-dos: drop on-disk variants the new policy no
+        # longer produces. Without this, a re-cluster under tighter
+        # min_variant_size / max_variants_per_l1 would leave stale
+        # variants behind from the prior run.
+        db.delete_stale_variants_for_l1(
+            key, keep_variant_ids=[v.variant_id for v in variants]
+        )
         for variant in variants:
             if not variant.normalized_rows:
                 continue
@@ -752,6 +762,7 @@ def run_catalog_pipeline(
     l2_threshold: float = 0.6,
     l2_min: int = 3,
     min_variant_size: int = DEFAULT_MIN_VARIANT_SIZE,
+    max_variants_per_l1: int = DEFAULT_MAX_VARIANTS_PER_L1,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
     near_dup_threshold: float = DEFAULT_NEAR_DUP_THRESHOLD,
     title_filter: str | None = None,
@@ -857,6 +868,7 @@ def run_catalog_pipeline(
             l2_threshold=l2_threshold,
             l2_min=l2_min,
             min_variant_size=min_variant_size,
+            max_variants_per_l1=max_variants_per_l1,
             bucket_size=bucket_size,
             near_dup_threshold=near_dup_threshold,
             now_fn=now_fn,

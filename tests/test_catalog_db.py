@@ -320,6 +320,79 @@ class TestL1RunTracking:
         assert row == (3, 1)
 
 
+class TestDeleteStaleVariantsForL1:
+    """RationalRecipes-dos: re-cluster must drop variants the new policy
+    no longer produces, not accumulate them."""
+
+    def test_drops_variants_not_in_keep_set(self) -> None:
+        db = CatalogDB.in_memory()
+        keeper = _variant(title="pecan pie", n_rows=10)
+        # Two variants that survived a prior run but the new policy drops.
+        stale_a = MergedVariantResult(
+            variant_title="pecan pie",
+            canonical_ingredients=frozenset({"flour", "egg"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row(
+                    "https://x/a/1",
+                    {"flour": "100 g", "egg": "1 unit"},
+                    {"flour": 90.0, "egg": 10.0},
+                    title="pecan pie",
+                ),
+            ],
+            header_ingredients=["flour", "egg"],
+        )
+        stale_b = MergedVariantResult(
+            variant_title="pecan pie",
+            canonical_ingredients=frozenset({"flour", "butter"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row(
+                    "https://x/b/1",
+                    {"flour": "100 g", "butter": "50 g"},
+                    {"flour": 67.0, "butter": 33.0},
+                    title="pecan pie",
+                ),
+            ],
+            header_ingredients=["flour", "butter"],
+        )
+        db.upsert_variant(keeper, l1_key="pecan pie")
+        db.upsert_variant(stale_a, l1_key="pecan pie")
+        db.upsert_variant(stale_b, l1_key="pecan pie")
+
+        removed = db.delete_stale_variants_for_l1(
+            "pecan pie", keep_variant_ids=[keeper.variant_id]
+        )
+        assert removed == 2
+
+        remaining = {v.variant_id for v in db.list_variants()}
+        assert remaining == {keeper.variant_id}
+        # Cascade: stale variants' member rows are gone too.
+        assert db.get_variant_members(stale_a.variant_id) == []
+        assert db.get_variant_members(stale_b.variant_id) == []
+
+    def test_noop_when_all_kept(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(title="brownie", n_rows=5)
+        db.upsert_variant(v, l1_key="brownie")
+        removed = db.delete_stale_variants_for_l1(
+            "brownie", keep_variant_ids=[v.variant_id]
+        )
+        assert removed == 0
+        assert len(db.list_variants()) == 1
+
+    def test_other_l1_keys_untouched(self) -> None:
+        db = CatalogDB.in_memory()
+        a = _variant(title="brownie", n_rows=5)
+        b = _variant(title="muffin", n_rows=5)
+        db.upsert_variant(a, l1_key="brownie")
+        db.upsert_variant(b, l1_key="muffin")
+        # Wipe brownie's variants entirely; muffin must survive.
+        db.delete_stale_variants_for_l1("brownie", keep_variant_ids=[])
+        remaining = {v.variant_id for v in db.list_variants()}
+        assert remaining == {b.variant_id}
+
+
 class TestUpsertRecipe:
     def test_recipe_with_raw_and_parsed_rows(self) -> None:
         db = CatalogDB.in_memory()
