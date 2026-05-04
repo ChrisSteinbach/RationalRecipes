@@ -8,12 +8,17 @@ preserving every source recipe's exact naming.
 Intentionally narrow. The fold runs at Pass 2 variant aggregation only;
 source-recipe canonicalization keeps per-synonym specificity (e.g.
 ``cheddar`` vs ``cheese``, ``red onion`` vs ``onion``) per the dfm
-commit (e5ed810). New families must be added here only when:
+commit (e5ed810). New families must be added here only when EITHER:
 
   - one form's whitespace tokens are a strict subset of the other's, AND
-  - the forms are routinely interchangeable in everyday cooking
+    the forms are routinely interchangeable in everyday cooking
     (i.e. a recipe author would substitute one for the other without
-    a meaningful taste / texture / chemistry consequence).
+    a meaningful taste / texture / chemistry consequence), OR
+  - one form is an unambiguous brand name for the other in cooking
+    corpora (e.g. ``crisco`` for ``shortening``). Brand-name folds are
+    admitted because the brand resolves to a single product family in
+    practice; rare specialty SKUs (``butter-flavored crisco``) parse to
+    distinct canonical forms upstream and are not affected.
 
 Run ``scripts/discover_fold_candidates.py`` against a populated
 ``recipes.db`` to surface new candidates with their cross-variant
@@ -35,13 +40,24 @@ if TYPE_CHECKING:
 # - butter: required to satisfy the bead's acceptance criterion (Basic
 #   Buttermilk Pancakes folds butter + unsalted butter to land at ≤11
 #   distinct ingredients). Surfaced in bead notes for user review.
+# - shortening + crisco (RationalRecipes-0hq): brand-name fold. Crisco
+#   is a vegetable shortening brand and parses standalone in baking
+#   corpora; the two forms co-occur in single variants (Shortening
+#   Pound Cake, Crisco Peanut Butter Cookies, Soda Crisco Angel
+#   Biscuits). Admitted under the brand-name clause above.
+# - baking soda + soda (RationalRecipes-0hq): standalone ``soda`` in
+#   baking corpora is almost always abbreviated ``baking soda`` —
+#   mass-fraction evidence (~0.4% of mixture) confirms this. The rare
+#   true ``soda water`` use is rare enough to accept as a tolerable
+#   false positive. Strict-subset clause applies (``soda`` ⊂
+#   ``baking soda``).
 #
 # Forms deliberately *excluded* (substring relationship is real but the
 # ingredients are meaningfully different):
 #   - ``garlic salt`` is a flavored salt, not interchangeable with salt.
 #   - ``peanut butter`` is not butter.
 #   - ``brown sugar`` is not white sugar (different molasses content).
-#   - ``baking soda`` is not soda; ``cream cheese`` is not cheese; etc.
+#   - ``cream cheese`` is not cheese; etc.
 FOLD_MAP: Mapping[str, frozenset[str]] = {
     "oil": frozenset(
         {
@@ -66,6 +82,18 @@ FOLD_MAP: Mapping[str, frozenset[str]] = {
             "unsalted butter",
             "salted butter",
             "sweet butter",
+        }
+    ),
+    "shortening": frozenset(
+        {
+            "shortening",
+            "crisco",
+        }
+    ),
+    "baking soda": frozenset(
+        {
+            "baking soda",
+            "soda",
         }
     ),
 }

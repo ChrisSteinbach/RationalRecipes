@@ -67,6 +67,17 @@ class TestFoldMapShape:
         assert "butter" in FOLD_MAP
         assert {"butter", "unsalted butter"} <= FOLD_MAP["butter"]
 
+    def test_shortening_family_present(self) -> None:
+        # RationalRecipes-0hq: brand-name fold (crisco → shortening).
+        assert "shortening" in FOLD_MAP
+        assert {"shortening", "crisco"} <= FOLD_MAP["shortening"]
+
+    def test_baking_soda_family_present(self) -> None:
+        # RationalRecipes-0hq: standalone ``soda`` is abbreviated baking
+        # soda in baking corpora.
+        assert "baking soda" in FOLD_MAP
+        assert {"baking soda", "soda"} <= FOLD_MAP["baking soda"]
+
     def test_no_form_appears_in_two_families(self) -> None:
         seen: dict[str, str] = {}
         for family, forms in FOLD_MAP.items():
@@ -238,6 +249,112 @@ class TestApplyFoldToVariant:
             ],
         )
         assert apply_fold_to_variant(v) is False
+
+    def test_folds_crisco_into_shortening_when_shortening_dominates(
+        self,
+    ) -> None:
+        # RationalRecipes-0hq: brand-name fold. When generic ``shortening``
+        # is the larger summed proportion, it wins as the keeper.
+        v = _variant(
+            {"flour", "shortening", "crisco"},
+            [
+                _row(
+                    {"flour": "100 g", "shortening": "20 g", "crisco": "5 g"},
+                    {"flour": 80.0, "shortening": 16.0, "crisco": 4.0},
+                ),
+                _row(
+                    {"flour": "100 g", "shortening": "25 g"},
+                    {"flour": 80.0, "shortening": 20.0},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is True
+        assert v.canonical_ingredients == frozenset({"flour", "shortening"})
+        # Row 1: shortening absorbs crisco — sum 16+4 = 20.
+        assert v.normalized_rows[0].proportions == {
+            "flour": 80.0,
+            "shortening": 20.0,
+        }
+        assert "crisco" not in v.normalized_rows[0].proportions
+        assert "crisco" not in v.normalized_rows[0].cells
+
+    def test_folds_shortening_into_crisco_when_brand_dominates(self) -> None:
+        # When the brand outweighs the generic, the keeper is the brand.
+        # Same fold-table behavior as ``unsalted butter`` winning over
+        # ``butter`` when the specific form dominates.
+        v = _variant(
+            {"flour", "shortening", "crisco"},
+            [
+                _row(
+                    {"flour": "100 g", "crisco": "20 g", "shortening": "1 g"},
+                    {"flour": 82.6, "crisco": 16.5, "shortening": 0.9},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is True
+        assert v.canonical_ingredients == frozenset({"flour", "crisco"})
+        assert v.normalized_rows[0].proportions["crisco"] == pytest.approx(17.4)
+        assert "shortening" not in v.normalized_rows[0].proportions
+
+    def test_folds_soda_into_baking_soda(self) -> None:
+        # RationalRecipes-0hq: ``soda`` parsed standalone is baking soda
+        # abbreviated; mass fractions confirm. Pecan Pumpkin Bread case:
+        # baking soda dominates → keeper is ``baking soda``.
+        v = _variant(
+            {"flour", "baking soda", "soda"},
+            [
+                _row(
+                    {"flour": "100 g", "baking soda": "0.4 g", "soda": "0.4 g"},
+                    {"flour": 99.2, "baking soda": 0.4, "soda": 0.4},
+                ),
+                _row(
+                    {"flour": "100 g", "baking soda": "0.5 g"},
+                    {"flour": 99.5, "baking soda": 0.5},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is True
+        assert v.canonical_ingredients == frozenset({"flour", "baking soda"})
+        # Row 1: baking soda absorbs soda — sum 0.4 + 0.4 = 0.8.
+        assert v.normalized_rows[0].proportions["baking soda"] == pytest.approx(
+            0.8
+        )
+        assert "soda" not in v.normalized_rows[0].proportions
+        assert "soda" not in v.normalized_rows[0].cells
+        # Row 2: untouched.
+        assert v.normalized_rows[1].proportions == {
+            "flour": 99.5,
+            "baking soda": 0.5,
+        }
+
+    def test_baking_soda_alone_does_not_fold(self) -> None:
+        # Negative: a variant whose only ``baking soda`` family entry is
+        # ``baking soda`` must not spuriously rewrite to a different form.
+        v = _variant(
+            {"flour", "baking soda"},
+            [
+                _row(
+                    {"flour": "100 g", "baking soda": "0.4 g"},
+                    {"flour": 99.6, "baking soda": 0.4},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is False
+        assert v.canonical_ingredients == frozenset({"flour", "baking soda"})
+
+    def test_shortening_alone_does_not_fold(self) -> None:
+        # Negative: ``shortening`` alone stays ``shortening``.
+        v = _variant(
+            {"flour", "shortening"},
+            [
+                _row(
+                    {"flour": "100 g", "shortening": "20 g"},
+                    {"flour": 83.3, "shortening": 16.7},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is False
+        assert v.canonical_ingredients == frozenset({"flour", "shortening"})
 
 
 class TestBuildVariantsIntegration:
