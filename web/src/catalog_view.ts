@@ -22,6 +22,14 @@ export interface CatalogViewCallbacks {
   onMinSampleSizeChange(n: number): void;
   onOrderByChange(o: CatalogOrderBy): void;
   onRecipeSelect(id: string): void;
+  onOpenAdmin?(): void;
+}
+
+export interface CatalogViewOptions {
+  adminMode?: boolean;
+  /** Set of variant_ids that have stored feedback. Renders a marker
+   *  on each row whose id is in the set. Empty when adminMode is off. */
+  recipesWithFeedback?: Set<string>;
 }
 
 const ALL_CATEGORIES = "all";
@@ -53,7 +61,11 @@ export function renderCatalog(
   visibleRecipes: CuratedRecipe[],
   state: CatalogViewState,
   callbacks: CatalogViewCallbacks,
+  options: CatalogViewOptions = {},
 ): void {
+  const adminMode = options.adminMode ?? false;
+  const feedback = options.recipesWithFeedback ?? new Set<string>();
+
   // Preserve the toolbar across re-renders so the search input keeps
   // focus (and cursor position) while typing. Only the content below
   // the toolbar is rebuilt each cycle.
@@ -63,7 +75,7 @@ export function renderCatalog(
     while (toolbar.nextSibling) toolbar.nextSibling.remove();
   } else {
     container.replaceChildren();
-    toolbar = renderToolbar(catalog, state, callbacks);
+    toolbar = renderToolbar(catalog, state, callbacks, adminMode);
     container.appendChild(toolbar);
   }
 
@@ -86,7 +98,9 @@ export function renderCatalog(
   const list = document.createElement("ul");
   list.className = "catalog-list";
   for (const recipe of visibleRecipes) {
-    list.appendChild(renderRecipeCard(recipe, callbacks));
+    list.appendChild(
+      renderRecipeCard(recipe, callbacks, adminMode && feedback.has(recipe.id)),
+    );
   }
   container.appendChild(list);
 }
@@ -109,6 +123,7 @@ function renderToolbar(
   catalog: Catalog,
   state: CatalogViewState,
   callbacks: CatalogViewCallbacks,
+  adminMode: boolean,
 ): HTMLElement {
   const toolbar = document.createElement("div");
   toolbar.className = "catalog-toolbar";
@@ -182,6 +197,16 @@ function renderToolbar(
   orderLabel.append(orderText, orderSelect);
 
   toolbar.append(searchLabel, categoryLabel, sampleLabel, orderLabel);
+
+  if (adminMode && callbacks.onOpenAdmin) {
+    const adminBtn = document.createElement("button");
+    adminBtn.type = "button";
+    adminBtn.className = "catalog-admin-link";
+    adminBtn.textContent = "Admin feedback";
+    adminBtn.addEventListener("click", () => callbacks.onOpenAdmin?.());
+    toolbar.appendChild(adminBtn);
+  }
+
   return toolbar;
 }
 
@@ -203,6 +228,7 @@ function renderReleaseBadge(catalog: Catalog): HTMLElement | null {
 function renderRecipeCard(
   recipe: CuratedRecipe,
   callbacks: CatalogViewCallbacks,
+  hasFeedback: boolean,
 ): HTMLElement {
   const li = document.createElement("li");
   li.className = "recipe-card";
@@ -216,6 +242,13 @@ function renderRecipeCard(
   const title = document.createElement("h2");
   title.className = "recipe-card-title";
   title.textContent = recipe.title;
+  if (hasFeedback) {
+    const marker = document.createElement("span");
+    marker.className = "recipe-card-feedback-marker";
+    marker.textContent = "✎";
+    marker.title = "You have feedback notes on this recipe";
+    title.appendChild(marker);
+  }
 
   const meta = document.createElement("p");
   meta.className = "recipe-card-meta";

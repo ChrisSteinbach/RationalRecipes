@@ -7,12 +7,16 @@
 import type { Catalog, CuratedRecipe } from "./catalog.ts";
 import type { CatalogViewState } from "./catalog_view.ts";
 
-export type Route = { kind: "catalog" } | { kind: "detail"; recipeId: string };
+export type Route =
+  | { kind: "catalog" }
+  | { kind: "detail"; recipeId: string }
+  | { kind: "admin" };
 
 /** Parse a `location.hash` string into a Route. Unknown shapes → catalog. */
 export function parseRoute(hash: string): Route {
   const m = /^#\/recipe\/([^/]+)\/?$/.exec(hash);
   if (m) return { kind: "detail", recipeId: decodeURIComponent(m[1]) };
+  if (/^#\/admin\/?$/.test(hash)) return { kind: "admin" };
   return { kind: "catalog" };
 }
 
@@ -21,12 +25,41 @@ export function routeToHash(route: Route): string {
   if (route.kind === "detail") {
     return `#/recipe/${encodeURIComponent(route.recipeId)}`;
   }
+  if (route.kind === "admin") return "#/admin";
   return "#/";
 }
 
 /** Look up a recipe by id; null if not present. */
 export function findRecipe(catalog: Catalog, id: string): CuratedRecipe | null {
   return catalog.recipes.find((r) => r.id === id) ?? null;
+}
+
+const ADMIN_SESSION_KEY = "rr-admin-mode";
+
+/**
+ * Decide whether admin mode should be active for this session.
+ *
+ * `?admin=1` in the URL flips it on and writes a sticky flag into
+ * sessionStorage so navigating between catalog / detail / admin
+ * doesn't keep dropping the param. Closing the tab clears the flag —
+ * intentional weak gating; the bead notes we'll harden it later.
+ */
+export function detectAdminMode(
+  search: string = typeof location !== "undefined" ? location.search : "",
+  storage: Storage | null = typeof sessionStorage !== "undefined"
+    ? sessionStorage
+    : null,
+): boolean {
+  if (search) {
+    const params = new URLSearchParams(
+      search.startsWith("?") ? search.slice(1) : search,
+    );
+    if (params.get("admin") === "1") {
+      storage?.setItem(ADMIN_SESSION_KEY, "1");
+      return true;
+    }
+  }
+  return storage?.getItem(ADMIN_SESSION_KEY) === "1";
 }
 
 /**

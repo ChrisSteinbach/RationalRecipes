@@ -4,14 +4,21 @@
 // and back/forward navigation works. Hash format:
 //   #/              → catalog
 //   #/recipe/<id>   → detail
+//   #/admin         → admin feedback view (admin mode only)
 //
 // Since RationalRecipes-y43 the catalog ships as a static JSON manifest
 // (catalog.json). The PWA fetches it once on boot and filters in
 // memory via `inMemoryFilter` from app_routing.ts.
+//
+// Admin mode is unlocked by visiting any URL with `?admin=1`. The flag
+// is sticky for the session via sessionStorage — see `detectAdminMode`.
 
+import { loadFeedback } from "./admin_feedback.ts";
+import { renderAdminView } from "./admin_view.ts";
 import "./styles.css";
 import {
   type Route,
+  detectAdminMode,
   findRecipe,
   inMemoryFilter,
   parseRoute,
@@ -35,45 +42,79 @@ interface AppState {
   catalogView: CatalogViewState;
   detailView: DetailViewState;
   route: Route;
+  adminMode: boolean;
 }
 
 function filteredRecipes(state: AppState): CuratedRecipe[] {
   return inMemoryFilter(state.catalog, state.catalogView);
 }
 
+function recipesWithFeedback(state: AppState): Set<string> {
+  if (!state.adminMode) return new Set();
+  return new Set(loadFeedback().map((e) => e.variantId));
+}
+
 function render(container: HTMLElement, state: AppState): void {
+  if (state.route.kind === "admin") {
+    if (!state.adminMode) {
+      state.route = { kind: "catalog" };
+    } else {
+      renderAdminView(container, state.catalog, {
+        onBack: () => navigate({ kind: "catalog" }),
+        onOpenRecipe: (id) => {
+          state.detailView = initialDetailState();
+          navigate({ kind: "detail", recipeId: id });
+        },
+      });
+      return;
+    }
+  }
   if (state.route.kind === "detail") {
     const recipe = findRecipe(state.catalog, state.route.recipeId);
     if (recipe) {
       renderDetail(container, recipe, state.detailView, {
         onBack: () => navigate({ kind: "catalog" }),
+        adminMode: state.adminMode,
       });
       return;
     }
     state.route = { kind: "catalog" };
   }
-  renderCatalog(container, state.catalog, filteredRecipes(state), state.catalogView, {
-    onQueryChange(q) {
-      state.catalogView.query = q;
-      render(container, state);
+  renderCatalog(
+    container,
+    state.catalog,
+    filteredRecipes(state),
+    state.catalogView,
+    {
+      onQueryChange(q) {
+        state.catalogView.query = q;
+        render(container, state);
+      },
+      onCategoryChange(c) {
+        state.catalogView.category = c;
+        render(container, state);
+      },
+      onMinSampleSizeChange(n) {
+        state.catalogView.minSampleSize = n;
+        render(container, state);
+      },
+      onOrderByChange(o) {
+        state.catalogView.orderBy = o;
+        render(container, state);
+      },
+      onRecipeSelect(id) {
+        state.detailView = initialDetailState();
+        navigate({ kind: "detail", recipeId: id });
+      },
+      onOpenAdmin() {
+        navigate({ kind: "admin" });
+      },
     },
-    onCategoryChange(c) {
-      state.catalogView.category = c;
-      render(container, state);
+    {
+      adminMode: state.adminMode,
+      recipesWithFeedback: recipesWithFeedback(state),
     },
-    onMinSampleSizeChange(n) {
-      state.catalogView.minSampleSize = n;
-      render(container, state);
-    },
-    onOrderByChange(o) {
-      state.catalogView.orderBy = o;
-      render(container, state);
-    },
-    onRecipeSelect(id) {
-      state.detailView = initialDetailState();
-      navigate({ kind: "detail", recipeId: id });
-    },
-  });
+  );
 }
 
 let rootState: AppState | null = null;
@@ -108,6 +149,7 @@ async function main(): Promise<void> {
     catalogView: initialCatalogState(),
     detailView: initialDetailState(),
     route: parseRoute(location.hash),
+    adminMode: detectAdminMode(),
   };
   rootContainer = app;
 

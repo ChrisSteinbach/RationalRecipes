@@ -290,3 +290,215 @@ h2 { font-size: 1.15rem; color: var(--fg-muted); }
 .source-item a:hover {
   text-decoration: underline;
 }
+
+/* --- Admin feedback (detail view) --- */
+
+.detail-feedback {
+  margin-top: 2rem;
+  padding: 1rem;
+  background: var(--bg-panel);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+.detail-feedback h2 {
+  margin-top: 0;
+}
+.feedback-field {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  margin-bottom: 0.75rem;
+}
+.feedback-field > span {
+  margin-bottom: 0.25rem;
+}
+.feedback-tag,
+.feedback-notes {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.95rem;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  font-family: inherit;
+  resize: vertical;
+}
+.feedback-status {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
+/* --- Catalog feedback marker (admin only) --- */
+
+.recipe-card-feedback-marker {
+  margin-left: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--accent);
+  vertical-align: 0.05em;
+}
+
+.catalog-admin-link {
+  align-self: flex-end;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.catalog-admin-link:hover {
+  background: var(--accent-weak);
+}
+
+/* --- Admin view --- */
+
+.admin-header {
+  margin-bottom: 1.25rem;
+}
+.admin-back {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 0.9rem;
+  padding: 0;
+  cursor: pointer;
+  margin-bottom: 0.25rem;
+}
+.admin-back:hover {
+  text-decoration: underline;
+}
+.admin-title {
+  margin: 0.25rem 0 0.25rem;
+  font-size: 1.7rem;
+}
+.admin-note {
+  margin: 0.25rem 0;
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+}
+
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  align-items: flex-end;
+}
+.admin-sort {
+  padding: 0.5rem 0.6rem;
+  font-size: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-panel);
+  color: var(--fg);
+}
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.admin-action {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.9rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--fg);
+}
+.admin-action:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.admin-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.admin-action-clear {
+  color: var(--error);
+  border-color: var(--error);
+}
+.admin-action-clear:hover:not(:disabled) {
+  background: var(--error);
+  color: white;
+}
+
+.admin-summary {
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+  margin: 0.5rem 0 1rem;
+}
+.admin-body {
+  display: grid;
+  gap: 1.5rem;
+}
+.admin-group-title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.admin-entry-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.admin-entry {
+  padding: 0.6rem 0.75rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.admin-entry-orphaned {
+  border-style: dashed;
+  opacity: 0.85;
+}
+.admin-entry-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.admin-entry-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.admin-entry-link:hover {
+  text-decoration: underline;
+}
+.admin-entry-title {
+  font-weight: 600;
+  color: var(--fg);
+}
+.admin-entry-meta {
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}
+.admin-entry-id {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.admin-entry-notes {
+  margin: 0.4rem 0 0;
+  color: var(--fg);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+.admin-entry-time {
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+}

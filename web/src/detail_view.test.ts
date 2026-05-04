@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { STORAGE_KEY, loadFeedback } from "./admin_feedback.ts";
 import type { CuratedRecipe } from "./catalog.ts";
 import {
   WEIGHT_PRESETS,
@@ -54,6 +55,7 @@ let container: HTMLElement;
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
+  localStorage.removeItem(STORAGE_KEY);
 });
 
 describe("initialDetailState", () => {
@@ -447,5 +449,95 @@ describe("renderDetail — source recipes (lazy)", () => {
     await vi.waitFor(() => {
       expect(details.querySelector(".source-recipes-empty")).not.toBeNull();
     });
+  });
+});
+
+describe("renderDetail — admin feedback panel", () => {
+  it("does not render the feedback panel when adminMode is off", () => {
+    renderDetail(container, aRecipe(), initialDetailState(), noopCallbacks());
+    expect(container.querySelector(".detail-feedback")).toBeNull();
+  });
+
+  it("renders tag dropdown + notes textarea + status when adminMode is on", () => {
+    renderDetail(
+      container,
+      aRecipe(),
+      initialDetailState(),
+      noopCallbacks({ adminMode: true }),
+    );
+    const section = container.querySelector(".detail-feedback");
+    expect(section).not.toBeNull();
+    const select = section!.querySelector<HTMLSelectElement>(".feedback-tag");
+    const textarea = section!.querySelector<HTMLTextAreaElement>(".feedback-notes");
+    expect(select).not.toBeNull();
+    expect(textarea).not.toBeNull();
+    expect(section!.querySelector(".feedback-status")?.textContent).toBe(
+      "No feedback saved yet.",
+    );
+  });
+
+  it("preserves the source-recipes section when admin mode is on", () => {
+    renderDetail(
+      container,
+      aRecipe(),
+      initialDetailState(),
+      noopCallbacks({ adminMode: true }),
+    );
+    expect(container.querySelector(".detail-source-recipes")).not.toBeNull();
+    expect(container.querySelector(".detail-feedback")).not.toBeNull();
+  });
+
+  it("auto-saves notes on blur and updates the last-edited timestamp", () => {
+    renderDetail(
+      container,
+      aRecipe(),
+      initialDetailState(),
+      noopCallbacks({ adminMode: true }),
+    );
+    const textarea = container.querySelector<HTMLTextAreaElement>(".feedback-notes")!;
+    const select = container.querySelector<HTMLSelectElement>(".feedback-tag")!;
+    select.value = "Title issue";
+    select.dispatchEvent(new Event("change"));
+    textarea.value = "Pass 3 dropped 'scalloped'";
+    textarea.dispatchEvent(new Event("blur"));
+
+    const stored = loadFeedback();
+    expect(stored).toHaveLength(1);
+    expect(stored[0].notes).toBe("Pass 3 dropped 'scalloped'");
+    expect(stored[0].tag).toBe("Title issue");
+    expect(
+      container.querySelector(".feedback-status")?.textContent,
+    ).toContain("Last edited");
+  });
+
+  it("seeds the panel from existing storage on render", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        entries: {
+          "swedish-pancakes": {
+            tag: "Ratio issue",
+            notes: "milk too high",
+            updatedAt: "2026-05-04T12:00:00.000Z",
+          },
+        },
+      }),
+    );
+    renderDetail(
+      container,
+      aRecipe(),
+      initialDetailState(),
+      noopCallbacks({ adminMode: true }),
+    );
+    expect(
+      container.querySelector<HTMLSelectElement>(".feedback-tag")?.value,
+    ).toBe("Ratio issue");
+    expect(
+      container.querySelector<HTMLTextAreaElement>(".feedback-notes")?.value,
+    ).toBe("milk too high");
+    expect(
+      container.querySelector(".feedback-status")?.textContent,
+    ).toContain("Last edited");
   });
 });

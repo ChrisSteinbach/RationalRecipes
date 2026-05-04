@@ -278,6 +278,67 @@ describe("renderCatalog — callbacks fire", () => {
   });
 });
 
+describe("renderCatalog — admin mode markers", () => {
+  it("does not render feedback marker when admin mode is off", () => {
+    const recipes = [aRecipe({ id: "a" })];
+    renderCatalog(
+      container,
+      aCatalog(recipes),
+      recipes,
+      initialCatalogState(),
+      noopCallbacks(),
+      { adminMode: false, recipesWithFeedback: new Set(["a"]) },
+    );
+    expect(container.querySelector(".recipe-card-feedback-marker")).toBeNull();
+  });
+
+  it("renders marker on cards whose id is in the feedback set", () => {
+    const recipes = [
+      aRecipe({ id: "a", title: "Alpha" }),
+      aRecipe({ id: "b", title: "Beta" }),
+    ];
+    renderCatalog(
+      container,
+      aCatalog(recipes),
+      recipes,
+      initialCatalogState(),
+      noopCallbacks(),
+      { adminMode: true, recipesWithFeedback: new Set(["a"]) },
+    );
+    const cards = container.querySelectorAll(".recipe-card");
+    expect(cards[0].querySelector(".recipe-card-feedback-marker")).not.toBeNull();
+    expect(cards[1].querySelector(".recipe-card-feedback-marker")).toBeNull();
+  });
+
+  it("renders an 'Admin feedback' link in the toolbar in admin mode", () => {
+    const onOpenAdmin = vi.fn();
+    renderCatalog(
+      container,
+      aCatalog([]),
+      [],
+      initialCatalogState(),
+      noopCallbacks({ onOpenAdmin }),
+      { adminMode: true },
+    );
+    const link = container.querySelector<HTMLButtonElement>(".catalog-admin-link");
+    expect(link).not.toBeNull();
+    link!.click();
+    expect(onOpenAdmin).toHaveBeenCalledOnce();
+  });
+
+  it("hides the admin link when adminMode is off", () => {
+    renderCatalog(
+      container,
+      aCatalog([]),
+      [],
+      initialCatalogState(),
+      noopCallbacks({ onOpenAdmin: () => {} }),
+      { adminMode: false },
+    );
+    expect(container.querySelector(".catalog-admin-link")).toBeNull();
+  });
+});
+
 describe("renderCatalog — release badge", () => {
   it("renders nothing when catalog has no metadata", () => {
     renderCatalog(container, aCatalog([]), [], initialCatalogState(), noopCallbacks());

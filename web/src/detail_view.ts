@@ -3,6 +3,13 @@
 // Stateful weight input — the scaled list re-renders on every input.
 // Pure DOM, no framework.
 
+import {
+  FEEDBACK_TAGS,
+  type FeedbackTag,
+  formatLastEdited,
+  getEntry,
+  saveEntry,
+} from "./admin_feedback.ts";
 import { type CuratedRecipe, toRatio } from "./catalog.ts";
 import { formatRatio, formatRecipe } from "./format.ts";
 
@@ -33,6 +40,9 @@ export type SourcesLoader = (
 export interface DetailViewCallbacks {
   onBack(): void;
   loadSources?: SourcesLoader;
+  /** When true, the detail view renders the admin-only feedback panel
+   *  below the source-recipes section. */
+  adminMode?: boolean;
 }
 
 export interface DetailViewState {
@@ -66,6 +76,9 @@ export function renderDetail(
   }
   if (recipe.sample_size > 0) {
     container.appendChild(renderSourceRecipes(recipe, callbacks));
+  }
+  if (callbacks.adminMode) {
+    container.appendChild(renderFeedbackPanel(recipe));
   }
 }
 
@@ -379,4 +392,71 @@ function formatQuantity(q: number): string {
   // one-line display compact.
   const rounded = Math.round(q * 1000) / 1000;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toString();
+}
+
+/** Admin-only free-text feedback panel. Auto-saves on blur for both
+ *  the tag dropdown and the notes textarea — no explicit save button.
+ *  See `admin_feedback.ts` for the storage model. */
+function renderFeedbackPanel(recipe: CuratedRecipe): HTMLElement {
+  const section = document.createElement("section");
+  section.className = "detail-feedback";
+
+  const h = document.createElement("h2");
+  h.textContent = "Feedback (admin)";
+  section.appendChild(h);
+
+  const existing = getEntry(recipe.id);
+
+  const tagLabel = document.createElement("label");
+  tagLabel.className = "feedback-field";
+  const tagText = document.createElement("span");
+  tagText.textContent = "Tag";
+  const tagSelect = document.createElement("select");
+  tagSelect.className = "feedback-tag";
+  for (const tag of FEEDBACK_TAGS) {
+    const opt = document.createElement("option");
+    opt.value = tag;
+    opt.textContent = tag;
+    tagSelect.appendChild(opt);
+  }
+  tagSelect.value = existing?.tag ?? "Other";
+  tagLabel.append(tagText, tagSelect);
+  section.appendChild(tagLabel);
+
+  const notesLabel = document.createElement("label");
+  notesLabel.className = "feedback-field";
+  const notesText = document.createElement("span");
+  notesText.textContent = "Notes";
+  const notes = document.createElement("textarea");
+  notes.className = "feedback-notes";
+  notes.rows = 4;
+  notes.placeholder = "What's wrong / right with this recipe?";
+  notes.value = existing?.notes ?? "";
+  notesLabel.append(notesText, notes);
+  section.appendChild(notesLabel);
+
+  const status = document.createElement("p");
+  status.className = "feedback-status";
+  const updateStatus = (iso: string | null): void => {
+    status.textContent = iso
+      ? `Last edited ${formatLastEdited(iso)}`
+      : "No feedback saved yet.";
+  };
+  updateStatus(existing?.updatedAt ?? null);
+  section.appendChild(status);
+
+  const persist = (): void => {
+    const saved = saveEntry({
+      variantId: recipe.id,
+      tag: tagSelect.value as FeedbackTag,
+      notes: notes.value,
+    });
+    updateStatus(saved?.updatedAt ?? null);
+  };
+
+  tagSelect.addEventListener("blur", persist);
+  tagSelect.addEventListener("change", persist);
+  notes.addEventListener("blur", persist);
+
+  return section;
 }

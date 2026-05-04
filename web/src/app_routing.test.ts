@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type Route,
+  detectAdminMode,
   findRecipe,
   inMemoryFilter,
   parseRoute,
@@ -67,6 +68,10 @@ describe("parseRoute", () => {
     });
   });
 
+  it("parses #/admin into the admin route", () => {
+    expect(parseRoute("#/admin")).toEqual({ kind: "admin" });
+  });
+
   it("falls back to catalog for unknown hash shapes", () => {
     expect(parseRoute("#/garbage/stuff")).toEqual({ kind: "catalog" });
   });
@@ -83,6 +88,10 @@ describe("routeToHash", () => {
     );
   });
 
+  it("renders admin as #/admin", () => {
+    expect(routeToHash({ kind: "admin" })).toBe("#/admin");
+  });
+
   it("round-trips with parseRoute for catalog", () => {
     const route: Route = { kind: "catalog" };
     expect(parseRoute(routeToHash(route))).toEqual(route);
@@ -91,6 +100,55 @@ describe("routeToHash", () => {
   it("round-trips with parseRoute for detail (incl. unsafe chars)", () => {
     const route: Route = { kind: "detail", recipeId: "Pâte à crêpes" };
     expect(parseRoute(routeToHash(route))).toEqual(route);
+  });
+
+  it("round-trips with parseRoute for admin", () => {
+    const route: Route = { kind: "admin" };
+    expect(parseRoute(routeToHash(route))).toEqual(route);
+  });
+});
+
+describe("detectAdminMode", () => {
+  function memoryStorage(): Storage {
+    const map = new Map<string, string>();
+    return {
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => {
+        map.set(k, v);
+      },
+      removeItem: (k) => {
+        map.delete(k);
+      },
+      clear: () => map.clear(),
+      key: (i) => Array.from(map.keys())[i] ?? null,
+      get length() {
+        return map.size;
+      },
+    };
+  }
+
+  it("returns false with no param and empty storage", () => {
+    expect(detectAdminMode("", memoryStorage())).toBe(false);
+  });
+
+  it("flips on with ?admin=1 and persists in storage", () => {
+    const storage = memoryStorage();
+    expect(detectAdminMode("?admin=1", storage)).toBe(true);
+    expect(storage.getItem("rr-admin-mode")).toBe("1");
+  });
+
+  it("stays on for subsequent calls with no param once stored", () => {
+    const storage = memoryStorage();
+    detectAdminMode("?admin=1", storage);
+    expect(detectAdminMode("", storage)).toBe(true);
+  });
+
+  it("ignores admin=0 (only =1 unlocks)", () => {
+    expect(detectAdminMode("?admin=0", memoryStorage())).toBe(false);
+  });
+
+  it("ignores other params", () => {
+    expect(detectAdminMode("?foo=bar", memoryStorage())).toBe(false);
   });
 });
 
