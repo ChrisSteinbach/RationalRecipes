@@ -191,6 +191,43 @@ class TestExport:
         catalog = json.loads(out_path.read_text(encoding="utf-8"))
         assert catalog == {"version": 1, "recipes": []}
 
+    def test_sibling_variants_get_distinct_ids(self, tmp_path: Path) -> None:
+        # Regression: prior to the y43 fix the exporter wrote
+        # `id = normalized_title`, which collides across siblings in the
+        # same L1 group (e.g. all "pancakes" variants share that title).
+        # The PWA's findRecipe(id) returns the first match, so every card
+        # in the L1 group navigated to the same detail page. Each emitted
+        # recipe must carry its unique variant_id.
+        db_path = tmp_path / "recipes.db"
+        out_path = tmp_path / "catalog.json"
+        db = CatalogDB.open(db_path)
+        try:
+            _seed_variant(
+                db,
+                variant_id="vid-buttermilk",
+                normalized_title="pancakes",
+                display_title="Buttermilk Pancakes",
+                category="breakfast",
+                n_recipes=200,
+            )
+            _seed_variant(
+                db,
+                variant_id="vid-shortening",
+                normalized_title="pancakes",
+                display_title="Shortening Pancakes",
+                category="breakfast",
+                n_recipes=150,
+            )
+        finally:
+            db.close()
+
+        n = export(db_path, out_path, min_recipes=100)
+        assert n == 2
+        catalog = json.loads(out_path.read_text(encoding="utf-8"))
+        ids = [r["id"] for r in catalog["recipes"]]
+        assert len(ids) == len(set(ids)), f"duplicate ids in export: {ids}"
+        assert set(ids) == {"vid-buttermilk", "vid-shortening"}
+
     def test_min_recipes_override_picks_up_smoke_data(
         self, tmp_path: Path
     ) -> None:
@@ -275,7 +312,7 @@ class TestExport:
 
         catalog = json.loads(out_path.read_text(encoding="utf-8"))
         recipe = catalog["recipes"][0]
-        assert recipe["id"] == "swedish-pancakes"
+        assert recipe["id"] == "vid"  # variant_id, not normalized_title
         assert recipe["title"] == "Swedish Pancakes"
         assert recipe["category"] == "crepes"
         assert recipe["description"] == "Thin Scandinavian pancakes."

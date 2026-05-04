@@ -73,7 +73,11 @@ def _variant_to_recipe(
         base_ingredient = stats[0].canonical_name
 
     recipe: dict[str, Any] = {
-        "id": variant.normalized_title,
+        # variant_id (sha1 of normalized title + ingredient set) is the
+        # unique per-variant key. normalized_title is the L1 group label
+        # and is shared across siblings — using it here would collide all
+        # variants of e.g. "pancakes" onto a single detail page.
+        "id": variant.variant_id,
         "title": variant.display_title or variant.normalized_title,
         "category": variant.category or "uncategorized",
         "base_ingredient": base_ingredient or "",
