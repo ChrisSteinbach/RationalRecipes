@@ -37,7 +37,6 @@ class TestCategorize:
             ("cornbread", "bread"),
             ("hush puppies", "bread"),
             ("pizza dough", "bread"),
-            ("pie crust", "bread"),
             # Desserts
             ("chocolate chip cookies", "dessert"),
             ("oatmeal cookies", "dessert"),
@@ -242,4 +241,34 @@ class TestCategorize:
         ],
     )
     def test_taco_dip_overrides_main(self, title: str, expected: str) -> None:
+        assert categorize(title) == expected, f"{title!r} → {categorize(title)!r}"
+
+    @pytest.mark.parametrize(
+        ("title", "expected"),
+        [
+            # Pie crust is pastry, not bread — closest fit in our category
+            # set is dessert (we lack a 'pastry' label). Real corpus
+            # families: 'butter pie crust' (n=90), 'milk pie crust' (n=21).
+            # See RationalRecipes-xpv.
+            ("pie crust", "dessert"),
+            ("butter pie crust", "dessert"),
+            ("milk pie crust", "dessert"),
+            ("pie crusts", "dessert"),
+            # Other shells/doughs still route to bread.
+            ("pizza crust", "bread"),
+            ("pizza dough", "bread"),
+            ("graham cracker crust", "bread"),
+            ("tart shell", "bread"),
+            # Regression: existing pie variants and bread variants are
+            # unaffected.
+            ("pumpkin pie", "dessert"),
+            ("apple pie", "dessert"),
+            ("sourdough bread", "bread"),
+            ("banana bread", "bread"),
+            ("chicken pot pie", "main"),
+        ],
+    )
+    def test_pie_crust_routes_to_dessert(
+        self, title: str, expected: str
+    ) -> None:
         assert categorize(title) == expected, f"{title!r} → {categorize(title)!r}"

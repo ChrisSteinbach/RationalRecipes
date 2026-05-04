@@ -60,14 +60,15 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "candy pizza",
         ),
     ),
-    # Pizza/pie crusts and doughs are bread, not the parent main dish.
+    # Pizza doughs and tart/graham shells are bread, not the parent main
+    # dish. (Pie crusts route to dessert via the override below — bare
+    # crust is closer to pastry than to bread; we lack a pastry category
+    # so dessert is the closest fit per RationalRecipes-xpv.)
     (
         "bread",
         (
             "pizza dough",
             "pizza crust",
-            "pie crust",
-            "pie crusts",
             "tart shell",
             "tart shells",
             "pastry crust",
@@ -105,7 +106,8 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # by the side/dessert catch-all. "Punch bowl cake" is a layered
     # no-bake dessert assembled in a punch bowl — must beat beverage's
     # "punch". "Peanut butter pie/fudge/cookies" must beat condiment's
-    # "peanut butter" (the spread).
+    # "peanut butter" (the spread). "Pie crust" routes here (closest fit
+    # to pastry; we lack a pastry category — see RationalRecipes-xpv).
     (
         "dessert",
         (
@@ -135,6 +137,8 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "peanut butter fudge",
             "peanut butter cookies",
             "peanut butter cookie",
+            "pie crust",
+            "pie crusts",
         ),
     ),
     # Savory dishes whose surface tokens would otherwise route them to
@@ -643,7 +647,6 @@ _RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "dumplings",
             "pizza dough",
             "pizza crust",
-            "pie crust",
             "crust",
             "sourdough starter",
             "yeast",
