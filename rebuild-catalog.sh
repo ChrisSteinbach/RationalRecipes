@@ -11,6 +11,7 @@ set -euo pipefail
 
 DB="${OUTPUT_DB:-output/catalog/recipes.db}"
 JSON_OUT="${CATALOG_JSON:-output/catalog/catalog.json}"
+SOURCES_DIR="${CATALOG_SOURCES_DIR:-output/catalog/sources}"
 SMOKE=false
 if [[ "${1:-}" == "--smoke" ]]; then
     SMOKE=true
@@ -69,7 +70,8 @@ echo "=== Export catalog.json (min_recipes=$EXPORT_MIN_RECIPES) ==="
 python3 scripts/export_catalog_json.py \
     --db "$DB" \
     --output "$JSON_OUT" \
-    --min-recipes "$EXPORT_MIN_RECIPES"
+    --min-recipes "$EXPORT_MIN_RECIPES" \
+    --sources-dir "$SOURCES_DIR"
 
 echo "=== Sync to PWA ==="
 node web/scripts/sync-catalog.mjs

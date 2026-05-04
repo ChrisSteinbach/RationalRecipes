@@ -6,8 +6,33 @@
 import { type CuratedRecipe, toRatio } from "./catalog.ts";
 import { formatRatio, formatRecipe } from "./format.ts";
 
+/** One source recipe's parsed ingredient list, as shipped in
+ *  `<variant_id>.json` sidecars (bead zh6). */
+export interface SourceIngredient {
+  name: string;
+  quantity?: number | null;
+  unit?: string | null;
+}
+
+export interface SourceRecipe {
+  ingredients: SourceIngredient[];
+}
+
+export interface SourceRecipesPayload {
+  variant_id: string;
+  source_recipes: SourceRecipe[];
+}
+
+/** Loader for the per-variant source-recipes sidecar JSON. Tests
+ *  inject a stub; production wires `defaultSourcesLoader` which fetches
+ *  `${BASE_URL}sources/<id>.json`. */
+export type SourcesLoader = (
+  variantId: string,
+) => Promise<SourceRecipesPayload>;
+
 export interface DetailViewCallbacks {
   onBack(): void;
+  loadSources?: SourcesLoader;
 }
 
 export interface DetailViewState {
@@ -39,7 +64,23 @@ export function renderDetail(
   if (recipe.sources && recipe.sources.length > 0) {
     container.appendChild(renderSources(recipe.sources));
   }
+  if (recipe.sample_size > 0) {
+    container.appendChild(renderSourceRecipes(recipe, callbacks));
+  }
 }
+
+/** Default loader: fetch `${BASE_URL}sources/<variantId>.json` and
+ *  parse as JSON. Network errors propagate via the returned promise. */
+export const defaultSourcesLoader: SourcesLoader = async (variantId) => {
+  const url = `${import.meta.env.BASE_URL}sources/${encodeURIComponent(variantId)}.json`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(
+      `Failed to fetch ${url}: ${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as SourceRecipesPayload;
+};
 
 function renderHeader(
   recipe: CuratedRecipe,
@@ -229,4 +270,113 @@ function renderSources(
   }
   section.appendChild(ul);
   return section;
+}
+
+/** Lazy-loaded 'Source recipes' section (bead zh6).
+ *
+ *  Variants can have hundreds of sources, so the sidecar JSON is only
+ *  fetched once the user expands the section. The element renders as a
+ *  native ``<details>`` so collapse state is browser-managed and
+ *  keyboard-accessible. State machine:
+ *
+ *    closed (initial) ──open──▶ loading ──ok──▶ loaded
+ *                                       └─err─▶ error
+ *
+ *  Re-collapsing keeps the loaded content; re-opening doesn't refetch.
+ */
+function renderSourceRecipes(
+  recipe: CuratedRecipe,
+  callbacks: DetailViewCallbacks,
+): HTMLElement {
+  const details = document.createElement("details");
+  details.className = "detail-source-recipes";
+
+  const summary = document.createElement("summary");
+  summary.className = "detail-source-recipes-summary";
+  summary.textContent = `Source recipes (${recipe.sample_size})`;
+  details.appendChild(summary);
+
+  const content = document.createElement("div");
+  content.className = "source-recipes-content";
+  details.appendChild(content);
+
+  const loader = callbacks.loadSources ?? defaultSourcesLoader;
+  let loadStarted = false;
+  details.addEventListener("toggle", () => {
+    if (!details.open || loadStarted) return;
+    loadStarted = true;
+
+    content.replaceChildren();
+    const placeholder = document.createElement("p");
+    placeholder.className = "source-recipes-loading";
+    placeholder.textContent = "Loading source recipes…";
+    content.appendChild(placeholder);
+
+    loader(recipe.id).then(
+      (payload) => {
+        content.replaceChildren(renderSourceRecipesList(payload.source_recipes));
+      },
+      (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        content.replaceChildren(renderSourceRecipesError(msg));
+      },
+    );
+  });
+
+  return details;
+}
+
+function renderSourceRecipesList(sources: SourceRecipe[]): HTMLElement {
+  if (sources.length === 0) {
+    const p = document.createElement("p");
+    p.className = "source-recipes-empty";
+    p.textContent = "No source recipes available.";
+    return p;
+  }
+  const ol = document.createElement("ol");
+  ol.className = "source-recipes-list";
+  sources.forEach((source, index) => {
+    const li = document.createElement("li");
+    li.className = "source-recipe";
+
+    const label = document.createElement("span");
+    label.className = "source-recipe-label";
+    label.textContent = `#${index + 1}`;
+    li.appendChild(label);
+
+    const list = document.createElement("span");
+    list.className = "source-recipe-ingredients";
+    list.textContent = source.ingredients.length === 0
+      ? "(no parsed ingredients)"
+      : source.ingredients.map(formatSourceIngredient).join(", ");
+    li.appendChild(list);
+
+    ol.appendChild(li);
+  });
+  return ol;
+}
+
+function renderSourceRecipesError(message: string): HTMLElement {
+  const p = document.createElement("p");
+  p.className = "source-recipes-error";
+  p.textContent = `Couldn't load source recipes: ${message}`;
+  return p;
+}
+
+function formatSourceIngredient(ing: SourceIngredient): string {
+  const parts: string[] = [];
+  if (ing.quantity != null && Number.isFinite(ing.quantity)) {
+    parts.push(formatQuantity(ing.quantity));
+  }
+  if (ing.unit) parts.push(ing.unit);
+  if (parts.length === 0) return ing.name;
+  return `${ing.name} (${parts.join(" ")})`;
+}
+
+function formatQuantity(q: number): string {
+  // Trim trailing zeroes / unnecessary decimal point for readability —
+  // 2 → "2", 0.5 → "0.5", 1.50 → "1.5". Cap at 3 decimals to keep the
+  // one-line display compact.
+  const rounded = Math.round(q * 1000) / 1000;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toString();
 }

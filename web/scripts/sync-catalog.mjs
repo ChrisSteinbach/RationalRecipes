@@ -9,7 +9,14 @@
 //
 // `curated_recipes.json` still ships as a small dev/seed asset so
 // designers can iterate on the UI without rebuilding the catalog.
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -45,3 +52,28 @@ function copy(srcName, destName, options = {}) {
 
 copy("catalog.json", "catalog.json");
 copy("curated_recipes.json", "curated_recipes.json", { optional: true });
+mirrorSourcesDir();
+
+// Per-variant sidecar JSON files for the detail view's 'Source recipes'
+// section (bead zh6). The catalog manifest itself doesn't carry the
+// per-source ingredient lists — they live in <variant_id>.json files
+// and are lazy-fetched on user expand. We mirror the whole directory
+// rather than copying file-by-file so removed variants don't linger.
+function mirrorSourcesDir() {
+  const srcDir = join(repoRoot, "output", "catalog", "sources");
+  const dstDir = join(destDir, "sources");
+  if (!existsSync(srcDir) || !statSync(srcDir).isDirectory()) {
+    console.warn(`Sources sidecar dir missing (${srcDir}) (skipping)`);
+    return;
+  }
+  if (existsSync(dstDir)) rmSync(dstDir, { recursive: true, force: true });
+  mkdirSync(dstDir, { recursive: true });
+  const entries = readdirSync(srcDir);
+  let copied = 0;
+  for (const name of entries) {
+    if (!name.endsWith(".json")) continue;
+    copyFileSync(join(srcDir, name), join(dstDir, name));
+    copied += 1;
+  }
+  console.log(`Mirrored ${copied} source sidecar(s) → ${dstDir}`);
+}

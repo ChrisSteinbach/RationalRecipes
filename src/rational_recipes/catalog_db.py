@@ -990,6 +990,52 @@ class CatalogDB:
             for r in rows
         ]
 
+    def get_variant_source_ingredients(
+        self, variant_id: str
+    ) -> list[tuple[str, list[ParsedIngredientRow]]]:
+        """Per-source parsed-ingredient lists for a variant (bead zh6).
+
+        Returns a list of ``(recipe_id, ingredients)`` tuples — one entry
+        per row in ``variant_members`` for ``variant_id``, in the same
+        order as ``get_variant_members`` (best-outlier-score first, then
+        recipe_id ascending). Each ``ingredients`` list is ordered by
+        ``canonical_name``. Source recipes with zero ``parsed_ingredients``
+        rows still appear with an empty list rather than being silently
+        dropped — the position in the list is the user-facing "#N" index
+        and must stay stable.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT m.recipe_id, p.canonical_name, p.quantity, p.unit
+            FROM variant_members m
+            LEFT JOIN parsed_ingredients p ON p.recipe_id = m.recipe_id
+            WHERE m.variant_id = ?
+            ORDER BY m.outlier_score IS NULL, m.outlier_score ASC,
+                     m.recipe_id ASC, p.canonical_name ASC
+            """,
+            (variant_id,),
+        ).fetchall()
+        out: list[tuple[str, list[ParsedIngredientRow]]] = []
+        last_recipe_id: str | None = None
+        current: list[ParsedIngredientRow] = []
+        for recipe_id, canonical_name, quantity, unit in rows:
+            if recipe_id != last_recipe_id:
+                if last_recipe_id is not None:
+                    out.append((last_recipe_id, current))
+                current = []
+                last_recipe_id = recipe_id
+            if canonical_name is not None:
+                current.append(
+                    ParsedIngredientRow(
+                        canonical_name=canonical_name,
+                        quantity=quantity,
+                        unit=unit,
+                    )
+                )
+        if last_recipe_id is not None:
+            out.append((last_recipe_id, current))
+        return out
+
     def get_variant_sources(self, variant_id: str) -> list[VariantSourceRow]:
         rows = self._conn.execute(
             """

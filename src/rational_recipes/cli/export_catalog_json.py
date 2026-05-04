@@ -93,24 +93,67 @@ def _variant_to_recipe(
     return recipe
 
 
+def _source_recipes_payload(
+    db: CatalogDB, variant_id: str
+) -> dict[str, Any]:
+    """Build the per-variant sidecar payload for the PWA detail view.
+
+    Schema (bead zh6):
+      ``{variant_id, source_recipes: [{ingredients: [{name, quantity?, unit?}]}]}``
+
+    Source titles + URLs are dropped on purpose — they're noise in the
+    corpus (430/445 'Pecan Pumpkin Bread' members are titled just
+    'Pumpkin Bread'). The ingredient list is the only useful artefact.
+    """
+    sources = db.get_variant_source_ingredients(variant_id)
+    out_sources: list[dict[str, Any]] = []
+    for _, ingredients in sources:
+        ing_list: list[dict[str, Any]] = []
+        for ing in ingredients:
+            entry: dict[str, Any] = {"name": ing.canonical_name}
+            if ing.quantity is not None:
+                entry["quantity"] = ing.quantity
+            if ing.unit is not None and ing.unit != "":
+                entry["unit"] = ing.unit
+            ing_list.append(entry)
+        out_sources.append({"ingredients": ing_list})
+    return {"variant_id": variant_id, "source_recipes": out_sources}
+
+
 def export(
     db_path: Path,
     out_path: Path,
     *,
     min_recipes: int = 100,
     indent: int | None = None,
+    sources_dir: Path | None = None,
 ) -> int:
     """Read variants from ``db_path`` and write the JSON manifest.
 
     Returns the number of variants written. An empty result is fine —
     the smoke path expects to potentially produce zero variants when
     its filter is narrow.
+
+    If ``sources_dir`` is given, also write a ``<variant_id>.json``
+    sidecar per shipped variant containing the parsed ingredient list of
+    every source recipe in ``variant_members``. The PWA detail view
+    lazy-fetches these on user expand (bead zh6) so the catalog manifest
+    itself stays small.
     """
     db = CatalogDB.open(db_path)
     try:
         filters = ListFilters(min_sample_size=min_recipes)
         variants = db.list_variants(filters)
         recipes = [_variant_to_recipe(db, v) for v in variants]
+        if sources_dir is not None:
+            sources_dir.mkdir(parents=True, exist_ok=True)
+            for variant in variants:
+                payload = _source_recipes_payload(db, variant.variant_id)
+                (sources_dir / f"{variant.variant_id}.json").write_text(
+                    json.dumps(payload, indent=indent, ensure_ascii=False)
+                    + "\n",
+                    encoding="utf-8",
+                )
     finally:
         db.close()
 
@@ -152,6 +195,16 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Pretty-print JSON with this indent. Default: compact (no indent).",
     )
+    parser.add_argument(
+        "--sources-dir",
+        type=Path,
+        default=None,
+        help=(
+            "If set, also write per-variant sidecar JSON files "
+            "(<variant_id>.json) into this directory for the PWA's "
+            "lazy-loaded 'Source recipes' section (bead zh6)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if not args.db.exists():
@@ -163,8 +216,11 @@ def main(argv: list[str] | None = None) -> int:
         args.output,
         min_recipes=args.min_recipes,
         indent=args.indent,
+        sources_dir=args.sources_dir,
     )
     print(f"Wrote {n} variant(s) (min_recipes={args.min_recipes}) → {args.output}")
+    if args.sources_dir is not None:
+        print(f"Wrote {n} source sidecar(s) → {args.sources_dir}")
     return 0
 
 

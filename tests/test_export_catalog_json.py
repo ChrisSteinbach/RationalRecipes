@@ -373,3 +373,321 @@ class TestMain:
             str(tmp_path / "out.json"),
         ])
         assert rc == 1
+
+
+def _seed_recipe_with_parsed(
+    db: CatalogDB,
+    *,
+    recipe_id: str,
+    parsed: list[tuple[str, float | None, str | None]],
+    corpus: str = "recipenlg",
+) -> None:
+    conn = db.connection
+    with conn:
+        conn.execute(
+            "INSERT INTO recipes (recipe_id, corpus) VALUES (?, ?)",
+            (recipe_id, corpus),
+        )
+        for canonical_name, quantity, unit in parsed:
+            conn.execute(
+                """
+                INSERT INTO parsed_ingredients (
+                  recipe_id, canonical_name, quantity, unit
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (recipe_id, canonical_name, quantity, unit),
+            )
+
+
+def _attach_member(
+    db: CatalogDB,
+    *,
+    variant_id: str,
+    recipe_id: str,
+    outlier_score: float | None = None,
+) -> None:
+    conn = db.connection
+    with conn:
+        conn.execute(
+            "INSERT INTO variant_members (variant_id, recipe_id, outlier_score)"
+            " VALUES (?, ?, ?)",
+            (variant_id, recipe_id, outlier_score),
+        )
+
+
+class TestExportSources:
+    """Per-variant source-ingredient sidecars (bead zh6)."""
+
+    def test_writes_one_file_per_shipped_variant(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "recipes.db"
+        out_path = tmp_path / "catalog.json"
+        sources_dir = tmp_path / "sources"
+        db = CatalogDB.open(db_path)
+        try:
+            _seed_variant(
+                db,
+                variant_id="big",
+                normalized_title="big",
+                display_title="Big Bread",
+                category="bread",
+                n_recipes=200,
+            )
+            _seed_recipe_with_parsed(
+                db,
+                recipe_id="r1",
+                parsed=[("flour", 500.0, "g"), ("water", 1.0, "cup")],
+            )
+            _seed_recipe_with_parsed(
+                db,
+                recipe_id="r2",
+                parsed=[("flour", 250.0, "g")],
+            )
+            _attach_member(
+                db, variant_id="big", recipe_id="r1", outlier_score=0.1
+            )
+            _attach_member(
+                db, variant_id="big", recipe_id="r2", outlier_score=0.5
+            )
+            # Below-threshold variant — should not get a sidecar.
+            _seed_variant(
+                db,
+                variant_id="small",
+                normalized_title="small",
+                display_title="Small Bread",
+                category="bread",
+                n_recipes=50,
+            )
+            _seed_recipe_with_parsed(
+                db, recipe_id="r3", parsed=[("flour", 100.0, "g")]
+            )
+            _attach_member(db, variant_id="small", recipe_id="r3")
+        finally:
+            db.close()
+
+        n = export(
+            db_path, out_path, min_recipes=100, sources_dir=sources_dir
+        )
+        assert n == 1
+        assert (sources_dir / "big.json").exists()
+        assert not (sources_dir / "small.json").exists()
+
+        payload = json.loads((sources_dir / "big.json").read_text())
+        assert payload["variant_id"] == "big"
+        assert len(payload["source_recipes"]) == 2
+        # Best outlier score (0.1) sorts first, so r1 → #1, r2 → #2.
+        first, second = payload["source_recipes"]
+        assert {ing["name"] for ing in first["ingredients"]} == {"flour", "water"}
+        assert {ing["name"] for ing in second["ingredients"]} == {"flour"}
+
+    def test_omits_sidecars_for_dropped_variants(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "recipes.db"
+        out_path = tmp_path / "catalog.json"
+        sources_dir = tmp_path / "sources"
+        db = CatalogDB.open(db_path)
+        try:
+            _seed_variant(
+                db,
+                variant_id="kept",
+                normalized_title="kept",
+                display_title="Kept",
+                category="bread",
+                n_recipes=200,
+            )
+            _seed_variant(
+                db,
+                variant_id="dropped",
+                normalized_title="dropped",
+                display_title="Dropped",
+                category="bread",
+                n_recipes=300,
+                review_status="drop",
+            )
+            _seed_recipe_with_parsed(
+                db, recipe_id="r1", parsed=[("flour", 100.0, "g")]
+            )
+            _attach_member(db, variant_id="kept", recipe_id="r1")
+            _seed_recipe_with_parsed(
+                db, recipe_id="r2", parsed=[("flour", 200.0, "g")]
+            )
+            _attach_member(db, variant_id="dropped", recipe_id="r2")
+        finally:
+            db.close()
+
+        export(db_path, out_path, min_recipes=100, sources_dir=sources_dir)
+        assert (sources_dir / "kept.json").exists()
+        assert not (sources_dir / "dropped.json").exists()
+
+    def test_sidecar_includes_quantity_and_unit_when_present(
+        self, tmp_path: Path
+    ) -> None:
+        db_path = tmp_path / "recipes.db"
+        out_path = tmp_path / "catalog.json"
+        sources_dir = tmp_path / "sources"
+        db = CatalogDB.open(db_path)
+        try:
+            _seed_variant(
+                db,
+                variant_id="vid",
+                normalized_title="bread",
+                display_title="Bread",
+                category="bread",
+                n_recipes=200,
+            )
+            _seed_recipe_with_parsed(
+                db,
+                recipe_id="r1",
+                parsed=[
+                    ("flour", 500.0, "g"),
+                    ("salt", None, None),  # quantity-less ingredient
+                ],
+            )
+            _attach_member(db, variant_id="vid", recipe_id="r1")
+        finally:
+            db.close()
+
+        export(db_path, out_path, min_recipes=100, sources_dir=sources_dir)
+
+        payload = json.loads((sources_dir / "vid.json").read_text())
+        ings = {i["name"]: i for i in payload["source_recipes"][0]["ingredients"]}
+        assert ings["flour"]["quantity"] == 500.0
+        assert ings["flour"]["unit"] == "g"
+        assert "quantity" not in ings["salt"]
+        assert "unit" not in ings["salt"]
+
+    def test_sidecar_skips_grams(self, tmp_path: Path) -> None:
+        # The bead is explicit: skip grams (the parsed grams column is
+        # mostly NULL — quantity + unit only).
+        db_path = tmp_path / "recipes.db"
+        out_path = tmp_path / "catalog.json"
+        sources_dir = tmp_path / "sources"
+        db = CatalogDB.open(db_path)
+        try:
+            _seed_variant(
+                db,
+                variant_id="vid",
+                normalized_title="bread",
+                display_title="Bread",
+                category="bread",
+                n_recipes=200,
+            )
+            conn = db.connection
+            with conn:
+                conn.execute(
+                    "INSERT INTO recipes (recipe_id, corpus) VALUES (?, ?)",
+                    ("r1", "recipenlg"),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO parsed_ingredients (
+                      recipe_id, canonical_name, quantity, unit, grams
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    ("r1", "flour", 500.0, "g", 500.0),
+                )
+            _attach_member(db, variant_id="vid", recipe_id="r1")
+        finally:
+            db.close()
+
+        export(db_path, out_path, min_recipes=100, sources_dir=sources_dir)
+
+        payload = json.loads((sources_dir / "vid.json").read_text())
+        ing = payload["source_recipes"][0]["ingredients"][0]
+        assert "grams" not in ing
+        assert set(ing.keys()) <= {"name", "quantity", "unit"}
+
+    def test_sidecar_handles_member_without_parsed_rows(
+        self, tmp_path: Path
+    ) -> None:
+        # If parsed_ingredients has no rows for a member, the source still
+        # appears in the list (with empty ingredients) so #N indices stay
+        # stable across the source list.
+        db_path = tmp_path / "recipes.db"
+        out_path = tmp_path / "catalog.json"
+        sources_dir = tmp_path / "sources"
+        db = CatalogDB.open(db_path)
+        try:
+            _seed_variant(
+                db,
+                variant_id="vid",
+                normalized_title="bread",
+                display_title="Bread",
+                category="bread",
+                n_recipes=200,
+            )
+            conn = db.connection
+            with conn:
+                conn.execute(
+                    "INSERT INTO recipes (recipe_id, corpus) VALUES (?, ?)",
+                    ("r-empty", "recipenlg"),
+                )
+            _attach_member(
+                db, variant_id="vid", recipe_id="r-empty", outlier_score=0.1
+            )
+            _seed_recipe_with_parsed(
+                db, recipe_id="r-full", parsed=[("flour", 500.0, "g")]
+            )
+            _attach_member(
+                db, variant_id="vid", recipe_id="r-full", outlier_score=0.2
+            )
+        finally:
+            db.close()
+
+        export(db_path, out_path, min_recipes=100, sources_dir=sources_dir)
+
+        payload = json.loads((sources_dir / "vid.json").read_text())
+        assert len(payload["source_recipes"]) == 2
+        assert payload["source_recipes"][0]["ingredients"] == []
+        assert payload["source_recipes"][1]["ingredients"] == [
+            {"name": "flour", "quantity": 500.0, "unit": "g"},
+        ]
+
+    def test_sidecar_omitted_when_flag_not_passed(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "recipes.db"
+        out_path = tmp_path / "catalog.json"
+        sources_dir = tmp_path / "sources"
+        db = CatalogDB.open(db_path)
+        try:
+            _seed_variant(
+                db,
+                variant_id="vid",
+                normalized_title="bread",
+                display_title="Bread",
+                category="bread",
+                n_recipes=200,
+            )
+        finally:
+            db.close()
+
+        export(db_path, out_path, min_recipes=100)
+        # No sources_dir passed → directory should not be created.
+        assert not sources_dir.exists()
+
+    def test_cli_writes_sources_dir(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "recipes.db"
+        out_path = tmp_path / "catalog.json"
+        sources_dir = tmp_path / "sources"
+        db = CatalogDB.open(db_path)
+        try:
+            _seed_variant(
+                db,
+                variant_id="vid",
+                normalized_title="bread",
+                display_title="Bread",
+                category="bread",
+                n_recipes=200,
+            )
+            _seed_recipe_with_parsed(
+                db, recipe_id="r1", parsed=[("flour", 500.0, "g")]
+            )
+            _attach_member(db, variant_id="vid", recipe_id="r1")
+        finally:
+            db.close()
+
+        rc = main([
+            "--db", str(db_path),
+            "--output", str(out_path),
+            "--min-recipes", "100",
+            "--sources-dir", str(sources_dir),
+        ])
+        assert rc == 0
+        assert (sources_dir / "vid.json").exists()

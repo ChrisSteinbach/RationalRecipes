@@ -4,6 +4,8 @@ import type { CuratedRecipe } from "./catalog.ts";
 import {
   WEIGHT_PRESETS,
   type DetailViewCallbacks,
+  type SourceRecipesPayload,
+  type SourcesLoader,
   initialDetailState,
   renderDetail,
 } from "./detail_view.ts";
@@ -274,5 +276,176 @@ describe("renderDetail — idempotence", () => {
     expect(container.querySelectorAll(".detail-header")).toHaveLength(1);
     expect(container.querySelectorAll(".detail-ratio")).toHaveLength(1);
     expect(container.querySelectorAll(".stats-table")).toHaveLength(1);
+  });
+});
+
+describe("renderDetail — source recipes (lazy)", () => {
+  // Triggering the native <details> open behaviour from a click is
+  // unreliable in jsdom — set `.open = true` directly and dispatch the
+  // toggle event so the section's load handler fires.
+  function expand(details: HTMLDetailsElement): void {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  }
+
+  function aPayload(
+    overrides: Partial<SourceRecipesPayload> = {},
+  ): SourceRecipesPayload {
+    return {
+      variant_id: "swedish-pancakes",
+      source_recipes: [
+        {
+          ingredients: [
+            { name: "flour", quantity: 2, unit: "cups" },
+            { name: "milk", quantity: 1.5, unit: "cups" },
+          ],
+        },
+        {
+          ingredients: [{ name: "egg", quantity: 2 }],
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  it("renders a collapsed details element with the section header", () => {
+    renderDetail(container, aRecipe(), initialDetailState(), noopCallbacks());
+    const details = container.querySelector<HTMLDetailsElement>(
+      ".detail-source-recipes",
+    );
+    expect(details).not.toBeNull();
+    expect(details!.open).toBe(false);
+    expect(
+      details!.querySelector(".detail-source-recipes-summary")?.textContent,
+    ).toBe("Source recipes (200)");
+  });
+
+  it("does not invoke the loader before expand", () => {
+    const loadSources = vi.fn<SourcesLoader>();
+    renderDetail(
+      container,
+      aRecipe(),
+      initialDetailState(),
+      noopCallbacks({ loadSources }),
+    );
+    expect(loadSources).not.toHaveBeenCalled();
+  });
+
+  it("invokes the loader once on first expand and renders the result", async () => {
+    const loadSources = vi.fn<SourcesLoader>().mockResolvedValue(aPayload());
+    renderDetail(
+      container,
+      aRecipe(),
+      initialDetailState(),
+      noopCallbacks({ loadSources }),
+    );
+    const details = container.querySelector<HTMLDetailsElement>(
+      ".detail-source-recipes",
+    )!;
+
+    expand(details);
+    expect(loadSources).toHaveBeenCalledTimes(1);
+    expect(loadSources).toHaveBeenCalledWith("swedish-pancakes");
+
+    // While loading, a placeholder is shown.
+    expect(
+      details.querySelector(".source-recipes-loading")?.textContent,
+    ).toContain("Loading");
+
+    await vi.waitFor(() => {
+      expect(details.querySelector(".source-recipes-list")).not.toBeNull();
+    });
+
+    const items = details.querySelectorAll(".source-recipe");
+    expect(items).toHaveLength(2);
+    expect(items[0].querySelector(".source-recipe-label")?.textContent).toBe("#1");
+    expect(items[1].querySelector(".source-recipe-label")?.textContent).toBe("#2");
+    const firstIngredients = items[0].querySelector(
+      ".source-recipe-ingredients",
+    )?.textContent;
+    expect(firstIngredients).toContain("flour (2 cups)");
+    expect(firstIngredients).toContain("milk (1.5 cups)");
+    // Second source has quantity but no unit.
+    expect(
+      items[1].querySelector(".source-recipe-ingredients")?.textContent,
+    ).toBe("egg (2)");
+  });
+
+  it("does not refetch on a subsequent re-open", async () => {
+    const loadSources = vi.fn<SourcesLoader>().mockResolvedValue(aPayload());
+    renderDetail(
+      container,
+      aRecipe(),
+      initialDetailState(),
+      noopCallbacks({ loadSources }),
+    );
+    const details = container.querySelector<HTMLDetailsElement>(
+      ".detail-source-recipes",
+    )!;
+
+    expand(details);
+    await vi.waitFor(() => {
+      expect(details.querySelector(".source-recipes-list")).not.toBeNull();
+    });
+    // Collapse, re-open.
+    details.open = false;
+    details.dispatchEvent(new Event("toggle"));
+    expand(details);
+
+    expect(loadSources).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders an error message on loader rejection without throwing", async () => {
+    const loadSources = vi
+      .fn<SourcesLoader>()
+      .mockRejectedValue(new Error("404 Not Found"));
+    renderDetail(
+      container,
+      aRecipe(),
+      initialDetailState(),
+      noopCallbacks({ loadSources }),
+    );
+    const details = container.querySelector<HTMLDetailsElement>(
+      ".detail-source-recipes",
+    )!;
+    expand(details);
+
+    await vi.waitFor(() => {
+      expect(details.querySelector(".source-recipes-error")).not.toBeNull();
+    });
+    expect(
+      details.querySelector(".source-recipes-error")?.textContent,
+    ).toContain("404 Not Found");
+    // Loaded section gracefully unmounted the placeholder.
+    expect(details.querySelector(".source-recipes-loading")).toBeNull();
+  });
+
+  it("hides the section when sample_size is 0", () => {
+    renderDetail(
+      container,
+      aRecipe({ sample_size: 0 }),
+      initialDetailState(),
+      noopCallbacks(),
+    );
+    expect(container.querySelector(".detail-source-recipes")).toBeNull();
+  });
+
+  it("renders a fallback message for an empty source list", async () => {
+    const loadSources = vi
+      .fn<SourcesLoader>()
+      .mockResolvedValue({ variant_id: "x", source_recipes: [] });
+    renderDetail(
+      container,
+      aRecipe(),
+      initialDetailState(),
+      noopCallbacks({ loadSources }),
+    );
+    const details = container.querySelector<HTMLDetailsElement>(
+      ".detail-source-recipes",
+    )!;
+    expand(details);
+    await vi.waitFor(() => {
+      expect(details.querySelector(".source-recipes-empty")).not.toBeNull();
+    });
   });
 });
