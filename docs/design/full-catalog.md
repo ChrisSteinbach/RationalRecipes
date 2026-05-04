@@ -49,9 +49,10 @@ catalog size. The branch is not merge-ready.
 - **Substantial catalog.** Hundreds to low-thousands of averaged
   variants, ceiling set by corpus content × threshold, not by how
   many commands the maintainer ran.
-- **SQLite as the backing store** for the full pipeline → PWA path.
-  Same file-based, sql.js-served pattern already used by
-  `ingredients.db`.
+- **SQLite as the pipeline backing store** for extraction, merging,
+  resumability, and review. The PWA reads from a static JSON manifest
+  exported off this DB (vwt.y43, ~75 KB gz at v1 scope) — fetched once
+  on cold start and filtered in memory.
 - **PWA over the whole extraction output.** Every variant the pipeline
   emits with `N ≥ min_variant_size` is browseable, with search and
   filters strong enough to navigate a large set — implemented as SQL
@@ -67,9 +68,11 @@ catalog size. The branch is not merge-ready.
   keeps its `title_query` parameter for fast iteration on one dish
   family; the batch driver just doesn't use it.
 - Live web scraping. Archive-based corpora remain the source.
-- Rebuilding the PWA. The existing catalog / detail views stay; their
-  data source switches from a JSON payload to a `CatalogRepo`
-  backed by sql.js.
+- Rebuilding the PWA. The existing catalog / detail views stay; the
+  data source has shifted from the original `curated_recipes.json`
+  (Phase 4) to a sql.js + recipes.db path (Phase 5 vwt.3/vwt.4) and
+  back to a static `catalog.json` manifest (vwt.y43) — but
+  `CuratedRecipe` shape and the view code remain unchanged.
 - Guaranteeing quality per variant. Statistics (mean, CI, stddev,
   outlier score) let the user judge; the catalog does not promise
   every variant is "good."
@@ -86,10 +89,14 @@ Track 1 — whole-corpus extraction  (vwt.2)
   scripts/scrape_catalog.py
     stream corpora → L1-group → threshold → LLM + L2 + L3 → upsert DB
        │
-Track 2 — PWA over the DB  (vwt.3, vwt.4)
-  web/src/db.ts loads recipes.db alongside ingredients.db
-  catalog_view.ts queries via CatalogRepo
-  filter UI compiles to WHERE clauses
+Track 2 — PWA over the catalog  (vwt.3, vwt.4 → vwt.y43)
+  scripts/export_catalog_json.py emits output/catalog/catalog.json
+  web/scripts/sync-catalog.mjs copies it into web/public/
+  main.ts fetches catalog.json on cold start (loadCatalog)
+  app_routing.ts::inMemoryFilter handles search/category/min-sample
+  (Originally vwt.3/vwt.4 shipped sql.js + recipes.db; vwt.y43
+   retired both — JSON at v1 scope is ~75 KB gz, simpler all the way
+   down.)
 
 Track 1' (diagnostic, not required) — corpus title-frequency survey  (vwt.1)
   scripts/corpus_title_survey.py — informs --l1-min choice
@@ -97,10 +104,13 @@ Track 1' (diagnostic, not required) — corpus title-frequency survey  (vwt.1)
 
 ### Track 0: SQLite backing store (supersedes `ntm`)
 
-The PWA already loads a SQLite DB in the browser via
-`web/src/db.ts` → `ingredients.db`. Adding a `recipes.db` reuses
-the same pattern (WASM build of SQLite via `sql.js`, fetched once,
-opened in-memory). Zero marginal runtime cost.
+The pipeline writes to `output/catalog/recipes.db` and reads from it
+for clustering, dedup, and review. The PWA does **not** load this DB
+directly — see vwt.y43 for the migration that retired sql.js in favor
+of a static JSON manifest exported by
+`scripts/export_catalog_json.py`. SQLite stays the right backing store
+for the producer side; the consumer side gets a smaller, simpler
+artifact.
 
 **Schema** (authoritative location: `src/rational_recipes/catalog_db.py`,
 single source of truth — vwt.6 shipped 2026-04-24, PR #18). The shipped
@@ -259,17 +269,14 @@ CREATE INDEX idx_parsed_lines_text
 - `is_l1_fresh(l1_key, corpus_revisions) -> bool` — returns True
   when the group has a run row matching current corpus fingerprints.
 
-**Reader (TypeScript):** `web/src/db.ts` extended to load
-`recipes.db` in parallel with `ingredients.db`. New `CatalogRepo`
-type in `web/src/catalog.ts` exposes:
-
-- `listVariants(filters): CatalogVariant[]` — compiles
-  `{ minSampleSize?, category?, titleSearch?, orderBy? }` to a single
-  `SELECT ... WHERE ... ORDER BY` over the `variants` table.
-- `getVariant(id): CatalogVariant`
-- `getVariantMembers(id): VariantMember[]` — joined with `recipes`
-  for URL / corpus display.
-- `getIngredientStats(id): IngredientStats[]`
+**Reader (Python):** `scripts/export_catalog_json.py` reads
+`recipes.db` via `CatalogDB.list_variants` / `get_ingredient_stats`
+/ `get_variant_sources`, applies the v1 cut, and writes
+`output/catalog/catalog.json`. The PWA's TypeScript reader is
+`web/src/catalog.ts::loadCatalog`, which `fetch`es that JSON and
+runs it through `validateCatalog`. (Original Phase 5 design routed
+the PWA through a `CatalogRepo` over sql.js; vwt.y43 retired that
+path — see `RationalRecipes-5r3` for the size analysis.)
 
 **Migration of existing data:** a one-shot script reads
 `artifacts/curated_recipes.json` and writes the 4 hand-curated
@@ -399,41 +406,42 @@ rank descending, write `artifacts/corpus_title_survey.json`. Useful
 for picking a sensible `--l1-min` before committing a multi-hour
 LLM run. Never feeds the batch driver — 5B discovers groups itself.
 
-### Track 2: PWA over the DB
+### Track 2: PWA over the catalog (post-vwt.y43)
 
-**Step 1 — load `recipes.db`.** `web/src/db.ts` fetches and opens
-both DBs in parallel. `CatalogRepo` wraps the `recipes.db` handle.
+**Step 1 — load `catalog.json`.** `web/src/catalog.ts::loadCatalog`
+`fetch`es the static manifest under the Vite base URL and runs it
+through `validateCatalog`. One round-trip; ~75 KB gzipped at v1
+scope.
 
-**Step 2 — rewrite `catalog.ts`.** Drop `CuratedRecipeCatalog` JSON
-parsing. The existing `CuratedRecipe` / `CatalogIngredient` types
-stay (the UI components already consume them), but they're hydrated
-from SQL rows via `CatalogRepo.getVariant(id)` rather than a JSON
-payload. Type-compatible swap; existing `catalog_view.ts` and
-`detail_view.ts` mostly unchanged.
+**Step 2 — `CuratedRecipe` shape is unchanged.** The exporter writes
+the same JSON shape the PWA's types declare, so the catalog/list and
+detail views consume it without modification.
 
-**Step 3 — filters compile to SQL.** `catalog_view.ts` gets
-sample-size filter (dropdown: All / ≥3 / ≥10 / ≥30) and sort control.
-Both wire into `CatalogRepo.listVariants({ minSampleSize, orderBy })`
-which emits one `SELECT ... FROM variants WHERE n_recipes >= ? ORDER
-BY ...`. Existing search + category dropdown keep working; they
-become extra SQL predicates.
+**Step 3 — filters run in memory.**
+`web/src/app_routing.ts::inMemoryFilter` handles search /
+category / min-sample / sort over the in-memory recipe array.
+`Array.filter` + `Array.sort` are trivial at v1 scope (hundreds of
+items); revisit if the catalog grows past ~5,000 variants, when
+either client-side indexing or a sql.js return becomes worthwhile
+again.
 
 Optional v2: confidence filter based on CI width of the largest-mass
 ingredient per variant. Skip for now unless UX needs it.
 
-**Step 4 — sync.** `web/scripts/sync-catalog.mjs` copies
-`output/catalog/recipes.db` → `web/public/recipes.db`.
-`artifacts/curated_recipes.json` kept as a `--source=curated` fallback
-for offline dev without a real DB.
+**Step 4 — sync.** `scripts/export_catalog_json.py` reads
+`output/catalog/recipes.db`, applies the v1 filter
+(`n_recipes >= 100 AND review_status != 'drop'`), and writes
+`output/catalog/catalog.json`. Then `web/scripts/sync-catalog.mjs`
+copies that JSON plus the small `curated_recipes.json` seed into
+`web/public/`. No SQLite ships to the browser anymore.
 
-**Catalog size budget.** The full `recipes.db` with ~35k variants is
-~345 MB, but the bulk is the pipeline-only `parsed_ingredient_lines`
-cache (~100 MB) and its indexes (~57 MB). The PWA-facing tables
-(`variants`, `variant_ingredient_stats`, `variant_members`, `recipes`)
-plus indexes total ~80 MB. The shipped DB should strip the
-`parsed_ingredient_lines` table (and potentially `query_runs`) to
-stay within a reasonable PWA cold-start budget. Target: <20 MB shipped
-after stripping pipeline-only tables and running `VACUUM`.
+**Catalog size budget.** At the v1 scope (n_recipes >= 100, ~hundreds
+of variants), the JSON manifest is ~300 KB raw, ~75 KB gzipped — well
+under the original 20 MB sql.js + recipes.db budget. The inflection
+point where sql.js starts paying for itself again is ~5,000 variants
+(JSON gz crosses ~2 MB); revisit then. Until then, an `Array.filter`
+over an in-memory list is the simplest viable filter path. See
+RationalRecipes-5r3 for the data behind the static-JSON decision.
 
 ## Minimum viable variant for shipping
 
@@ -444,9 +452,9 @@ filter tighter at catalog-export or PWA-filter time.
 ## Review integration
 
 **Review is CLI-only.** The PWA is read-only for end users; it
-consumes whatever `recipes.db` ships after the maintainer's review
-pass. There is no in-PWA review mode (scope decision 2026-04-24,
-recorded as the close note on bead `vwt.7`).
+consumes whatever `catalog.json` was exported after the maintainer's
+review pass. There is no in-PWA review mode (scope decision
+2026-04-24, recorded as the close note on bead `vwt.7`).
 
 `scripts/review_variants.py` (existing CLI from beads `eco`/`4lf`)
 gets ported from `manifest.json` + JSON-sidecar to `recipes.db` —
@@ -454,7 +462,8 @@ reads variants from the `variants` table, persists decisions via
 `UPDATE variants SET review_status = ?, review_note = ?,
 reviewed_at = ?`. Tracked in bead `vwt.9`.
 
-Default PWA query filter:
+Default export filter (mirrored at the SQL layer in
+`scripts/export_catalog_json.py`):
 `WHERE review_status IS NULL OR review_status != 'drop'` — variants
 without a decision still ship; only explicit drops are hidden.
 Review is a progressive cleanup, not a gate.
@@ -488,9 +497,10 @@ Review is a progressive cleanup, not a gate.
    unfiltered. The PWA needs either a default `n_recipes` floor
    (e.g. ≥10) or a UI control for it. `ListFilters.min_sample_size`
    exists in `catalog_db.py`; unclear whether the PWA exposes it.
-2. **Shipped DB stripping** — `sync-catalog.mjs` copies `recipes.db`
-   verbatim. It should drop `parsed_ingredient_lines` and `query_runs`
-   (and `VACUUM`) before copying to `web/public/`. Not yet implemented.
+2. **Shipped DB stripping** — moot. After vwt.y43 the PWA consumes a
+   static JSON manifest, not the SQLite file; the export step
+   (`scripts/export_catalog_json.py`) is the strip. Re-evaluate if the
+   PWA scope grows past ~5,000 variants.
 3. **Pass 2 performance at scale** — a full reprocess (after clearing
    `query_runs`) takes ~3 hours over ~38k groups. Profiling needed to
    identify whether the bottleneck is per-line `lookup_cached_parse`
@@ -506,12 +516,17 @@ Review is a progressive cleanup, not a gate.
 - **vwt.2** — Whole-corpus extraction (`scripts/scrape_catalog.py`).
   Writes directly to `recipes.db`. Resumable at L1-group granularity.
 - **vwt.3** — PWA loads `recipes.db` via sql.js; `CatalogRepo`
-  replaces JSON parsing.
-- **vwt.4** — PWA filters as SQL queries.
+  replaces JSON parsing. *(Superseded by vwt.y43 — see below.)*
+- **vwt.4** — PWA filters as SQL queries. *(Superseded by vwt.y43 —
+  filters now run in `inMemoryFilter`.)*
 - **vwt.5** — First real run at scale. Measure catalog size,
   variants-per-L1-group, LLM wallclock, DB misses. Merge gate:
   PWA built from real `recipes.db` shows hundreds+ of variants
   with working filters and plausible ratios.
+- **vwt.y43** — Retire sql.js and ship the v1 catalog as static
+  JSON (`scripts/export_catalog_json.py` + `loadCatalog`). Inflection
+  point for re-introducing sql.js: ~5,000 variants (per
+  RationalRecipes-5r3).
 
 vwt.6 is the critical path. Once it lands, vwt.2 and vwt.3 can
 progress in parallel.
