@@ -8,7 +8,7 @@ preserving every source recipe's exact naming.
 Intentionally narrow. The fold runs at Pass 2 variant aggregation only;
 source-recipe canonicalization keeps per-synonym specificity (e.g.
 ``cheddar`` vs ``cheese``, ``red onion`` vs ``onion``) per the dfm
-commit (e5ed810). New families must be added here only when EITHER:
+commit (e5ed810). New families must be added here only when ONE of:
 
   - one form's whitespace tokens are a strict subset of the other's, AND
     the forms are routinely interchangeable in everyday cooking
@@ -18,7 +18,15 @@ commit (e5ed810). New families must be added here only when EITHER:
     corpora (e.g. ``crisco`` for ``shortening``). Brand-name folds are
     admitted because the brand resolves to a single product family in
     practice; rare specialty SKUs (``butter-flavored crisco``) parse to
-    distinct canonical forms upstream and are not affected.
+    distinct canonical forms upstream and are not affected, OR
+  - one form is an asymmetric substitute for a generic, routinely used
+    interchangeably in casual home-cooking corpora (e.g. ``margarine``
+    for ``butter``). Substitute folds are admitted because the
+    substitute resolves to the generic in casual recipe shapes (hash
+    brown casserole, peanut butter fudge); applications that depend on
+    chemistry (laminated dough, shortbread) are rare in this catalog.
+    The substitute lives in the generic's family (margarine in butter,
+    not vice versa).
 
 Run ``scripts/discover_fold_candidates.py`` against a populated
 ``recipes.db`` to surface new candidates with their cross-variant
@@ -40,6 +48,15 @@ if TYPE_CHECKING:
 # - butter: required to satisfy the bead's acceptance criterion (Basic
 #   Buttermilk Pancakes folds butter + unsalted butter to land at ≤11
 #   distinct ingredients). Surfaced in bead notes for user review.
+#   ``margarine`` (RationalRecipes-oom): asymmetric substitute fold.
+#   Margarine is interchangeable with butter in the casual recipe
+#   shapes that dominate this catalog (hash brown casserole, peanut
+#   butter fudge — Margarine Hash Brown Casserole n=114, Margarine
+#   Peanut Butter Fudge n=128 in PWA admin feedback). Laminated dough
+#   and shortbread, where butter chemistry matters, are rare enough to
+#   accept as a tolerable false positive. Admitted under the substitute
+#   clause above; lives in the ``butter`` family (margarine resolves to
+#   butter, not vice versa).
 # - shortening + crisco (RationalRecipes-0hq): brand-name fold. Crisco
 #   is a vegetable shortening brand and parses standalone in baking
 #   corpora; the two forms co-occur in single variants (Shortening
@@ -51,12 +68,36 @@ if TYPE_CHECKING:
 #   true ``soda water`` use is rare enough to accept as a tolerable
 #   false positive. Strict-subset clause applies (``soda`` ⊂
 #   ``baking soda``).
+# - nuts (RationalRecipes-oom): home recipes use ``nuts`` interchangeably
+#   with specific nut types in the same dish (Pecan Pumpkin Bread n=445
+#   has nuts in 160 source recipes and pecans in 68; Walnut Banana Bread
+#   n=335 has nuts in 77 and walnuts in 45). Folding the named varieties
+#   into the generic merges per-variant aggregated stats without
+#   changing variant_ids (canonical-set hashing happens upstream of this
+#   fold). Peanuts are excluded — they're legumes that behave differently
+#   in baking chemistry. Admitted under the substitute clause.
+# - white sugar (RationalRecipes-oom): when ``sugar`` (unmodified)
+#   co-occurs with ``white sugar`` (and possibly ``brown sugar``) in a
+#   variant, unmodified ``sugar`` is read as ``white sugar`` — the
+#   default interpretation for a casual recipe author. The user opted
+#   for the simple global rule rather than the asymmetric proposal in
+#   the bead (case f5711861f14a White Sugar Butter Peanut Butter Cookies,
+#   case 44089d87261d Soda Peanut Butter Cookies, both itemising all
+#   three forms). The ``white sugar`` family explicitly contains only
+#   {white sugar, sugar}; ``brown sugar`` STAYS SEPARATE (see exclusion
+#   list below — different molasses content, different chemistry).
+#   Strict-subset clause applies (``sugar`` ⊂ ``white sugar``).
 #
 # Forms deliberately *excluded* (substring relationship is real but the
 # ingredients are meaningfully different):
 #   - ``garlic salt`` is a flavored salt, not interchangeable with salt.
 #   - ``peanut butter`` is not butter.
 #   - ``brown sugar`` is not white sugar (different molasses content).
+#     The RationalRecipes-oom ``white sugar`` family explicitly excludes
+#     brown sugar; a variant with all three forms collapses to two
+#     (white sugar with merged coverage, brown sugar separate).
+#   - ``peanuts`` are legumes, not nuts; excluded from the ``nuts``
+#     family above.
 #   - ``cream cheese`` is not cheese; etc.
 FOLD_MAP: Mapping[str, frozenset[str]] = {
     "oil": frozenset(
@@ -82,6 +123,7 @@ FOLD_MAP: Mapping[str, frozenset[str]] = {
             "unsalted butter",
             "salted butter",
             "sweet butter",
+            "margarine",
         }
     ),
     "shortening": frozenset(
@@ -94,6 +136,26 @@ FOLD_MAP: Mapping[str, frozenset[str]] = {
         {
             "baking soda",
             "soda",
+        }
+    ),
+    "nuts": frozenset(
+        {
+            "nuts",
+            "walnuts",
+            "pecans",
+            "almonds",
+            "hazelnuts",
+            "cashews",
+            "pine nuts",
+            "macadamia nuts",
+            "brazil nuts",
+            "pistachios",
+        }
+    ),
+    "white sugar": frozenset(
+        {
+            "white sugar",
+            "sugar",
         }
     ),
 }

@@ -78,6 +78,25 @@ class TestFoldMapShape:
         assert "baking soda" in FOLD_MAP
         assert {"baking soda", "soda"} <= FOLD_MAP["baking soda"]
 
+    def test_butter_family_includes_margarine(self) -> None:
+        # RationalRecipes-oom: asymmetric substitute fold.
+        # Margarine resolves to butter in casual recipe shapes.
+        assert "margarine" in FOLD_MAP["butter"]
+
+    def test_nuts_family_present(self) -> None:
+        # RationalRecipes-oom: home recipes use ``nuts`` interchangeably
+        # with named varieties for the same dish.
+        assert "nuts" in FOLD_MAP
+        assert {"nuts", "walnuts", "pecans"} <= FOLD_MAP["nuts"]
+
+    def test_white_sugar_family_present(self) -> None:
+        # RationalRecipes-oom: unmodified ``sugar`` reads as ``white
+        # sugar``. Brown sugar STAYS SEPARATE — different molasses
+        # content, different chemistry.
+        assert "white sugar" in FOLD_MAP
+        assert FOLD_MAP["white sugar"] == frozenset({"white sugar", "sugar"})
+        assert "brown sugar" not in FOLD_MAP["white sugar"]
+
     def test_no_form_appears_in_two_families(self) -> None:
         seen: dict[str, str] = {}
         for family, forms in FOLD_MAP.items():
@@ -355,6 +374,184 @@ class TestApplyFoldToVariant:
         )
         assert apply_fold_to_variant(v) is False
         assert v.canonical_ingredients == frozenset({"flour", "shortening"})
+
+    def test_folds_margarine_into_butter(self) -> None:
+        # RationalRecipes-oom: substitute fold. Margarine Hash Brown
+        # Casserole-shape variant — butter dominates summed mass, so
+        # margarine collapses onto butter.
+        v = _variant(
+            {"flour", "butter", "margarine"},
+            [
+                _row(
+                    {"flour": "100 g", "butter": "20 g", "margarine": "5 g"},
+                    {"flour": 80.0, "butter": 16.0, "margarine": 4.0},
+                ),
+                _row(
+                    {"flour": "100 g", "butter": "25 g"},
+                    {"flour": 80.0, "butter": 20.0},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is True
+        assert v.canonical_ingredients == frozenset({"flour", "butter"})
+        # Row 1: butter absorbs margarine — sum 16 + 4 = 20.
+        assert v.normalized_rows[0].proportions == {
+            "flour": 80.0,
+            "butter": 20.0,
+        }
+        assert "margarine" not in v.normalized_rows[0].proportions
+        assert "margarine" not in v.normalized_rows[0].cells
+
+    def test_folds_walnuts_into_nuts(self) -> None:
+        # RationalRecipes-oom: nuts family. Walnut Banana Bread-shape
+        # variant — generic ``nuts`` dominates summed mass, so walnuts
+        # collapses onto nuts.
+        v = _variant(
+            {"flour", "nuts", "walnuts"},
+            [
+                _row(
+                    {"flour": "100 g", "nuts": "30 g", "walnuts": "10 g"},
+                    {"flour": 71.4, "nuts": 21.4, "walnuts": 7.2},
+                ),
+                _row(
+                    {"flour": "100 g", "nuts": "40 g"},
+                    {"flour": 71.4, "nuts": 28.6},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is True
+        assert v.canonical_ingredients == frozenset({"flour", "nuts"})
+        # Row 1: nuts absorbs walnuts — sum 21.4 + 7.2 = 28.6.
+        assert v.normalized_rows[0].proportions["nuts"] == pytest.approx(28.6)
+        assert "walnuts" not in v.normalized_rows[0].proportions
+        assert "walnuts" not in v.normalized_rows[0].cells
+
+    def test_folds_pecans_into_nuts(self) -> None:
+        # RationalRecipes-oom: nuts family. Pecan Pumpkin Bread-shape
+        # variant — exercises a different alias from walnuts.
+        v = _variant(
+            {"flour", "nuts", "pecans"},
+            [
+                _row(
+                    {"flour": "100 g", "nuts": "20 g", "pecans": "8 g"},
+                    {"flour": 78.1, "nuts": 15.6, "pecans": 6.3},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is True
+        assert v.canonical_ingredients == frozenset({"flour", "nuts"})
+        assert v.normalized_rows[0].proportions["nuts"] == pytest.approx(21.9)
+        assert "pecans" not in v.normalized_rows[0].proportions
+
+    def test_folds_sugar_into_white_sugar(self) -> None:
+        # RationalRecipes-oom: unmodified ``sugar`` reads as ``white
+        # sugar`` when both are present. White sugar dominates summed
+        # mass, so unmodified sugar collapses onto it.
+        v = _variant(
+            {"flour", "white sugar", "sugar"},
+            [
+                _row(
+                    {"flour": "100 g", "white sugar": "30 g", "sugar": "10 g"},
+                    {"flour": 71.4, "white sugar": 21.4, "sugar": 7.2},
+                ),
+                _row(
+                    {"flour": "100 g", "white sugar": "40 g"},
+                    {"flour": 71.4, "white sugar": 28.6},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is True
+        assert v.canonical_ingredients == frozenset({"flour", "white sugar"})
+        # Row 1: white sugar absorbs sugar — sum 21.4 + 7.2 = 28.6.
+        assert v.normalized_rows[0].proportions["white sugar"] == pytest.approx(
+            28.6
+        )
+        assert "sugar" not in v.normalized_rows[0].proportions
+        assert "sugar" not in v.normalized_rows[0].cells
+
+    def test_brown_sugar_remains_separate(self) -> None:
+        # RationalRecipes-oom: brown sugar is NOT in the white sugar
+        # family. A variant itemising all three forms (Soda Peanut
+        # Butter Cookies-shape) collapses to two ingredients post-fold:
+        # white sugar (with merged coverage) and brown sugar separate.
+        v = _variant(
+            {"flour", "white sugar", "sugar", "brown sugar"},
+            [
+                _row(
+                    {
+                        "flour": "100 g",
+                        "white sugar": "30 g",
+                        "sugar": "10 g",
+                        "brown sugar": "20 g",
+                    },
+                    {
+                        "flour": 62.5,
+                        "white sugar": 18.75,
+                        "sugar": 6.25,
+                        "brown sugar": 12.5,
+                    },
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is True
+        # Sugar collapses onto white sugar; brown sugar untouched.
+        assert v.canonical_ingredients == frozenset(
+            {"flour", "white sugar", "brown sugar"}
+        )
+        assert v.normalized_rows[0].proportions["white sugar"] == pytest.approx(
+            25.0
+        )
+        assert v.normalized_rows[0].proportions["brown sugar"] == pytest.approx(
+            12.5
+        )
+        assert "sugar" not in v.normalized_rows[0].proportions
+
+    def test_brown_sugar_alone_does_not_fold(self) -> None:
+        # Negative: brown sugar without white sugar / sugar in the same
+        # variant must not collapse anywhere.
+        v = _variant(
+            {"flour", "brown sugar"},
+            [
+                _row(
+                    {"flour": "100 g", "brown sugar": "30 g"},
+                    {"flour": 76.9, "brown sugar": 23.1},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is False
+        assert v.canonical_ingredients == frozenset({"flour", "brown sugar"})
+
+    def test_peanuts_do_not_fold_into_nuts(self) -> None:
+        # Negative: peanuts are legumes, deliberately excluded from the
+        # nuts family. A variant with both must keep both.
+        v = _variant(
+            {"flour", "nuts", "peanuts"},
+            [
+                _row(
+                    {"flour": "100 g", "nuts": "20 g", "peanuts": "10 g"},
+                    {"flour": 76.9, "nuts": 15.4, "peanuts": 7.7},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is False
+        assert v.canonical_ingredients == frozenset(
+            {"flour", "nuts", "peanuts"}
+        )
+
+    def test_butter_alone_does_not_fold(self) -> None:
+        # Negative: butter alone (no margarine, no specific variant)
+        # must not collapse to anything else.
+        v = _variant(
+            {"flour", "butter"},
+            [
+                _row(
+                    {"flour": "100 g", "butter": "20 g"},
+                    {"flour": 83.3, "butter": 16.7},
+                ),
+            ],
+        )
+        assert apply_fold_to_variant(v) is False
+        assert v.canonical_ingredients == frozenset({"flour", "butter"})
 
 
 class TestBuildVariantsIntegration:
