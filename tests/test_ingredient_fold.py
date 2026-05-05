@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 from rational_recipes.catalog_db import CatalogDB
-from rational_recipes.cli.backfill_ingredient_fold import _fold_one_variant
 from rational_recipes.scrape.ingredient_fold import (
     FOLD_MAP,
+    _fold_one_variant,
     apply_fold_to_variant,
     families_present,
     pick_keeper,

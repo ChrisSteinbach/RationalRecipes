@@ -36,10 +36,12 @@ considering.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from rational_recipes.catalog_db import CatalogDB, IngredientStatsRow
     from rational_recipes.scrape.pipeline_merged import MergedVariantResult
 
 # Pre-approved fold families for RationalRecipes-2p6.
@@ -306,3 +308,140 @@ def apply_fold_to_variant(
         variant.canonical_ingredients = frozenset(new_canonical)
         variant.header_ingredients = new_header
     return changed
+
+
+def _fold_one_variant(
+    db: CatalogDB,
+    variant_id: str,
+    canonical_set: tuple[str, ...],
+    *,
+    apply: bool,
+) -> tuple[bool, list[tuple[str, str]]]:
+    """Apply the fold to one variant's stats. Returns ``(changed, dropped_pairs)``.
+
+    ``dropped_pairs`` is a list of ``(family, dropped_form)`` for diagnostics.
+
+    Operates on a persisted ``recipes.db`` variant rather than an
+    in-memory ``MergedVariantResult``: picks the keeper, sums family
+    forms' ``mean_proportion`` and ``min_sample_size`` into the keeper,
+    recomputes ``ratio`` against the new base mean, drops the other
+    forms, and updates ``variants.canonical_ingredient_set``. Used by
+    the per-recipe review tool (RationalRecipes-sj18) to apply fold
+    edits to a finalized variant.
+    """
+    families = families_present(canonical_set)
+    if not families:
+        return False, []
+
+    stats = list(db.get_ingredient_stats(variant_id))
+    by_name = {s.canonical_name: s for s in stats}
+    dropped_pairs: list[tuple[str, str]] = []
+    new_canonical = set(canonical_set)
+    folds_to_apply: list[
+        tuple[str, list[str], IngredientStatsRow, list[IngredientStatsRow]]
+    ] = []
+
+    for family, forms in families.items():
+        present_forms = [f for f in forms if f in by_name]
+        if len(present_forms) < 2:
+            continue
+        totals = {f: by_name[f].mean_proportion for f in present_forms}
+        keeper_name = pick_keeper(present_forms, totals)
+        droppable = [f for f in present_forms if f != keeper_name]
+        if not droppable:
+            continue
+        keeper_row = by_name[keeper_name]
+        droppable_rows = [by_name[f] for f in droppable]
+        folds_to_apply.append((family, droppable, keeper_row, droppable_rows))
+        for f in droppable:
+            dropped_pairs.append((family, f))
+            new_canonical.discard(f)
+        new_canonical.add(keeper_name)
+
+    if not folds_to_apply:
+        return False, []
+
+    summed_means: dict[str, float] = {}
+    summed_min_samples: dict[str, int] = {}
+    for _family, _droppable, keeper_row, droppable_rows in folds_to_apply:
+        new_mean = keeper_row.mean_proportion + sum(
+            r.mean_proportion for r in droppable_rows
+        )
+        summed_means[keeper_row.canonical_name] = new_mean
+        summed_min_samples[keeper_row.canonical_name] = max(
+            keeper_row.min_sample_size,
+            *(r.min_sample_size for r in droppable_rows),
+        )
+
+    base_name: str | None = None
+    base_mean: float | None = None
+    for s in stats:
+        if (
+            s.ratio is not None
+            and math.isclose(s.ratio, 1.0, abs_tol=1e-9)
+            and s.canonical_name in new_canonical
+        ):
+            base_name = s.canonical_name
+            base_mean = summed_means.get(base_name, s.mean_proportion)
+            break
+
+    if not apply:
+        return True, dropped_pairs
+
+    conn = db.connection
+    with conn:
+        for _family, droppable, _, _ in folds_to_apply:
+            for f in droppable:
+                conn.execute(
+                    "DELETE FROM variant_ingredient_stats "
+                    "WHERE variant_id = ? AND canonical_name = ?",
+                    (variant_id, f),
+                )
+        for keeper_name, new_mean in summed_means.items():
+            keeper_row = by_name[keeper_name]
+            new_min_sample = summed_min_samples[keeper_name]
+            new_ratio: float | None
+            if base_mean and base_mean > 0:
+                new_ratio = new_mean / base_mean
+            else:
+                new_ratio = keeper_row.ratio
+            conn.execute(
+                """
+                UPDATE variant_ingredient_stats
+                   SET mean_proportion = ?,
+                       ratio = ?,
+                       min_sample_size = ?
+                 WHERE variant_id = ? AND canonical_name = ?
+                """,
+                (
+                    new_mean,
+                    new_ratio,
+                    new_min_sample,
+                    variant_id,
+                    keeper_name,
+                ),
+            )
+        if base_mean and base_mean > 0 and base_name is not None:
+            retained_rows = conn.execute(
+                "SELECT canonical_name, mean_proportion, ratio "
+                "FROM variant_ingredient_stats WHERE variant_id = ?",
+                (variant_id,),
+            ).fetchall()
+            for canonical_name, mean_prop, old_ratio in retained_rows:
+                if old_ratio is None:
+                    continue
+                if canonical_name == base_name:
+                    new_r = 1.0
+                else:
+                    new_r = mean_prop / base_mean
+                conn.execute(
+                    "UPDATE variant_ingredient_stats SET ratio = ? "
+                    "WHERE variant_id = ? AND canonical_name = ?",
+                    (new_r, variant_id, canonical_name),
+                )
+        conn.execute(
+            "UPDATE variants SET canonical_ingredient_set = ? "
+            "WHERE variant_id = ?",
+            (",".join(sorted(new_canonical)), variant_id),
+        )
+    return True, dropped_pairs
