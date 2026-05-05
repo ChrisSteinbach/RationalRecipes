@@ -1,9 +1,21 @@
 # Design: Full Catalog from Pipeline Output
 
-**Status:** ✅ Live design — Phase 5 active work. Supersedes the JSON
-catalog and per-query extraction choices in `docs/design/recipe-scraping.md`.
-**Parent epic:** RationalRecipes-vwt (Phase 5: Populate the catalog at scale)
-**Last updated:** 2026-04-28
+> **⚠ SUPERSEDED 2026-05-05.** This design — and the `RationalRecipes-vwt`
+> epic that drove it — is retired under the recipe-drops pivot. The
+> active design doc is now [`recipe-drops.md`](recipe-drops.md). The
+> 3-pass orchestrator, Pass 3 LLM titler, catalog-scale backfills, and
+> driver scripts described below were removed in commits `faaf44a` +
+> `90e55a2`. Most of the *infrastructure* (loaders, grouping,
+> central-tendency math, review CLI) survives as the per-recipe
+> research workbench; only the catalog-shipping framing is gone.
+>
+> Preserved here as historical record of the reasoning behind
+> Phase 5.
+
+**Status:** ❌ Superseded — see `recipe-drops.md`.
+**Parent epic:** RationalRecipes-vwt (closed 2026-05-05)
+**Last updated (active):** 2026-04-28
+**Retired:** 2026-05-05
 
 ## Problem
 

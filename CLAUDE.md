@@ -4,65 +4,68 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Orientation
 
-**Read this first, then `docs/design/full-catalog.md` for the current direction.**
+**Read this first, then `docs/design/recipe-drops.md` for the current direction.**
 
-RationalRecipes averages many independent recipes for the same dish into one "central-tendency" recipe with confidence intervals. The product is a **browser-based recipe catalog** (PWA) populated by a **Python extraction pipeline** that mines public recipe corpora (RecipeNLG, Web Data Commons). The two halves meet at a **SQLite database** served client-side via `sql.js`.
+RationalRecipes averages many independent recipes for the same dish into one "central-tendency" recipe with confidence intervals. As of the **2026-05-05 pivot**, the product is a series of **researched recipe drops** — one polished, averaged recipe at a time, distributed via Bluesky/Twitter and anchored on a permanent canonical home.
 
-**Current state (2026-04-28):** Phase 5 pipeline features complete on branch `corpus-driven-design-update`. The merge gate is `vwt.5` (full-corpus run, judge results, ship). Post-implementation polish beads (vwt.21–26) addressed batch-parse reliability, WDC dedup, prose-line filtering, Pass 3 distinctive titles, Swedish→English ingredient forcing, and ingredient frequency filtering. Shipped under Phase 5: SQLite catalog backing store (vwt.6), corpus title-frequency survey (vwt.1), three-pass whole-corpus extraction pipeline (vwt.2 + vwt.16), PWA over recipes.db (vwt.3), SQL filters (vwt.4), legacy CSV CLI removal (vwt.8 + orphan cleanup), CLI review tool ported to recipes.db (vwt.9).
+The methodology (averaging quantities across many independent source recipes from RecipeNLG and WDC, with CIs) is preserved. What changed is the unit of work: per-recipe instead of whole-corpus. The human is in the loop on every drop.
 
-**Active epic:** `RationalRecipes-vwt`. Run `bd ready` to see unblocked work. Design: `docs/design/full-catalog.md`.
+**Current state (2026-05-05):** Branch `recipe-drops`. Catalog-shipping pipeline retired (commits `faaf44a` + `90e55a2`); per-recipe research workbench survives. Open work tracked under the recipe-drops direction — run `bd ready` to see unblocked items. Three substantive decisions still open: canonical home (`RationalRecipes-z9cz`), cadence policy (`5z8w`), instruction-derivation approach (`r8hx`).
+
+**Active design doc:** `docs/design/recipe-drops.md`. The earlier `full-catalog.md` is superseded but preserved as historical context.
 
 ## Scope guidance
 
-- **Primary UI is the PWA** (`web/`). Everything user-facing happens there.
-- **The CSV-CLI pipeline (`rr-stats`, `rr-diff`, `read.py`, `columns.py`, `merge.py`, `difference.py`, `output.py`, `utils.py`, `statistics.py`, `ratio.py`, `ratio_format.py`, `normalize.py`, `catalog.py`, `sample_input/`) was removed in vwt.8 + the orphan-math cleanup follow-up.** Central-tendency math now lives in TypeScript in `web/src/` (PWA) and inline in `catalog_db.py` (Python — `math.sqrt` for stddev, 1.96·σ/√n for CIs). `rr-discover` stays as the diagnostic for threshold-picking.
-- **Maintainer review is CLI-only.** `scripts/review_variants.py` reads `recipes.db` and persists decisions via `UPDATE variants SET review_status = ?`. The PWA is read-only for end users — it consumes the post-review `recipes.db` and filters dropped variants out of the default catalog query.
-- **Historical design doc `docs/design/recipe-scraping.md`** captures Phase 1-4 rationale. Read for context, but where it conflicts with `full-catalog.md` the newer doc wins.
+- **Primary deliverable is the next drop**, not a complete catalog. Each drop is a finished artifact with central-tendency masses, CIs, and a chosen instruction set.
+- **The PWA's fate is pending `RationalRecipes-z9cz`.** It still works against `recipes.db` but is no longer the primary product surface. Do not invest in PWA features without resolving z9cz first.
+- **Maintainer review is CLI-only.** `scripts/review_variants.py` reads `recipes.db` and persists decisions via `UPDATE variants SET review_status = ?`. Will be extended (per `RationalRecipes-sj18`) with substitution / filter / render-for-publication operations.
+- **Historical design docs**: `docs/design/full-catalog.md` (Phase 5 catalog framing, superseded), `docs/design/recipe-scraping.md` (Phase 1–4 rationale), `docs/design/phase-5e-investigation.md` (closed merge-gate investigation).
 
-## Architecture (target state, end of Phase 5)
+## Architecture
 
 ```
 corpora (RecipeNLG CSV, WDC top-100 zip)
    ↓
-scripts/scrape_catalog.py  (three-pass, resumable)
-   ├─ Pass 1 (--pass1-only): LLM-parse ingredient lines → cache table
-   ├─ Pass 2 (--pass2-only): cluster + write variants from cache (no LLM)
-   └─ Pass 3 (--pass3-only): generate distinctive display_titles via LLM
+scripts/scrape_merged.py  (single-dish-family, on demand)
    ↓
-recipes.db  (SQLite; schema in src/rational_recipes/catalog_db.py)
-   ↓  (file copy via web/scripts/sync-catalog.mjs)
-web/public/recipes.db
-   ↓  (fetched + sql.js in-browser)
-PWA catalog view + detail view
+recipes.db  (SQLite — sink for finalized variants only)
+   ↓
+scripts/review_variants.py  (refine, fold, render)
+   ↓
+publication artifact (markdown + threadable text)
+   ↓
+canonical home + social drop
 ```
 
-The `scrape/` submodule (`src/rational_recipes/scrape/`) handles loaders (RecipeNLG, WDC), grouping (L1 title / L2 ingredient-set / L3 cookingMethod), canonicalization, merging, deduplication, outlier scoring, and LLM calls via Ollama. The catalog DB writer (`catalog_db.py`) is the sink.
+The `scrape/` submodule (`src/rational_recipes/scrape/`) handles loaders (RecipeNLG, WDC), grouping (L1 title / L2 ingredient-set / L3 cookingMethod), canonicalization, merging, deduplication, outlier scoring, and LLM calls via Ollama. The catalog DB writer (`catalog_db.py`) is the sink. Pass-1-style ingredient-line caching in the `parsed_ingredient_lines` table survives as an optimization for per-recipe runs.
 
 ## Key directories
 
 | Path | Purpose |
 |---|---|
-| `src/rational_recipes/scrape/` | Extraction pipeline (live) — loaders, grouping, canonicalization, LLM calls, `catalog_pipeline.py` (three-pass orchestrator), `pass3_titles.py` (distinctive title generation), `loaders.py` (shared loader helpers incl. prose-line filter) |
-| `src/rational_recipes/catalog_db.py` | SQLite writer + reader + schema (live) — `CatalogDB.upsert_variant`, `list_variants`, `update_review_status`, ingredient frequency filter, etc. |
-| `src/rational_recipes/ingredient.py`, `units.py` | Ingredient + unit primitives (live, used by scrape) |
-| `src/rational_recipes/discover.py`, `discover_cli.py` | `rr-discover` diagnostic (live) |
-| `src/rational_recipes/corpus_title_survey.py` | vwt.1 survey lib (live) |
-| `src/rational_recipes/data/ingredients.db` | USDA/FAO ingredient DB (live, shipped to browser) |
-| `web/` | Vite + TypeScript + sql.js PWA — loads `recipes.db` + `ingredients.db` client-side |
-| `scripts/scrape_catalog.py` | Whole-corpus batch driver (live, vwt.2) |
-| `scripts/corpus_title_survey.py` | Title-frequency diagnostic CLI (vwt.1) |
-| `scripts/migrate_curated_to_db.py` | One-shot seed of 4 hand-curated recipes into recipes.db (vwt.6) |
-| `scripts/review_variants.py` | CLI review tool against recipes.db (vwt.9) |
-| `scripts/scrape_progress.py` | Read-only progress reporter for a running/dead `scrape_catalog` (vwt.27) |
+| `src/rational_recipes/scrape/` | Per-recipe research workbench — loaders, grouping, canonicalization, merging, parsing (LLM + regex), outlier detection, ingredient fold (incl. salvaged `_fold_one_variant`), per-recipe pipeline (`pipeline_merged.py`) |
+| `src/rational_recipes/catalog_db.py` | SQLite writer + reader + schema. `category` column preserved (filter still referenced by PWA pending z9cz) |
+| `src/rational_recipes/ingredient.py`, `units.py` | Ingredient + unit primitives |
+| `src/rational_recipes/discover.py`, `discover_cli.py` | `rr-discover` threshold diagnostic |
+| `src/rational_recipes/corpus_title_survey.py` | Title-frequency survey (feeds the recipe queue) |
+| `src/rational_recipes/data/ingredients.db` | USDA/FAO ingredient DB |
+| `web/` | PWA — fate pending `RationalRecipes-z9cz` |
+| `scripts/scrape_merged.py` | Per-recipe extractor (the production path under the pivot) |
+| `scripts/review_variants.py` | CLI review tool against `recipes.db` |
+| `scripts/explore_groups.py` | Quick L1/L2 grouping exploration (no LLM) |
+| `scripts/corpus_title_survey.py` | Title-frequency diagnostic CLI |
 | `scripts/build_db.py` | Rebuild `ingredients.db` from FDC/FAO sources |
 | `dataset/` | Raw corpora (gitignored) |
-| `output/catalog/recipes.db` | Pipeline output (gitignored) |
-| `docs/design/full-catalog.md` | **Live design doc** |
-| `docs/design/recipe-scraping.md` | Historical Phase 1-4 design |
+| `output/catalog/recipes.db` | Per-recipe pipeline output (gitignored) |
+| `docs/design/recipe-drops.md` | **Live design doc** |
+| `docs/design/full-catalog.md` | Superseded Phase 5 catalog design |
+| `docs/design/recipe-scraping.md` | Historical Phase 1–4 design |
 
 ## Git workflow
 
-The `main` branch is protected — direct pushes are blocked. All changes merge via PR. Create a feature branch for any work. The current feature branch (`corpus-driven-design-update`) is explicitly **not merge-ready** — the merge gate is `vwt.5` (first real `scrape_catalog` run over full corpus, PWA built from the resulting DB, working filters, plausible ratios).
+The `main` branch is protected — direct pushes are blocked. All changes merge via PR. The current feature branch is `recipe-drops`; the prior `corpus-driven-design-update` branch is preserved as the historical record of the catalog-shipping work.
+
+The pivot's "merge gate" replacement is **acceptance for the pivot** (per `docs/design/recipe-drops.md`): one hand-cycle drop produced end-to-end (`RationalRecipes-ehe7`), canonical home + instruction approach decided (`z9cz`, `r8hx`), first drop published.
 
 ## Commands
 
@@ -72,7 +75,7 @@ python3 -m pytest
 python3 -m ruff check .
 python3 -m mypy src
 
-# PWA dev loop
+# PWA dev loop (fate pending z9cz)
 cd web && npm install && npm run dev
 # or: npm test (Vitest), npm run build
 
@@ -80,18 +83,18 @@ cd web && npm install && npm run dev
 scripts/download_data.sh
 python3 scripts/build_db.py
 
-# Sync pipeline output to PWA (after scrape_catalog.py or any DB change)
-node web/scripts/sync-catalog.mjs
+# Per-recipe extraction (single dish family)
+python3 scripts/scrape_merged.py <title-substring>
 
 # Find ready work
 bd ready
 ```
 
-Canonical extraction: `python3 scripts/scrape_catalog.py` (defaults: `--model gemma4:e2b`, `--ollama-url http://192.168.50.189:11434`; override either if your setup differs). The old per-query `scripts/scrape_merged.py` path stays for dev iteration on a single dish family but is no longer the catalog-production path.
+Default Ollama: `http://192.168.50.189:11434`, model historically `gemma4:e2b` (chosen for catalog-scale throughput per closed bead `vwt.18`). Under the pivot, the model choice is being reconsidered — quality matters more per-recipe than throughput. Override with `--ollama-url` and `--model` as needed.
 
 ## Dependencies
 
-Python 3.12+. Runtime: `numpy`, stdlib `sqlite3`. LLM extraction: Ollama with `gemma4:e2b` (production default since 2026-04-25, per bead `vwt.18` — swapped from `qwen3.6:35b-a3b` for ~10× throughput; merge gate `vwt.5` is the validation hop, re-scrape is cheap if the catalog reads wrong). Remote Ollama host still preferred. Dev: `ruff`, `mypy`, `pytest`, `pytest-cov`, `pre-commit`. Frontend: Node 20+, `vite`, `sql.js`, `vitest`. Declared in `pyproject.toml` and `web/package.json`.
+Python 3.12+. Runtime: `numpy`, stdlib `sqlite3`. LLM extraction: Ollama (model under reconsideration — see above). Dev: `ruff`, `mypy`, `pytest`, `pytest-cov`, `pre-commit`. Frontend: Node 20+, `vite`, `sql.js`, `vitest`. Declared in `pyproject.toml` and `web/package.json`.
 
 ## Conventions
 
