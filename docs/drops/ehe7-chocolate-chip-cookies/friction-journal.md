@@ -130,9 +130,71 @@ is invisible — you discover it when the process exits.
 Worth noting since per-drop timing data feeds 5z8w. A simple
 "recipes parsed / total" counter would help.
 
+### F9: scrape_merged.py CSVs are display strings, not normalized proportions
+
+Discovered post-extraction: the per-variant CSVs that
+`pipeline_merged.py` writes contain raw display strings ("12 tbsp",
+"2 MEDIUM", "1 c", "0"), not numeric mass proportions. The LLM did
+parse those during the run (log: "Parsed: 1058 rows → 1058
+normalized") but the *normalized form* is in-memory only; the CSV
+serialization keeps cells.
+
+Central-tendency mass-percent stats — the actual product of a drop —
+are not computed by `pipeline_merged.py`. That was the retired
+`rr-stats`'s job (CSV-CLI pipeline removed in vwt.8). Under the
+catalog flow, Pass 2 of `catalog_pipeline.py` (also now retired)
+computed `variant_ingredient_stats` directly into `recipes.db`.
+With both gone, `scrape_merged.py` is an upstream-only tool.
+
+**Consequence**: `render_drop.py` reads `variant_ingredient_stats`,
+which is empty for these new variants. To render an actual averaged
+CCC drop, one of:
+
+1. **Bridge** the manifest+CSVs into `recipes.db`, computing stats
+   on the way (~50 lines, reuses the math in `catalog_db.py`).
+2. **Reimplement** central-tendency stats over the CSVs at render
+   time (also ~50 lines but lives in render_drop.py).
+3. **Promote** `pipeline_merged.py` to write
+   `variant_ingredient_stats` directly (the cleanest fix, supersedes
+   the CSV format).
+
+This compounds with F1 (CSVs vs recipes.db). A single fix that
+addresses both — `pipeline_merged.py` writes structured normalized
+output to recipes.db — is probably the right move.
+
 ## Timing
 
-(To be filled in once the CCC extraction completes.)
+Background extraction of `chocolate chip cookies` against the remote
+Ollama (`192.168.50.189:11434`, `gemma4:e2b`):
+
+- **Wall-clock**: 111m00s (kicked off 22:57, finished 00:48).
+- **CPU**: 9m14s user + 0m03s sys = 9m17s total.
+- **~92% wait time** (Ollama network round-trips), ~8% local CPU.
+
+Earlier guess that the local-clustering phase had quadratic behavior
+was **wrong** — the 100% CPU readings I saw mid-run were the local
+phases (corpus loading + L1/L2/L3 grouping). Once parsing started,
+the process spent most of its time waiting on Ollama. Final stats
+from the run:
+
+- 5,636 RecipeNLG rows + 584 WDC rows loaded for the substring.
+- 5,865 merged rows after url-dup + near-dup removal.
+- 24 L1 groups → 10 L2 variants emitted (after `--min-variant-size=20`,
+  `--max-variants-per-l1=8`).
+- 1,058 ingredient-line parses (only the surviving variants got
+  parsed).
+
+**Throughput**: ~570 source recipes / hour wall-clock, against a
+single-host Ollama. With local Pass-1-cache reuse (per F2) or more
+Ollama parallelism, this could collapse.
+
+**Implications for `RationalRecipes-5z8w` (cadence)**:
+
+- One drop's research (extraction only) costs ~2 hours of wall-clock
+  today. Cookie-shaped clusters are at the upper end (1,400+ source
+  recipes); narrower clusters would be faster.
+- Weekly cadence is plausible without optimization. Daily cadence
+  wants F2 first.
 
 ## What survived the friction
 
@@ -158,18 +220,28 @@ What's missing for shipping:
 
 If the pivot proceeds, the right order of next steps is:
 
-1. **Bridge scrape_merged.py → recipes.db** (a dozen lines).
-   Unblocks F1, lets review_variants.py see fresh extractions.
-2. **Wire parsed_ingredient_lines cache reuse into pipeline_merged.py**
-   (F2). Free 10× speedup on subsequent runs.
-3. **Populate variant_ingredient_stats.density_g_per_ml from
-   ingredients.db** during extraction (F4). Makes rendering produce
+1. **Bridge `pipeline_merged.py` → `recipes.db` with computed stats**
+   (combines F1 + F9). The cleanest fix: have `pipeline_merged.py`
+   write `variants` + `variant_members` + `variant_ingredient_stats`
+   directly, computing means/stddev/CIs inline (the math already
+   lives in `catalog_db.py`). Supersedes the CSV+manifest format
+   (which was for the retired `rr-stats`). After this, `render_drop.py`
+   works on fresh extractions and the hand-cycle drop completes.
+2. **Wire `parsed_ingredient_lines` cache reuse into `pipeline_merged.py`**
+   (F2). Free speedup proportional to corpus overlap with prior
+   drops. Without this, every drop re-parses everything.
+3. **Populate `variant_ingredient_stats.density_g_per_ml` from
+   `ingredients.db`** during extraction (F4). Makes rendering produce
    "cups" / "tbsp" not just grams.
-4. **Cache source instructions in recipes.db** (F5). Removes the
-   manual paste step.
+4. **Cache source instructions in `recipes.db`** (F5). Removes the
+   manual paste step. Simplest implementation: store full source
+   instruction text on the `recipes` table during extraction.
 5. **Promote `render_drop.py` into a `review_variants.py render` subcommand**
    (sj18). Add `--substitute` / `--filter` operations there too.
-6. **Add `--progress` to scrape_merged.py** (F8). Not blocking but
+6. **Add `--progress` to `scrape_merged.py`** (F8). Not blocking but
    makes 5z8w easier to inform.
 
-These are roughly ordered by friction-per-drop.
+These are roughly ordered by friction-per-drop. (1) is the gating
+item — without it, ehe7 cannot fully complete. (2) and (3) are
+quality-of-life. (4) eliminates a recurring manual step. (5)
+unifies the CLI. (6) is cosmetic.
