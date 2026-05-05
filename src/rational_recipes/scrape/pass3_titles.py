@@ -77,6 +77,71 @@ def apply_ambiguous_suffix(
     return title + suffix
 
 
+# RationalRecipes-ec1a: family-name display overrides for human-readable
+# rendering of compound dish names. Some L1 family names — even when
+# structurally correct and validator-accepted — parse misleadingly to a
+# casual reader once a descriptor is prefixed. 'Bread and butter pickles'
+# is the canonical case: 'Ginger Bread And Butter Pickles' reads as
+# 'Ginger Bread' + 'and butter pickles' rather than 'Ginger' + 'bread-
+# and-butter pickles'. Hyphenation in the rendered form disambiguates.
+#
+# Applied as the FINAL typographic step in title rendering (after the
+# wqy validator, after 0ki's stop-list substitution, after bt9e's
+# `apply_ambiguous_suffix`), so this is purely a display tweak — the
+# normalized form (which feeds variant_id) stays unhyphenated.
+#
+# Key: lowercased L1 normalized family name (matches the same key shape
+# as ``AMBIGUOUS_FAMILY_SUFFIXES``). Value: canonical display rendering.
+FAMILY_DISPLAY_OVERRIDES: dict[str, str] = {
+    "bread and butter pickles": "Bread-and-Butter Pickles",
+}
+
+
+def apply_family_display_override(title: str, family: str) -> str:
+    """Replace the family-name slice of ``title`` with its canonical
+    display form when ``family`` has an entry in
+    ``FAMILY_DISPLAY_OVERRIDES``.
+
+    Preserves the descriptor prefix and any trailing dish-type suffix
+    (from ``apply_ambiguous_suffix``); only the family-name span itself
+    is rewritten. Match is case-insensitive on the title's family-name
+    slice — the existing pipeline title-cases the L1 normalized name,
+    so 'Bread And Butter Pickles' becomes 'Bread-and-Butter Pickles'.
+
+    Returns ``title`` unchanged when ``family`` has no override entry,
+    when the override string already appears in ``title`` (idempotent —
+    re-running on already-overridden titles is a no-op), or when no
+    matching slice is found.
+
+    Scans for the family-name span starting from the rightmost
+    alignment so a coincidental occurrence of family words inside the
+    descriptor doesn't shadow the actual family-name suffix.
+    """
+    override = FAMILY_DISPLAY_OVERRIDES.get(family.lower())
+    if not override:
+        return title
+    if override in title:
+        return title
+    family_words = [w.lower() for w in family.split()]
+    n = len(family_words)
+    if n == 0:
+        return title
+    title_words = title.split()
+    if n > len(title_words):
+        return title
+    # Iterate from the highest possible start offset so we replace the
+    # suffix-most occurrence (the actual family slice) rather than a
+    # coincidental prefix match inside the descriptor.
+    for start in range(len(title_words) - n, -1, -1):
+        slice_lc = [w.lower() for w in title_words[start:start + n]]
+        if slice_lc == family_words:
+            new_words = (
+                title_words[:start] + override.split() + title_words[start + n:]
+            )
+            return " ".join(new_words)
+    return title
+
+
 # RationalRecipes-0ki: descriptors the LLM picker tends to default to when
 # nothing better surfaces in its prompt. They give the user no signal —
 # every recipe in the corpus contains water/flour/sugar/leavening, so
@@ -881,6 +946,7 @@ def run_pass3(
                 titled = apply_ambiguous_suffix(
                     family.title(), family, v.category
                 )
+                titled = apply_family_display_override(titled, family)
                 if v.display_title != titled:
                     db.update_display_title(v.variant_id, titled)
             continue
@@ -948,6 +1014,12 @@ def run_pass3(
             # user-facing title). RationalRecipes-bt9e.
             if title is not None:
                 title = apply_ambiguous_suffix(title, family, category)
+            # Final typographic step: rewrite ambiguous compound family
+            # names (e.g. 'Bread And Butter Pickles' → 'Bread-and-Butter
+            # Pickles') so dedup keys on the user-facing string.
+            # RationalRecipes-ec1a.
+            if title is not None:
+                title = apply_family_display_override(title, family)
             raw_titles.append(title)
 
         # Deduplicate titles within this group (vwt.32).

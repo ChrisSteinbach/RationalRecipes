@@ -9,6 +9,7 @@ from rational_recipes.catalog_db import CatalogDB
 from rational_recipes.scrape.merge import MergedRecipe
 from rational_recipes.scrape.pass3_titles import (
     AMBIGUOUS_FAMILY_SUFFIXES,
+    FAMILY_DISPLAY_OVERRIDES,
     STOP_LIST_DESCRIPTORS,
     Pass3CallTiming,
     Pass3Stats,
@@ -20,6 +21,7 @@ from rational_recipes.scrape.pass3_titles import (
     _variants_to_slots,
     _VariantSlot,
     apply_ambiguous_suffix,
+    apply_family_display_override,
     build_default_title_fn,
     build_title_prompt,
     format_pass3_summary,
@@ -1617,6 +1619,148 @@ class TestRunPass3StopListSubstitution:
         for t in titles:
             assert t.endswith(" Soup")
             assert "Water" not in t
+
+
+# --- Family-name display overrides (RationalRecipes-ec1a) -------------
+
+
+class TestApplyFamilyDisplayOverride:
+    """Pure-function checks for the post-bt9e family-name display rewrite."""
+
+    def test_descriptor_prefixed_title_hyphenated(self) -> None:
+        assert (
+            apply_family_display_override(
+                "Ginger Bread And Butter Pickles", "bread and butter pickles"
+            )
+            == "Ginger Bread-and-Butter Pickles"
+        )
+
+    def test_two_word_descriptor_prefix_preserved(self) -> None:
+        assert (
+            apply_family_display_override(
+                "White Onion Bread And Butter Pickles",
+                "bread and butter pickles",
+            )
+            == "White Onion Bread-and-Butter Pickles"
+        )
+
+    def test_singleton_bare_family_overridden(self) -> None:
+        """Singleton path hands ``family.title()`` to the override; the
+        result is the canonical hyphenated form with no descriptor."""
+        assert (
+            apply_family_display_override(
+                "Bread And Butter Pickles", "bread and butter pickles"
+            )
+            == "Bread-and-Butter Pickles"
+        )
+
+    def test_family_not_in_override_map_unchanged(self) -> None:
+        assert (
+            apply_family_display_override(
+                "Spice Pumpkin Bread", "pumpkin bread"
+            )
+            == "Spice Pumpkin Bread"
+        )
+
+    def test_idempotent(self) -> None:
+        """Re-applying must be a no-op — Pass 3 re-runs with ``force=True``
+        would otherwise mangle already-overridden titles."""
+        once = apply_family_display_override(
+            "Ginger Bread And Butter Pickles", "bread and butter pickles"
+        )
+        twice = apply_family_display_override(
+            once, "bread and butter pickles"
+        )
+        assert once == twice == "Ginger Bread-and-Butter Pickles"
+
+    def test_idempotent_singleton(self) -> None:
+        once = apply_family_display_override(
+            "Bread And Butter Pickles", "bread and butter pickles"
+        )
+        twice = apply_family_display_override(
+            once, "bread and butter pickles"
+        )
+        assert once == twice == "Bread-and-Butter Pickles"
+
+    def test_lookup_contains_seed_entry(self) -> None:
+        """The initial seed entry from the bead must remain intact."""
+        assert (
+            FAMILY_DISPLAY_OVERRIDES["bread and butter pickles"]
+            == "Bread-and-Butter Pickles"
+        )
+
+
+class TestRunPass3FamilyDisplayOverride:
+    """End-to-end checks: run_pass3 wires ``apply_family_display_override``
+    as the final step in both the multi-variant and singleton paths."""
+
+    def test_multi_variant_descriptor_lands_hyphenated(self) -> None:
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="bread and butter pickles",
+            canonical_ingredients=frozenset(
+                {"cucumber", "vinegar", "ginger"}
+            ),
+            category="condiment",
+        )
+        _make_variant(
+            db,
+            l1_title="bread and butter pickles",
+            canonical_ingredients=frozenset(
+                {"cucumber", "vinegar", "white onion"}
+            ),
+            category="condiment",
+        )
+        run_pass3(db=db, title_fn=_stub_title_fn())
+        titles = {v.display_title for v in db.list_variants()}
+        for t in titles:
+            assert t is not None
+            assert "Bread-and-Butter Pickles" in t, (
+                f"expected hyphenated family in {t!r}"
+            )
+            assert "Bread And Butter Pickles" not in t
+        assert "Ginger Bread-and-Butter Pickles" in titles
+        assert "White Onion Bread-and-Butter Pickles" in titles
+
+    def test_singleton_gets_hyphenated_family(self) -> None:
+        """Singleton path skips the LLM but must still apply the override."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="bread and butter pickles",
+            canonical_ingredients=frozenset(
+                {"cucumber", "vinegar", "sugar"}
+            ),
+            category="condiment",
+        )
+        run_pass3(db=db, title_fn=_stub_title_fn())
+        v = db.list_variants()[0]
+        assert v.display_title == "Bread-and-Butter Pickles"
+
+    def test_unaffected_family_passes_through(self) -> None:
+        """A family with no override entry must render with the default
+        Title-Case form — the override is opt-in per family."""
+        db = CatalogDB.in_memory()
+        _make_variant(
+            db,
+            l1_title="pumpkin bread",
+            canonical_ingredients=frozenset({"flour", "pumpkin", "spice"}),
+            category="bread",
+        )
+        _make_variant(
+            db,
+            l1_title="pumpkin bread",
+            canonical_ingredients=frozenset(
+                {"flour", "pumpkin", "molasses"}
+            ),
+            category="bread",
+        )
+        run_pass3(db=db, title_fn=_stub_title_fn())
+        for v in db.list_variants():
+            assert v.display_title is not None
+            assert v.display_title.endswith("Pumpkin Bread")
+            assert "-" not in v.display_title
 
 
 # Suppress unused-import lint guards for fixtures shared with other suites.
