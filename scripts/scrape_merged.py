@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Run the full merged-corpus scrape pipeline: RecipeNLG + WDC → CSVs + manifest.
+"""Run the full merged-corpus scrape pipeline: RecipeNLG + WDC → recipes.db.
 
-Thin wrapper around ``scrape.pipeline_merged.run_merged_pipeline``. Per variant,
-writes one rr-stats-compatible CSV plus a shared ``manifest.json`` that the
-review shell (bead ``eco``), SQLite writer (``5ub``), and L3 splitter (``7eo``)
-consume.
+Thin wrapper around ``scrape.pipeline_merged.run_merged_pipeline``. Writes
+each surviving variant directly into ``recipes.db`` (variants +
+variant_members + variant_ingredient_stats) so ``review_variants.py`` and
+``render_drop.py`` work on the output without a separate import step
+(RationalRecipes-v61w). The legacy CSV+manifest emission is preserved as
+a debugging affordance — pass ``--no-csv`` to skip it.
 
 Each surviving recipe is LLM-parsed once for ingredient-line structure and,
 on the WDC side, once before merge for ingredient-name extraction — so this
@@ -95,6 +97,34 @@ def main() -> int:
         default=OLLAMA_BASE_URL,
         help=f"Ollama API base URL (default: {OLLAMA_BASE_URL})",
     )
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=Path("output/catalog/recipes.db"),
+        help=(
+            "SQLite catalog DB to write variants to. "
+            "Created if missing. Default: output/catalog/recipes.db"
+        ),
+    )
+    parser.add_argument(
+        "--no-db",
+        action="store_true",
+        help="Skip writing to the catalog DB (CSV+manifest only).",
+    )
+    parser.add_argument(
+        "--no-csv",
+        action="store_true",
+        help="Skip CSV+manifest output (DB only).",
+    )
+    parser.add_argument(
+        "--clean-l1",
+        action="store_true",
+        help=(
+            "Delete variants under each L1 key touched by this run that "
+            "this run did not produce. Useful for re-running the same "
+            "title query and converging on the new variant set."
+        ),
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -109,8 +139,17 @@ def main() -> int:
     if not args.wdc_zip.exists():
         print(f"WDC zip not found: {args.wdc_zip}", file=sys.stderr)
         return 1
+    if args.no_db and args.no_csv:
+        print(
+            "--no-db and --no-csv together produce no output. Pick one.",
+            file=sys.stderr,
+        )
+        return 2
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    db_path = None if args.no_db else args.db
+    emit_csv = not args.no_csv
 
     manifest, stats = run_merged_pipeline(
         recipenlg_path=args.recipenlg,
@@ -126,6 +165,9 @@ def main() -> int:
         bucket_size=args.bucket_size,
         llm_model=args.model,
         ollama_url=args.ollama_url,
+        db_path=db_path,
+        delete_stale_l1=args.clean_l1,
+        emit_csv=emit_csv,
     )
 
     print(f"Loaded rnlg={stats.recipenlg_in} wdc={stats.wdc_in}")
@@ -142,7 +184,10 @@ def main() -> int:
         f"Parsed: {stats.rows_parsed} rows → {stats.rows_normalized} normalized "
         f"(dedup dropped {stats.rows_dedup_dropped})"
     )
-    print(f"Emitted {len(manifest.variants)} variant(s) to {args.output_dir}/")
+    if emit_csv:
+        print(f"Emitted {len(manifest.variants)} variant(s) to {args.output_dir}/")
+    if db_path is not None:
+        print(f"Wrote {len(manifest.variants)} variant(s) to {db_path}")
     if stats.db_misses:
         top = sorted(stats.db_misses.items(), key=lambda kv: -kv[1])[:10]
         print("Top DB misses: " + ", ".join(f"{k} ({v})" for k, v in top))

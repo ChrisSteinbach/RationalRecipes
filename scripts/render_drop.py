@@ -34,6 +34,22 @@ def _scale_to_grams(mean_proportion: float, batch_grams: float) -> float:
     return mean_proportion * batch_grams
 
 
+def _format_url(url: str | None) -> str:
+    """Prepend ``https://`` only when the URL doesn't already carry a scheme.
+
+    Source URLs in ``recipes.db`` come from two corpora with mixed
+    conventions: RecipeNLG often stores ``www.cookbooks.com/...``
+    (no scheme) while WDC and some food.com rows arrive as
+    ``https://...``. Blindly prepending produced ``https://https://...``
+    in the early hand-cycle output.
+    """
+    if not url:
+        return "(no URL)"
+    if url.startswith(("http://", "https://")):
+        return url
+    return f"https://{url}"
+
+
 def render(
     db_path: Path, variant_id: str, batch_grams: float = 1000.0
 ) -> str:
@@ -156,7 +172,7 @@ def render(
         lines.append("")
         lines.append(
             f"> [{median_source['title']}]"
-            f"(https://{median_source['url']})"
+            f"({_format_url(median_source['url'])})"
         )
         lines.append("")
         lines.append(
@@ -182,7 +198,7 @@ def render(
         lines.append("")
         for src in sources:
             corpus_tag = src["corpus"]
-            url = f"https://{src['url']}" if src["url"] else "(no URL)"
+            url = _format_url(src["url"])
             outlier = src["outlier_score"]
             lines.append(
                 f"- [{src['title']}]({url}) "

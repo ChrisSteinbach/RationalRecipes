@@ -1,13 +1,9 @@
 # Chocolate Chip Cookies — Hand-Cycle Drop
 
 > Variant identified by RationalRecipes-ehe7 hand-cycle, 2026-05-05/06.
-> **This is the artifact's identification + provenance side. The
-> averaged-quantities side is unfinished** — see [friction journal
-> F1+F9](friction-journal.md) for why; it needs a small bridge between
-> `scrape_merged.py`'s CSV+manifest output and the central-tendency
-> math in `catalog_db.py` before `render_drop.py` can produce a fully
-> averaged drop. The shape that drop will take is shown by
-> [`placeholder-brown-sugar-pb-ccc.md`](placeholder-brown-sugar-pb-ccc.md).
+> Quantities filled in 2026-05-06 by RationalRecipes-v61w
+> (`scripts/import_merged_artifacts.py` + `scripts/render_drop.py`
+> against `output/catalog/recipes.db`).
 
 ## Variant
 
@@ -38,22 +34,46 @@ would be one of the other 9 variants in
 
 ## Quantities
 
-*Pending — see friction-journal F1+F9. The CSV at
-`output/merged/ehe7-ccc/chocolate_chip_cookies_b34c2dce79e2.csv` has
-the parsed cells per source recipe (e.g. "1 c", "12 oz", "2 MEDIUM"),
-but central-tendency mass percentages are not computed — that was
-the retired `rr-stats` job. To complete this section, one of:*
+Mass percentages averaged across **98 independent source recipes**
+(reconstructed from `output/merged/ehe7-ccc/` via
+`scripts/import_merged_artifacts.py`). 95% CIs are ±1.96·σ/√n. ``n`` is
+the smallest subset for which an ingredient appears.
 
-1. *Re-implement central-tendency math against the CSV (~50 lines,
-   reusing `catalog_db.py`'s formulas — `numpy.mean`, `numpy.std`,
-   1.96·σ/√n).*
-2. *Land the F1 bridge (scrape_merged.py → recipes.db) so that
-   `render_drop.py` works on these variants directly.*
+| Ingredient | Mass % | ± stddev | 95% CI | n | per 1 kg |
+|---|---:|---:|---:|---:|---:|
+| baking soda | 0.5% | 0.3% | 0.4–0.5% | 93 | 5 g |
+| brown sugar | 13.9% | 11.9% | 11.5–16.3% | 66 | 139 g |
+| chocolate chips | 21.3% | 15.7% | 18.2–24.4% | 71 | 213 g |
+| egg | 8.9% | 4.4% | 8.0–9.8% | 96 | 89 g |
+| flour | 32.4% | 15.5% | 29.3–35.4% | 94 | 324 g |
+| margarine | 12.5% | 13.7% | 9.8–15.2% | 59 | 125 g |
+| salt | 0.5% | 0.4% | 0.4–0.6% | 82 | 5 g |
+| sugar | 9.5% | 9.5% | 7.6–11.3% | 60 | 95 g |
+| vanilla | 0.6% | 0.4% | 0.5–0.7% | 86 | 6 g |
+| granulated sugar | 0.0% | 0.0% | 0.0–0.0% | 0\* | 0 g\* |
+| nuts | 0.0% | 0.0% | 0.0–0.0% | 0\* | 0 g\* |
+| shortening | 0.0% | 0.0% | 0.0–0.0% | 0\* | 0 g\* |
 
-*The shape this section will take is shown in
-[`placeholder-brown-sugar-pb-ccc.md`](placeholder-brown-sugar-pb-ccc.md)
-(rendered from a different variant that lives in the existing
-`recipes.db`).*
+\* *Granulated sugar / nuts / shortening are in the variant's
+canonical ingredient set but not the CSV header (they appeared in <50%
+of source recipes and were dropped from the per-row CSV at
+extraction time). The reimport reconstructs zero usage for these
+across all rows. Re-extracting against an updated `scrape_merged.py`
+that writes directly to recipes.db (post-v61w) would recover real
+percentages for them.*
+
+**High-variance ingredients** (CV > 50% — bakers disagree on the
+right amount, expected for a 98-recipe mix of tradition styles):
+brown sugar (CV=86%), chocolate chips (CV=74%), margarine (CV=110%),
+sugar (CV=100%), salt (CV=90%), vanilla (CV=71%), baking soda
+(CV=56%). The variance reflects the genuine spread between
+butter-forward, margarine-forward, and shortening-forward American
+CCC traditions co-existing in the cluster — not a measurement
+problem.
+
+The shape this section was previewed in via
+[`placeholder-brown-sugar-pb-ccc.md`](placeholder-brown-sugar-pb-ccc.md);
+this is the real thing.
 
 ## Instructions
 

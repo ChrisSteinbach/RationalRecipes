@@ -1048,6 +1048,48 @@ class CatalogDB:
         return [VariantSourceRow(source_type=r[0], title=r[1], ref=r[2]) for r in rows]
 
 
+def emit_variants_to_db(
+    variants: Sequence[MergedVariantResult],
+    db: CatalogDB,
+    *,
+    delete_stale_for_l1: bool = False,
+) -> int:
+    """Write merged-pipeline variants to the catalog DB.
+
+    Mirrors ``pipeline_merged.emit_variants`` (CSV+manifest) but targets
+    SQLite. Variants with empty ``normalized_rows`` are skipped — they
+    can't be averaged. Returns the number of variants written.
+
+    Each variant goes through ``CatalogDB.upsert_variant``, which means
+    ``variants`` + ``variant_members`` + ``variant_ingredient_stats``
+    are populated atomically per variant. The L1 key recorded on each
+    variant row is ``normalize_title(variant.variant_title)``.
+
+    ``delete_stale_for_l1`` removes variants under each L1 key touched
+    by this run that are not in the input set. Useful for re-runs of
+    the same title query that should converge on the new variant set
+    rather than accumulate stale rows. Defaults to ``False`` so callers
+    don't accidentally drop unrelated work that happens to share an L1
+    key (the existing 337-variant catalog DB is the load-bearing
+    motivation for the conservative default).
+    """
+    from rational_recipes.scrape.grouping import normalize_title
+
+    written = 0
+    by_l1_keep: dict[str, set[str]] = {}
+    for variant in variants:
+        if not variant.normalized_rows:
+            continue
+        l1_key = normalize_title(variant.variant_title)
+        db.upsert_variant(variant, l1_key=l1_key)
+        by_l1_keep.setdefault(l1_key, set()).add(variant.variant_id)
+        written += 1
+    if delete_stale_for_l1:
+        for l1_key, keep in by_l1_keep.items():
+            db.delete_stale_variants_for_l1(l1_key, keep)
+    return written
+
+
 @dataclass(frozen=True, slots=True)
 class ParsedIngredientRow:
     """One row for the ``parsed_ingredients`` table."""

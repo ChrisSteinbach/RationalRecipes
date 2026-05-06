@@ -11,6 +11,7 @@ from rational_recipes.catalog_db import (
     ListFilters,
     ParsedIngredientRow,
     ParsedLineRow,
+    emit_variants_to_db,
     parsed_from_json,
     parsed_to_json,
 )
@@ -268,6 +269,110 @@ class TestComputeStatsNoLongerFilters:
         stats = db.get_ingredient_stats(variant.variant_id)
         names = {s.canonical_name for s in stats}
         assert names == {"flour", "milk", "ketchup"}
+
+
+class TestEmitVariantsToDb:
+    """RationalRecipes-v61w: the bridge from pipeline_merged to recipes.db."""
+
+    def test_writes_variants_members_and_stats(self) -> None:
+        db = CatalogDB.in_memory()
+        a = _variant(n_rows=4, title="pannkakor")
+        b = _variant(n_rows=3, title="crepes")
+
+        written = emit_variants_to_db([a, b], db)
+
+        assert written == 2
+        listed = db.list_variants()
+        titles = {v.normalized_title for v in listed}
+        assert titles == {"pannkakor", "crepes"}
+        # Each variant must have member rows AND stats rows — without
+        # both, render_drop.py can't produce a drop.
+        for v in listed:
+            assert db.get_variant_members(v.variant_id), v
+            assert db.get_ingredient_stats(v.variant_id), v
+
+    def test_skips_empty_variants(self) -> None:
+        db = CatalogDB.in_memory()
+        empty = MergedVariantResult(
+            variant_title="ghost",
+            canonical_ingredients=frozenset({"flour"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[],
+            header_ingredients=["flour"],
+        )
+        real = _variant(n_rows=3)
+        written = emit_variants_to_db([empty, real], db)
+        assert written == 1
+        assert len(db.list_variants()) == 1
+
+    def test_idempotent_on_re_run(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=4)
+        emit_variants_to_db([v], db)
+        emit_variants_to_db([v], db)
+
+        listed = db.list_variants()
+        assert len(listed) == 1
+        # Re-running must not duplicate member or stat rows.
+        assert len(db.get_variant_members(v.variant_id)) == 4
+        assert len(db.get_ingredient_stats(v.variant_id)) == 2
+
+    def test_stale_l1_kept_by_default(self) -> None:
+        """Default behavior preserves variants outside the input set —
+        a per-recipe run for one query must not silently drop variants
+        from a previous unrelated query."""
+        db = CatalogDB.in_memory()
+        old = _variant(n_rows=3, title="pannkakor")
+        emit_variants_to_db([old], db)
+
+        # New input is a *different* variant under the same L1 key
+        # (different ingredient set → different variant_id).
+        new = MergedVariantResult(
+            variant_title="pannkakor",
+            canonical_ingredients=frozenset({"flour", "buttermilk"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row(
+                    f"https://x/{i}",
+                    {"flour": "100 g", "buttermilk": "200 ml"},
+                    {"flour": 33.0 + i, "buttermilk": 67.0 - i},
+                )
+                for i in range(3)
+            ],
+            header_ingredients=["flour", "buttermilk"],
+        )
+        emit_variants_to_db([new], db)
+
+        listed = db.list_variants()
+        ids = {v.variant_id for v in listed}
+        assert ids == {old.variant_id, new.variant_id}
+
+    def test_clean_l1_drops_stale_variants(self) -> None:
+        """``delete_stale_for_l1=True`` converges the touched L1 keys on
+        the input variant set; variants not in the input are removed."""
+        db = CatalogDB.in_memory()
+        old = _variant(n_rows=3, title="pannkakor")
+        emit_variants_to_db([old], db)
+
+        new = MergedVariantResult(
+            variant_title="pannkakor",
+            canonical_ingredients=frozenset({"flour", "buttermilk"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row(
+                    f"https://x/{i}",
+                    {"flour": "100 g", "buttermilk": "200 ml"},
+                    {"flour": 33.0 + i, "buttermilk": 67.0 - i},
+                )
+                for i in range(3)
+            ],
+            header_ingredients=["flour", "buttermilk"],
+        )
+        emit_variants_to_db([new], db, delete_stale_for_l1=True)
+
+        listed = db.list_variants()
+        ids = {v.variant_id for v in listed}
+        assert ids == {new.variant_id}
 
 
 class TestL1RunTracking:

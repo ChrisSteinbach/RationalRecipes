@@ -593,6 +593,9 @@ def run_merged_pipeline(
     bucket_size: float = DEFAULT_BUCKET_SIZE,
     llm_model: str = "gemma4:e2b",
     ollama_url: str = OLLAMA_BASE_URL,
+    db_path: Path | None = None,
+    delete_stale_l1: bool = False,
+    emit_csv: bool = True,
 ) -> tuple[Manifest, PipelineRunStats]:
     """End-to-end: load both corpora, merge, LLM-parse, normalize, emit.
 
@@ -600,6 +603,21 @@ def run_merged_pipeline(
     extraction before merge, once for ingredient-line parsing after
     merge); start with a small title_query and tight min-group-size
     when exercising on real data.
+
+    ``db_path``: when set, also writes variants + variant_members +
+    variant_ingredient_stats into the SQLite catalog at that path
+    (RationalRecipes-v61w). The catalog is opened/created on demand;
+    pre-existing variants under unrelated L1 keys are not touched.
+
+    ``delete_stale_l1``: when True, variants under each L1 key touched
+    by this run that aren't produced by it are deleted from the DB —
+    useful for re-runs of the same title query that should converge on
+    a fresh variant set rather than accumulate. Default False so
+    unrelated DB content is never clobbered.
+
+    ``emit_csv``: keep the CSV+manifest emission step. Default True
+    (debugging affordance — same shape ``rr-stats`` consumed). Set
+    False for DB-only runs.
     """
     rnlg_loader = RecipeNLGLoader(path=recipenlg_path)
     rnlg_matching: list[Recipe] = list(rnlg_loader.search_title(title_query))
@@ -639,13 +657,43 @@ def run_merged_pipeline(
         bucket_size=bucket_size,
     )
 
-    manifest = emit_variants(variants, output_dir)
-    logger.info(
-        "Emitted %d variant(s) to %s (dropped %d rows in within-variant dedup)",
-        len(manifest.variants),
-        output_dir,
-        partial_stats.rows_dedup_dropped,
-    )
+    if emit_csv:
+        manifest = emit_variants(variants, output_dir)
+        logger.info(
+            "Emitted %d variant(s) to %s (dropped %d rows in within-variant dedup)",
+            len(manifest.variants),
+            output_dir,
+            partial_stats.rows_dedup_dropped,
+        )
+    else:
+        manifest = Manifest(
+            variants=[
+                v.to_manifest_entry(v.csv_filename())
+                for v in variants
+                if v.normalized_rows
+            ]
+        )
+        logger.info(
+            "Skipped CSV emission (emit_csv=False); built %d variant manifest "
+            "entries in memory (dropped %d rows in within-variant dedup)",
+            len(manifest.variants),
+            partial_stats.rows_dedup_dropped,
+        )
+
+    if db_path is not None:
+        # Lazy import: catalog_db imports MergedNormalizedRow / MergedVariantResult
+        # from this module, so a top-level import would cycle.
+        from rational_recipes.catalog_db import CatalogDB, emit_variants_to_db
+
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        db = CatalogDB.open(db_path)
+        try:
+            written = emit_variants_to_db(
+                variants, db, delete_stale_for_l1=delete_stale_l1
+            )
+            logger.info("Wrote %d variant(s) to %s", written, db_path)
+        finally:
+            db.close()
 
     stats = PipelineRunStats(
         recipenlg_in=len(rnlg_matching),
