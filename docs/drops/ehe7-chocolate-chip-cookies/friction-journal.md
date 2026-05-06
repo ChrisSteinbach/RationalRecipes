@@ -99,6 +99,15 @@ hurt. Two cheap options:
   `recipes.db` during extraction.
 - Lookup-on-demand via the corpus loaders.
 
+**2026-05-06 update**: for RecipeNLG sources, the second path is
+nearly free — `dataset/full_dataset.csv` already has the
+`directions` column. The ehe7 drop's instructions came from a
+1-line `csv.DictReader` lookup, no web request. WDC sources would
+still need a fetch (or a corpus revisit). Recommendation tightens:
+populate a small `recipes.directions_text` column at extraction
+time, RNLG-only first, WDC behind a follow-up bead. That's a
+sub-50-LOC change and removes the manual paste step entirely.
+
 ### F6: review_variants.py is interactive only — no scriptable render
 
 The review tool is a keystroke loop (a/d/n/?/q). For the hand-cycle,
@@ -129,6 +138,50 @@ is invisible — you discover it when the process exits.
 
 Worth noting since per-drop timing data feeds 5z8w. A simple
 "recipes parsed / total" counter would help.
+
+### F10: median-source instruction quality varies (ehe7 CCC was terse)
+
+Per r8hx option 1, the hand-cycle takes the lowest-outlier source's
+instructions verbatim. For ehe7's CCC variant (b34c2dce79e2, n=98),
+the most-central source was
+[cookbooks.com id=473872](https://www.cookbooks.com/Recipe-Details.aspx?id=473872)
+at outlier_score=6.32. Its full directions:
+
+> 1. Cream shortening, margarine and sugar.
+> 2. Add eggs and vanilla. Add dry ingredients. Add chocolate chips last.
+> 3. Bake at 350° for 10 to 12 minutes.
+
+That's three sentences with no oven preheat, no cookie shape/size,
+no cooling instruction, no troubleshooting. A baker who's made
+cookies before could follow this. A first-timer would struggle.
+
+The runner-ups in the top-5 most-central sources have much better
+instructions — id=1017218 has a preheat step + drop-by-teaspoon
+guidance, id=883123 has detailed mixer speeds. The median-by-outlier
+sometimes picks the *most-typical-shape* recipe rather than the
+*best-explained* one. They're correlated but not identical.
+
+**Implication for r8hx**: option 1 ("median source verbatim") has a
+floor problem. Three options under the same option label, ordered
+by editorial cost:
+
+1. **Pick from top-N central sources** by instruction-completeness
+   heuristic (length, step count, presence of preheat / temperature /
+   timing keywords). Cheap, deterministic.
+2. **Lightly expand the median's instructions** with omitted
+   universals (preheat to 350°F, cool on rack, etc.). Closer to a
+   real recipe, but introduces editorial choice.
+3. **Synthesize from the cluster** (r8hx option 2) — extract verbs +
+   temperatures + times across all sources, average them. Maximally
+   automated, maximally speculative.
+
+For weekly cadence, (1) is the cheapest viable upgrade. (2) is what
+a human editor would do anyway. (3) is research-grade and probably
+overshoots the pivot's quality bar.
+
+The ehe7 drop ships with the literal-median instructions per
+r8hx-option-1 strict interpretation, with this gap noted in
+[`drop.md`](drop.md)'s "Notes for the user."
 
 ### F9: scrape_merged.py CSVs are display strings, not normalized proportions
 
@@ -161,6 +214,14 @@ CCC drop, one of:
 This compounds with F1 (CSVs vs recipes.db). A single fix that
 addresses both — `pipeline_merged.py` writes structured normalized
 output to recipes.db — is probably the right move.
+
+**2026-05-06 closure**: RationalRecipes-v61w landed option 3 (and
+also wrote a one-shot importer for the existing ehe7 CCC artifacts,
+so option 1 is also satisfied for legacy data). Fresh
+`scrape_merged.py` runs now write `variants` + `variant_members` +
+`variant_ingredient_stats` directly to `recipes.db`.
+`scripts/render_drop.py b34c2dce79e2` produces a complete drop
+without any further bridging. F1 + F9 are closed.
 
 ## Timing
 
@@ -220,28 +281,63 @@ What's missing for shipping:
 
 If the pivot proceeds, the right order of next steps is:
 
-1. **Bridge `pipeline_merged.py` → `recipes.db` with computed stats**
-   (combines F1 + F9). The cleanest fix: have `pipeline_merged.py`
-   write `variants` + `variant_members` + `variant_ingredient_stats`
-   directly, computing means/stddev/CIs inline (the math already
-   lives in `catalog_db.py`). Supersedes the CSV+manifest format
-   (which was for the retired `rr-stats`). After this, `render_drop.py`
-   works on fresh extractions and the hand-cycle drop completes.
-2. **Wire `parsed_ingredient_lines` cache reuse into `pipeline_merged.py`**
-   (F2). Free speedup proportional to corpus overlap with prior
-   drops. Without this, every drop re-parses everything.
+1. ~~**Bridge `pipeline_merged.py` → `recipes.db` with computed
+   stats** (combines F1 + F9).~~ **DONE 2026-05-06 in
+   RationalRecipes-v61w.** `scrape_merged.py` now writes variants +
+   members + ingredient_stats directly. `render_drop.py` produces
+   complete drops on fresh extractions.
+2. **Wire `parsed_ingredient_lines` cache reuse into
+   `pipeline_merged.py`** (F2). Free speedup proportional to corpus
+   overlap with prior drops. Without this, every drop re-parses
+   everything.
 3. **Populate `variant_ingredient_stats.density_g_per_ml` from
-   `ingredients.db`** during extraction (F4). Makes rendering produce
-   "cups" / "tbsp" not just grams.
-4. **Cache source instructions in `recipes.db`** (F5). Removes the
-   manual paste step. Simplest implementation: store full source
-   instruction text on the `recipes` table during extraction.
-5. **Promote `render_drop.py` into a `review_variants.py render` subcommand**
-   (sj18). Add `--substitute` / `--filter` operations there too.
-6. **Add `--progress` to `scrape_merged.py`** (F8). Not blocking but
+   `ingredients.db`** during extraction (F4). Makes rendering
+   produce "cups" / "tbsp" not just grams.
+4. **Cache source instructions in `recipes.db`** (F5). For RNLG
+   sources this is a 1-line addition (the `directions` column is
+   already in the local CSV). For WDC, harder. Removes the manual
+   paste step.
+5. **Top-5-pick heuristic for instructions** (F10, new). When the
+   literal median is too terse, pick the best-explained source from
+   the top-5 most-central by simple heuristics (step count, presence
+   of preheat keywords). r8hx-option-1 with a quality floor.
+6. **Promote `render_drop.py` into a `review_variants.py render`
+   subcommand** (sj18). Add `--substitute` / `--filter` operations
+   there too.
+7. **Add `--progress` to `scrape_merged.py`** (F8). Not blocking but
    makes 5z8w easier to inform.
 
-These are roughly ordered by friction-per-drop. (1) is the gating
-item — without it, ehe7 cannot fully complete. (2) and (3) are
-quality-of-life. (4) eliminates a recurring manual step. (5)
-unifies the CLI. (6) is cosmetic.
+Rough friction-per-drop ordering. (1) is closed. (2) and (3) are
+quality-of-life. (4) and (5) eliminate the recurring manual /
+editorial steps the ehe7 cycle exposed. (6) unifies the CLI. (7) is
+cosmetic.
+
+## Decision
+
+The hand-cycle's central question — *"does the pivot feel viable
+based on this cycle? Cheap enough to repeat weekly?"* — needs the
+user's verdict.
+
+The data this cycle produced:
+
+- **Drop wall-clock cost**: 111 min Ollama parsing + ~30 min editorial
+  (ingredient-set picking, instruction selection, hand-edits in
+  drop.md). Total ~2.5h per drop today, mostly Ollama-bound.
+- **Throughput**: ~570 source recipes/hour against single-host
+  remote Ollama. Cookie-shaped clusters (1,400+ recipes) are at the
+  upper end; narrower clusters are faster.
+- **Polish floor**: 9 of 12 canonical ingredients have averaged
+  stats with sensible variance; 3 are zeroed-out by the v61w import
+  artifact (fresh runs after v61w won't have this). Median-source
+  instructions are sometimes terse (F10).
+- **Toolchain debt remaining**: F2, F4, F5, F10. None are blockers.
+- **Decisions still upstream**: z9cz (canonical home), 5z8w
+  (cadence), r8hx (instruction-derivation policy), 2n09 (LLM model).
+
+Verdict (fill in):
+
+> _Pivot viable? (yes / yes-with-conditions / no)_:
+>
+> _Weekly cadence realistic with current friction?_:
+>
+> _Top 1-2 things to fix before drop #2_:

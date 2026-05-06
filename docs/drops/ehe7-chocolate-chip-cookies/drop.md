@@ -3,7 +3,9 @@
 > Variant identified by RationalRecipes-ehe7 hand-cycle, 2026-05-05/06.
 > Quantities filled in 2026-05-06 by RationalRecipes-v61w
 > (`scripts/import_merged_artifacts.py` + `scripts/render_drop.py`
-> against `output/catalog/recipes.db`).
+> against `output/catalog/recipes.db`). Instructions resolved against
+> the local RecipeNLG corpus (no live web fetch required — F5 partial
+> closure for RecipeNLG sources).
 
 ## Variant
 
@@ -79,45 +81,74 @@ this is the real thing.
 
 Per RationalRecipes-r8hx option 1: pick the median source recipe
 (lowest outlier score against the cluster's central tendency) and use
-its instructions verbatim.
+its instructions verbatim. The most-central source per
+`recipes.db` is:
 
-For this variant, the lowest-outlier source is:
+> [Chocolate Chip Cookies](https://www.cookbooks.com/Recipe-Details.aspx?id=473872)
+> (outlier_score=6.32, the modal recipe of this 98-recipe cluster)
 
-> [www.cookbooks.com/Recipe-Details.aspx?id=883123](https://www.cookbooks.com/Recipe-Details.aspx?id=883123)
-> (outlier_score=8.85)
+Verbatim instructions from that source (RecipeNLG copy, retrieved
+2026-05-06 from `dataset/full_dataset.csv`):
 
-The next four most-central sources, in case the top one is unusable:
+> 1. Cream shortening, margarine and sugar.
+> 2. Add eggs and vanilla. Add dry ingredients. Add chocolate chips last.
+> 3. Bake at 350° for 10 to 12 minutes.
+
+Bake-along ingredient list (the median source's exact quantities, for
+context — these are not the averaged values, just what this single
+recipe specifies):
+
+- 2/3 c. margarine
+- 2/3 c. shortening
+- 1 c. brown sugar
+- 1 c. sugar
+- 2 eggs
+- 1 tsp. salt
+- 1 tsp. soda
+- 2 tsp. vanilla
+- 3 1/2 c. flour
+- 1 (12 oz.) chocolate chips
+
+The next four most-central sources, in case the top one reads as too
+terse for publication (it does — see "Notes for the user" below):
 
 | outlier_score | URL |
 |---:|---|
-| 9.15 | https://www.food.com/recipe/chocolate-chip-cookies-6482 |
-| 9.81 | https://www.cookbooks.com/Recipe-Details.aspx?id=698527 |
-| 10.03 | https://www.cookbooks.com/Recipe-Details.aspx?id=626959 |
-| 10.51 | https://www.cookbooks.com/Recipe-Details.aspx?id=473872 |
-
-*Manual step: fetch instructions text from the chosen source URL,
-paste here. Per friction F5, instructions text isn't stored in
-recipes.db — this is a cache-source-instructions opportunity.*
+| 7.35 | https://www.food.com/recipe/chocolate-chip-cookies-6482 |
+| 7.42 | https://www.cookbooks.com/Recipe-Details.aspx?id=615517 |
+| 7.42 | https://www.cookbooks.com/Recipe-Details.aspx?id=1017218 |
+| 10.24 | https://www.cookbooks.com/Recipe-Details.aspx?id=883123 |
 
 ## Source recipes (provenance)
 
-This drop's quantities (when computed) will be the central tendency
-across these 98 source recipes. The 5 most central are listed above
-under Instructions; the full 98 are in the manifest at
-`output/merged/ehe7-ccc/manifest.json` under variant `b34c2dce79e2`.
+This drop's quantities are the central tendency across these 98
+source recipes (full list in `recipes.db`'s `variant_members` for
+`b34c2dce79e2`, also persisted in the manifest at
+`output/merged/ehe7-ccc/manifest.json`). The 5 most central are
+listed above under Instructions.
 
 Highest-outlier sources (least central, candidates for filtering in
 the review tool per RationalRecipes-sj18):
 
 | outlier_score | URL |
 |---:|---|
-| 64.89 | https://www.food.com/recipe/chocolate-chip-cookies-522705 |
-| 55.38 | https://www.cookbooks.com/Recipe-Details.aspx?id=964168 |
-| 45.39 | https://www.food.com/recipe/chocolate-chip-cookies-73698 |
+| 81.12 | https://www.food.com/recipe/chocolate-chip-cookies-522705 |
+| 57.56 | https://www.cookstr.com/recipes/chocolate-chip-cookies-3 |
+| 57.56 | https://cookpad.com/us/recipes/366891-chocolate-chip-cookies |
+| 56.88 | https://www.chowhound.com/recipes/chocolate-chip-cookies-30464 |
+| 53.71 | https://www.cookbooks.com/Recipe-Details.aspx?id=964168 |
+
+Outlier scores re-computed post-v61w from `recipes.db`'s
+`variant_members.outlier_score`. The original manifest's
+`row_outlier_scores` had the same shape but slightly different absolute
+values because the import zeroes the three non-header canonical
+ingredients (granulated sugar, nuts, shortening), shifting the
+distance metric. Same recipes are in the cluster either way — the
+ranking just shuffles a little.
 
 ## Methodology
 
-Quantities will be averaged across N independent source recipes from
+Quantities are averaged across 98 independent source recipes from
 RecipeNLG and WDC, mass-normalized to per-100 g of batch.
 Confidence intervals are 95% (1.96·σ/√n). Outliers are scored against
 the cluster's central tendency. The chosen instruction set is taken
@@ -130,8 +161,30 @@ design.
 
 ## Notes for the user
 
-The hand-cycle's central question — *"does the pivot feel viable
-based on this cycle?"* — is your call. The friction journal
-quantifies what would help; this drop captures what we have so far.
-A reasonable acceptance criterion would be: "after F1+F9 are bridged,
-this drop is an `npm run render` away from being shippable."
+The hand-cycle's three acceptance criteria:
+
+- ✓ **Drop artifact exists** — this file (`drop.md`) plus a Bluesky-
+  shaped thread sketch at [`thread.md`](thread.md).
+- ✓ **Friction log exists** — see [`friction-journal.md`](friction-journal.md);
+  10 friction points with concrete recommendations and real timing
+  data.
+- ⚠ **Decision recorded** — *your call.* The friction journal's
+  "Decision" section at the bottom is where to record the verdict.
+
+**One known polish gap on this artifact:** the median-source's
+instructions (id=473872) are terse — three steps, no hand-holding.
+That's r8hx option 1 done literally: take the median's instructions
+verbatim. Polished CCC instructions for a wider audience would
+either pick a more detailed top-5 source (id=1017218 or id=883123
+both work, see the Instructions section), expand the median lightly
+("preheat oven to 350°F" before step 3), or — per r8hx option 2 —
+synthesize instructions from the cluster instead of picking a single
+source. This choice is the strongest editorial lever in the pivot;
+the friction journal's F10 captures it as new data.
+
+A reasonable shipping criterion: *"if I'd bake from this drop and
+expect it to work, ship it."* The averaged ratios match common-sense
+CCC (32% flour, 21% chocolate chips, 14% brown sugar, 12% margarine,
+9% egg, 9% sugar, 0.5% each of salt / soda / vanilla) with expected
+high variance on fat type and chip volume. The terse instructions
+are the one thing a less-experienced baker would notice as thin.
