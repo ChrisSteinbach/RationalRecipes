@@ -91,45 +91,67 @@ See commits `faaf44a` (Phase 1: catalog pipeline) and `90e55a2`
 
 ## Open decisions
 
-The pivot has three substantive decisions that the rest of the design
+The pivot has substantive decisions that the rest of the design
 hangs on. Each has its own bead; this section captures them so the
-rest of the doc has stable references.
+rest of the doc has stable references. As of 2026-05-06: canonical
+home resolved (z9cz), cadence deferred (5z8w), instruction approach
+resolved (r8hx — full LLM synthesis with human review), LLM model
+choice still open (2n09).
 
-### Canonical home (RationalRecipes-z9cz)
+### Canonical home (RationalRecipes-z9cz) — RESOLVED 2026-05-06
 
-Where each drop's permanent record lives. Three options:
+Each drop's permanent public record is markdown on a **static site**
+(option 1 in the original framing). Default host: GitHub Pages
+(revisit if specific platform features warrant it). The static site
+is the canonical URL that social posts link to; it survives platform
+pivots and is SEO-indexable, which preserves the "How much salt in
+chocolate chip cookies?" → indexed-page advantage that the catalog
+framing originally bought.
 
-1. **Static site** (e.g. GitHub Pages) — markdown per recipe,
-   indexable, portable, low effort per drop.
-2. **PWA as archive** — keep the existing PWA, populate `recipes.db`
-   per drop. Reuses more existing work, heavier per drop.
-3. **Social-only** — accept the discoverability cost.
+The existing PWA is **repurposed as a maintainer-only editor**
+(RationalRecipes-bl4y) for the per-drop research workflow — drop
+source recipes from a cluster, reassign canonical mappings for
+source ingredients, combine ingredients with equivalence ratios. It
+is no longer the public catalog browser; that role moves to the
+static site.
 
-Decision required before sj18 (review CLI render output format) can
-land.
+This is a hybrid of option 1 + a custom PWA-as-editor framing not
+contemplated in the original three options. The category-routing
+concerns that motivated `zx14` and `j54p` close with this resolution
+since they were public-browse problems.
 
-### Cadence policy (RationalRecipes-5z8w)
+### Cadence policy (RationalRecipes-5z8w) — DEFERRED 2026-05-06
 
-Frequency, target-vs-commitment, skip handling. Best informed by
-ehe7 (hand-cycle timing data).
+Frequency, target-vs-commitment, skip handling. Deferred until the
+per-drop workflow is stable enough to ground the decision. Revisit
+once several drops have shipped, per-drop time has stabilized, and
+the editorial workflow (substitution review, instruction synthesis,
+render) is no longer in flux.
 
-### Instruction-derivation approach (RationalRecipes-r8hx)
+### Instruction-derivation approach (RationalRecipes-r8hx) — RESOLVED 2026-05-06
 
-Three approaches, ordered by LLM cost:
+**Full LLM synthesis (option 3) with human review.** For each
+variant, the N source instruction sequences are sent to an LLM with
+the variant's averaged ingredient profile; the LLM produces one
+canonical instruction set, which the maintainer reviews and edits
+before publication.
 
-1. **Median source** — pick the source recipe whose quantities are
-   closest to the central tendency, take its instructions verbatim.
-   Cheapest. Honest about provenance. Quality ceiling = the picked
-   source.
-2. **Cluster-then-synthesize** — cluster source instruction sequences
-   by similarity, take the largest cluster's representative,
-   LLM-polish. Per-variant LLM cost fixed, not N-dependent.
-3. **Full LLM synthesis** — feed N source instruction sequences to
-   the LLM, ask for a canonical sequence. Highest quality ceiling,
-   hardest to validate.
+The Pilot step (comparing options 1 and 2 side-by-side on 5–10
+already-shipped variants) was skipped — the user opted directly for
+the highest-quality-ceiling approach on the assumption that
+human-in-the-loop review compensates for hallucination risk and
+per-drop volume keeps per-variant LLM cost trivial.
 
-Recommended starting point: option 1 for the first hand-cycle (ehe7);
-upgrade later if the quality ceiling is too low.
+The output is treated as **generative consensus**, not measurement.
+It is labeled distinctly from the central-tendency mass profile when
+published, preserving the catalog's honesty about what is and isn't
+empirically averaged.
+
+Implementation gap (not yet beaded — shape TBD): synthesis pipeline,
+schema column for `canonical_instructions`, review surface (CLI via
+sj18 or PWA via bl4y), `render_drop.py` integration, model choice (a
+sub-question of 2n09 since synthesis is a different capability
+profile from structured-extraction parsing).
 
 ### LLM model choice (filed separately during this session)
 
@@ -164,7 +186,7 @@ The pivot is "validated" when:
 
 - One drop has been produced end-to-end by hand (ehe7).
 - Timing is acceptable for the chosen cadence (5z8w).
-- Canonical home and instruction approach are decided (z9cz, r8hx).
+- Strategic decisions resolved 2026-05-06: canonical home (z9cz: static site + PWA-as-editor per bl4y) and instruction approach (r8hx: full LLM synthesis with human review). Implementation work for the synthesis pipeline still pending.
 - The first drop has been published.
 
 If those hold, the pivot is no longer experimental and the second drop
