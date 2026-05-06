@@ -169,6 +169,27 @@ _SCHEMA: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_parsed_lines_text "
     "ON parsed_ingredient_lines(raw_line, model, seed)",
+    # sj18 sidecar: per-variant editorial overrides. Two override kinds —
+    # ``substitute`` folds canonical X into Y for the variant; ``filter``
+    # excludes one source recipe from the average. Stored as JSON payload
+    # so the schema doesn't grow per new override type. Insertion + delete
+    # both trigger a stats recompute that overwrites
+    # ``variant_ingredient_stats`` from ``variant_members`` +
+    # ``parsed_ingredients`` with the active override set applied. The
+    # underlying ``variant_members`` rows are never deleted, so any
+    # filter/substitute is reversible by clearing the override.
+    """
+    CREATE TABLE IF NOT EXISTS variant_overrides (
+      override_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+      variant_id     TEXT NOT NULL REFERENCES variants(variant_id),
+      override_type  TEXT NOT NULL
+                     CHECK(override_type IN ('substitute', 'filter')),
+      payload        TEXT NOT NULL,
+      created_at     TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_overrides_variant "
+    "ON variant_overrides(variant_id)",
 )
 
 
@@ -227,6 +248,21 @@ class VariantSourceRow:
     source_type: str
     title: str | None
     ref: str
+
+
+OverrideType = Literal["substitute", "filter"]
+_VALID_OVERRIDE_TYPES: frozenset[str] = frozenset({"substitute", "filter"})
+
+
+@dataclass(frozen=True, slots=True)
+class VariantOverrideRow:
+    """One editorial override on a variant (sj18 sidecar)."""
+
+    override_id: int
+    variant_id: str
+    override_type: OverrideType
+    payload: dict[str, Any]
+    created_at: str
 
 
 ReviewStatus = Literal["accept", "drop", "annotate"]
@@ -595,6 +631,329 @@ class CatalogDB:
                  WHERE variant_id = ?
                 """,
                 (status, note, reviewed_at, variant_id),
+            )
+
+    # --- Editorial overrides (sj18) ---
+
+    def add_substitute_override(
+        self,
+        variant_id: str,
+        from_name: str,
+        to_name: str,
+    ) -> int:
+        """Record ``from_name → to_name`` substitution; recompute stats.
+
+        Returns the new ``override_id``. Folds the X mass-fraction into Y
+        on the post-override view by aggregating grams under the resolved
+        canonical name before averaging. Original ``variant_members`` and
+        ``parsed_ingredients`` rows are untouched — clearing the override
+        restores the pre-substitution stats.
+        """
+        if not from_name or not to_name:
+            raise ValueError("substitute requires non-empty from_name and to_name")
+        if from_name == to_name:
+            raise ValueError("substitute from_name and to_name must differ")
+        if self.get_variant(variant_id) is None:
+            raise ValueError(f"variant_id {variant_id!r} not found")
+        payload = json.dumps({"from": from_name, "to": to_name}, ensure_ascii=False)
+        override_id = self._insert_override(variant_id, "substitute", payload)
+        self._recompute_stats_for_variant(variant_id)
+        return override_id
+
+    def add_filter_override(
+        self,
+        variant_id: str,
+        recipe_id: str,
+        reason: str = "",
+    ) -> int:
+        """Exclude ``recipe_id`` from the variant's average; recompute stats.
+
+        The ``variant_members`` row stays in place (so the operation is
+        reversible by clearing the override). Returns the new
+        ``override_id``. Raises ``ValueError`` if the recipe is not a
+        member of the variant.
+        """
+        if self.get_variant(variant_id) is None:
+            raise ValueError(f"variant_id {variant_id!r} not found")
+        is_member = self._conn.execute(
+            "SELECT 1 FROM variant_members WHERE variant_id = ? AND recipe_id = ?",
+            (variant_id, recipe_id),
+        ).fetchone()
+        if is_member is None:
+            raise ValueError(
+                f"recipe_id {recipe_id!r} is not a member of variant {variant_id!r}"
+            )
+        payload = json.dumps(
+            {"recipe_id": recipe_id, "reason": reason}, ensure_ascii=False
+        )
+        override_id = self._insert_override(variant_id, "filter", payload)
+        self._recompute_stats_for_variant(variant_id)
+        return override_id
+
+    def list_overrides(self, variant_id: str) -> list[VariantOverrideRow]:
+        """Active overrides for ``variant_id`` ordered by creation time."""
+        rows = self._conn.execute(
+            """
+            SELECT override_id, variant_id, override_type, payload, created_at
+            FROM variant_overrides
+            WHERE variant_id = ?
+            ORDER BY override_id ASC
+            """,
+            (variant_id,),
+        ).fetchall()
+        return [
+            VariantOverrideRow(
+                override_id=r[0],
+                variant_id=r[1],
+                override_type=r[2],
+                payload=json.loads(r[3]),
+                created_at=r[4],
+            )
+            for r in rows
+        ]
+
+    def clear_override(self, override_id: int) -> bool:
+        """Remove one override by id; recompute the variant's stats.
+
+        Returns ``True`` if a row was removed (and stats recomputed),
+        ``False`` if the id was not found. Recomputation runs even when
+        the cleared override was the only one — it restores the baseline
+        stats by replaying with an empty override set.
+        """
+        row = self._conn.execute(
+            "SELECT variant_id FROM variant_overrides WHERE override_id = ?",
+            (override_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        variant_id = row[0]
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM variant_overrides WHERE override_id = ?",
+                (override_id,),
+            )
+        self._recompute_stats_for_variant(variant_id)
+        return True
+
+    def clear_all_overrides(self, variant_id: str) -> int:
+        """Wipe every override for ``variant_id``; recompute stats once."""
+        count_row = self._conn.execute(
+            "SELECT COUNT(*) FROM variant_overrides WHERE variant_id = ?",
+            (variant_id,),
+        ).fetchone()
+        removed = int(count_row[0]) if count_row else 0
+        if removed == 0:
+            return 0
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM variant_overrides WHERE variant_id = ?",
+                (variant_id,),
+            )
+        self._recompute_stats_for_variant(variant_id)
+        return removed
+
+    def _insert_override(
+        self,
+        variant_id: str,
+        override_type: OverrideType,
+        payload: str,
+    ) -> int:
+        if override_type not in _VALID_OVERRIDE_TYPES:
+            raise ValueError(
+                f"invalid override_type {override_type!r}; expected one of "
+                f"{sorted(_VALID_OVERRIDE_TYPES)}"
+            )
+        with self._conn:
+            cursor = self._conn.execute(
+                """
+                INSERT INTO variant_overrides (
+                  variant_id, override_type, payload, created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    variant_id,
+                    override_type,
+                    payload,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+        return int(cursor.lastrowid or 0)
+
+    def _recompute_stats_for_variant(self, variant_id: str) -> None:
+        """Recompute ``variant_ingredient_stats`` applying active overrides.
+
+        Reads per-recipe gram quantities from ``parsed_ingredients`` for
+        each (non-excluded) variant member, applies any substitution
+        mapping (resolved transitively), aggregates grams into resolved
+        canonical names, normalizes per recipe to fractions, then averages
+        across the surviving members. Curated metadata columns
+        (``density_g_per_ml``, ``whole_unit_name``, ``whole_unit_grams``)
+        are carried forward from the existing stat row when the resolved
+        name is unchanged — recompute should not silently drop curated
+        per-ingredient annotations.
+        """
+        overrides = self.list_overrides(variant_id)
+        substitutions: dict[str, str] = {}
+        excluded_recipes: set[str] = set()
+        for ov in overrides:
+            if ov.override_type == "substitute":
+                substitutions[ov.payload["from"]] = ov.payload["to"]
+            elif ov.override_type == "filter":
+                excluded_recipes.add(ov.payload["recipe_id"])
+
+        def resolve(name: str) -> str:
+            seen: set[str] = set()
+            current = name
+            while current in substitutions and current not in seen:
+                seen.add(current)
+                current = substitutions[current]
+            return current
+
+        member_rows = self._conn.execute(
+            "SELECT recipe_id FROM variant_members WHERE variant_id = ?"
+            " ORDER BY recipe_id ASC",
+            (variant_id,),
+        ).fetchall()
+        active_member_ids = [
+            r[0] for r in member_rows if r[0] not in excluded_recipes
+        ]
+
+        per_recipe_proportions: list[dict[str, float]] = []
+        for rid in active_member_ids:
+            ing_rows = self._conn.execute(
+                "SELECT canonical_name, quantity FROM parsed_ingredients"
+                " WHERE recipe_id = ?",
+                (rid,),
+            ).fetchall()
+            grams: dict[str, float] = {}
+            for name, qty in ing_rows:
+                if qty is None or qty <= 0.0:
+                    continue
+                resolved = resolve(name)
+                grams[resolved] = grams.get(resolved, 0.0) + float(qty)
+            total = sum(grams.values())
+            if total <= 0.0:
+                per_recipe_proportions.append({})
+                continue
+            per_recipe_proportions.append(
+                {n: g / total for n, g in grams.items()}
+            )
+
+        all_names: set[str] = set()
+        for p in per_recipe_proportions:
+            all_names.update(p.keys())
+
+        existing = {s.canonical_name: s for s in self.get_ingredient_stats(variant_id)}
+        n = len(per_recipe_proportions)
+
+        new_rows: list[tuple[Any, ...]] = []
+        sorted_names = sorted(all_names)
+        next_ord = max(
+            (s.ordinal for s in existing.values()),
+            default=-1,
+        ) + 1
+        for name in sorted_names:
+            values = [p.get(name, 0.0) for p in per_recipe_proportions]
+            mean = sum(values) / n if n > 0 else 0.0
+            stddev: float | None
+            ci_lower: float | None
+            ci_upper: float | None
+            if n >= 2:
+                variance = sum((v - mean) ** 2 for v in values) / (n - 1)
+                stddev = math.sqrt(variance)
+                half_width = 1.96 * stddev / math.sqrt(n)
+                ci_lower = max(0.0, mean - half_width)
+                ci_upper = mean + half_width
+            else:
+                stddev = None
+                ci_lower = None
+                ci_upper = None
+            min_sample = sum(1 for v in values if v > 0.0)
+            prior = existing.get(name)
+            if prior is not None:
+                ordinal = prior.ordinal
+                density = prior.density_g_per_ml
+                whole_unit_name = prior.whole_unit_name
+                whole_unit_grams = prior.whole_unit_grams
+            else:
+                ordinal = next_ord
+                next_ord += 1
+                density = None
+                whole_unit_name = None
+                whole_unit_grams = None
+            new_rows.append(
+                (
+                    variant_id,
+                    name,
+                    ordinal,
+                    mean,
+                    stddev,
+                    ci_lower,
+                    ci_upper,
+                    None,  # ratio: recomputed below once base mean is known
+                    min_sample,
+                    density,
+                    whole_unit_name,
+                    whole_unit_grams,
+                )
+            )
+
+        # Rebuild ratio column relative to the base ingredient (per
+        # _compute_ingredient_stats: base = canonical[0] when not set).
+        variant = self.get_variant(variant_id)
+        base_ingredient = (
+            variant.base_ingredient if variant is not None else None
+        )
+        if base_ingredient is None and sorted_names:
+            base_ingredient = sorted_names[0]
+        base_mean = 0.0
+        if base_ingredient is not None:
+            for row in new_rows:
+                if row[1] == base_ingredient:
+                    base_mean = row[3]
+                    break
+        if base_mean > 0.0:
+            new_rows = [
+                (
+                    *row[:7],
+                    row[3] / base_mean,
+                    *row[8:],
+                )
+                for row in new_rows
+            ]
+
+        # Sort by (ordinal, name) and reassign dense ordinals so consumers
+        # that ORDER BY ordinal see a contiguous sequence.
+        new_rows.sort(key=lambda r: (r[2], r[1]))
+        new_rows = [
+            (row[0], row[1], i, *row[3:]) for i, row in enumerate(new_rows)
+        ]
+
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM variant_ingredient_stats WHERE variant_id = ?",
+                (variant_id,),
+            )
+            self._conn.executemany(
+                """
+                INSERT INTO variant_ingredient_stats (
+                  variant_id, canonical_name, ordinal, mean_proportion,
+                  stddev, ci_lower, ci_upper, ratio, min_sample_size,
+                  density_g_per_ml, whole_unit_name, whole_unit_grams
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                new_rows,
+            )
+            # n_recipes and canonical_ingredient_set are derived counts —
+            # update them so downstream readers (render_drop.py) see the
+            # post-override view without needing override-aware queries.
+            self._conn.execute(
+                """
+                UPDATE variants
+                   SET n_recipes = ?, canonical_ingredient_set = ?
+                 WHERE variant_id = ?
+                """,
+                (n, ",".join(sorted_names), variant_id),
             )
 
     def update_display_title(self, variant_id: str, display_title: str) -> None:

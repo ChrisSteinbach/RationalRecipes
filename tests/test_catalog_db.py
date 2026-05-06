@@ -904,6 +904,221 @@ class TestParsedSerialization:
         assert parsed_from_json('{"unit": "cup"}', "1 cup flour") is None
 
 
+class TestVariantOverrides:
+    """RationalRecipes-sj18: variant_overrides sidecar + recompute logic."""
+
+    def test_schema_migrates_on_open(self, tmp_path: Path) -> None:
+        """A pre-sj18 DB (no variant_overrides table) opens cleanly."""
+        path = tmp_path / "recipes.db"
+        # Simulate a pre-sj18 DB by opening once, then dropping the table.
+        db = CatalogDB.open(path)
+        db.connection.execute("DROP TABLE variant_overrides")
+        db.close()
+
+        # Re-open: schema should re-create the missing table.
+        reopened = CatalogDB.open(path)
+        try:
+            row = reopened.connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='variant_overrides'"
+            ).fetchone()
+            assert row is not None
+        finally:
+            reopened.close()
+
+    def test_substitute_folds_grams_into_target(self) -> None:
+        db = CatalogDB.in_memory()
+        # A variant where butter is 30 g, shortening 20 g, flour 50 g per
+        # recipe — substitute(shortening → butter) should yield butter at
+        # 50 g of 100 g total = 0.5 mass fraction.
+        rows = []
+        for i in range(3):
+            rows.append(
+                MergedNormalizedRow(
+                    url=f"https://example.com/r/{i}",
+                    title="cookies",
+                    corpus="recipenlg",
+                    cells={
+                        "butter": "30 g",
+                        "shortening": "20 g",
+                        "flour": "50 g",
+                    },
+                    proportions={"butter": 30.0, "shortening": 20.0, "flour": 50.0},
+                )
+            )
+        variant = MergedVariantResult(
+            variant_title="cookies",
+            canonical_ingredients=frozenset({"butter", "shortening", "flour"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["butter", "shortening", "flour"],
+        )
+        db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+
+        override_id = db.add_substitute_override(
+            variant.variant_id, "shortening", "butter"
+        )
+        assert override_id > 0
+
+        stats = {
+            s.canonical_name: s for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert "shortening" not in stats
+        assert stats["butter"].mean_proportion == pytest.approx(0.5)
+        assert stats["flour"].mean_proportion == pytest.approx(0.5)
+        assert stats["butter"].min_sample_size == 3
+
+        # canonical_ingredient_set on the variant row reflects the merge.
+        v = db.get_variant(variant.variant_id)
+        assert v is not None
+        assert "shortening" not in v.canonical_ingredient_set
+        assert "butter" in v.canonical_ingredient_set
+
+    def test_filter_drops_recipe_from_average(self) -> None:
+        db = CatalogDB.in_memory()
+        # Two recipes at flour=50%, one outlier at flour=10%. After
+        # filtering the outlier, mean(flour) should equal 0.5.
+        rows = [
+            MergedNormalizedRow(
+                url="https://example.com/r/0",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"flour": "50 g", "sugar": "50 g"},
+                proportions={"flour": 50.0, "sugar": 50.0},
+            ),
+            MergedNormalizedRow(
+                url="https://example.com/r/1",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"flour": "50 g", "sugar": "50 g"},
+                proportions={"flour": 50.0, "sugar": 50.0},
+            ),
+            MergedNormalizedRow(
+                url="https://example.com/r/2",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"flour": "10 g", "sugar": "90 g"},
+                proportions={"flour": 10.0, "sugar": 90.0},
+            ),
+        ]
+        variant = MergedVariantResult(
+            variant_title="cookies",
+            canonical_ingredients=frozenset({"flour", "sugar"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["flour", "sugar"],
+        )
+        db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+
+        outlier_id = next(
+            m.recipe_id
+            for m in db.get_variant_members(variant.variant_id)
+            if m.url == "https://example.com/r/2"
+        )
+
+        db.add_filter_override(variant.variant_id, outlier_id, reason="outlier")
+
+        stats = {
+            s.canonical_name: s for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert stats["flour"].mean_proportion == pytest.approx(0.5)
+        assert stats["sugar"].mean_proportion == pytest.approx(0.5)
+
+        # n_recipes shrinks; variant_members row stays (excluded, not
+        # deleted) so the filter is reversible.
+        v = db.get_variant(variant.variant_id)
+        assert v is not None
+        assert v.n_recipes == 2
+        assert len(db.get_variant_members(variant.variant_id)) == 3
+
+    def test_clear_override_restores_baseline(self) -> None:
+        db = CatalogDB.in_memory()
+        rows = [
+            MergedNormalizedRow(
+                url=f"https://example.com/r/{i}",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"butter": "30 g", "shortening": "20 g", "flour": "50 g"},
+                proportions={"butter": 30.0, "shortening": 20.0, "flour": 50.0},
+            )
+            for i in range(2)
+        ]
+        variant = MergedVariantResult(
+            variant_title="cookies",
+            canonical_ingredients=frozenset({"butter", "shortening", "flour"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["butter", "shortening", "flour"],
+        )
+        db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+
+        override_id = db.add_substitute_override(
+            variant.variant_id, "shortening", "butter"
+        )
+        # Confirm the override took effect.
+        post = {
+            s.canonical_name: s for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert "shortening" not in post
+
+        assert db.clear_override(override_id) is True
+
+        restored = {
+            s.canonical_name: s for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert "shortening" in restored
+        assert restored["shortening"].mean_proportion == pytest.approx(0.2)
+        assert restored["butter"].mean_proportion == pytest.approx(0.3)
+
+    def test_clear_override_unknown_id_returns_false(self) -> None:
+        db = CatalogDB.in_memory()
+        assert db.clear_override(99999) is False
+
+    def test_substitute_rejects_missing_variant(self) -> None:
+        db = CatalogDB.in_memory()
+        with pytest.raises(ValueError, match="not found"):
+            db.add_substitute_override("nope", "a", "b")
+
+    def test_substitute_rejects_self_substitution(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=2)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        with pytest.raises(ValueError, match="must differ"):
+            db.add_substitute_override(v.variant_id, "flour", "flour")
+
+    def test_filter_rejects_non_member_recipe(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=2)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        with pytest.raises(ValueError, match="not a member"):
+            db.add_filter_override(v.variant_id, "ghost-recipe-id")
+
+    def test_list_overrides_returns_payload(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        member_id = db.get_variant_members(v.variant_id)[0].recipe_id
+
+        sub_id = db.add_substitute_override(v.variant_id, "milk", "buttermilk")
+        filt_id = db.add_filter_override(v.variant_id, member_id, reason="test")
+
+        overrides = db.list_overrides(v.variant_id)
+        assert {o.override_id for o in overrides} == {sub_id, filt_id}
+        sub = next(o for o in overrides if o.override_type == "substitute")
+        assert sub.payload == {"from": "milk", "to": "buttermilk"}
+        filt = next(o for o in overrides if o.override_type == "filter")
+        assert filt.payload == {"recipe_id": member_id, "reason": "test"}
+
+    def test_clear_all_overrides_removes_every_row(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=2)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        db.add_substitute_override(v.variant_id, "milk", "buttermilk")
+        db.add_substitute_override(v.variant_id, "buttermilk", "cream")
+        assert db.clear_all_overrides(v.variant_id) == 2
+        assert db.list_overrides(v.variant_id) == []
+
+
 class TestVariantSources:
     def test_add_and_retrieve(self) -> None:
         db = CatalogDB.in_memory()
