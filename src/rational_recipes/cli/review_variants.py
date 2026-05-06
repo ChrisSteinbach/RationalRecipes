@@ -11,16 +11,25 @@ Data flow to the PWA: the DB is copied verbatim into
 PWA's default catalog filter hides any variant with
 ``review_status = 'drop'``. Dropping in review = invisible in the PWA.
 
-Keystrokes:
+Interactive review keystrokes:
     a  accept                 → review_status = 'accept'
     d  drop                   → review_status = 'drop' (hidden in PWA)
     n  annotate (free text)   → review_status = 'annotate', note saved
     ?  defer                  → no write; variant stays pending
     q  quit and save
 
+Subcommands (sj18 — editorial overrides on a specific variant):
+    review                          Interactive review loop (default).
+    substitute VID FROM TO          Fold canonical FROM into TO.
+    filter VID RECIPE_ID [--reason] Exclude one source recipe.
+    overrides VID                   List active overrides on a variant.
+    clear-override OVERRIDE_ID      Remove one override (reverses it).
+
 Usage:
     python3 scripts/review_variants.py
     python3 scripts/review_variants.py --db output/catalog/recipes.db
+    python3 scripts/review_variants.py substitute b34c2dce79e2 shortening butter
+    python3 scripts/review_variants.py filter b34c2dce79e2 abc123 --reason "bad units"
 """
 
 from __future__ import annotations
@@ -268,7 +277,111 @@ def iter_input_source(inputs: list[ReviewInput]) -> InputSource:
     return source
 
 
-def main(argv: list[str] | None = None) -> int:
+def _run_substitute(
+    db: CatalogDB,
+    console: Console,
+    variant_id: str,
+    from_name: str,
+    to_name: str,
+) -> int:
+    """Apply a substitution override and print the resulting stats."""
+    try:
+        override_id = db.add_substitute_override(variant_id, from_name, to_name)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return 2
+    console.print(
+        f"[green]Recorded substitute (override_id={override_id}):[/green]"
+        f" {from_name} → {to_name}"
+    )
+    _print_post_recompute_summary(db, console, variant_id)
+    return 0
+
+
+def _run_filter(
+    db: CatalogDB,
+    console: Console,
+    variant_id: str,
+    recipe_id: str,
+    reason: str,
+) -> int:
+    """Apply a filter override and print the resulting stats."""
+    try:
+        override_id = db.add_filter_override(variant_id, recipe_id, reason=reason)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return 2
+    console.print(
+        f"[green]Recorded filter (override_id={override_id}):[/green]"
+        f" excluded recipe {recipe_id}"
+        + (f" — {reason}" if reason else "")
+    )
+    _print_post_recompute_summary(db, console, variant_id)
+    return 0
+
+
+def _run_overrides(db: CatalogDB, console: Console, variant_id: str) -> int:
+    """List active overrides for one variant."""
+    overrides = db.list_overrides(variant_id)
+    if not overrides:
+        console.print(f"[dim]No overrides recorded for {variant_id}.[/dim]")
+        return 0
+    table = Table(title=f"Overrides for {variant_id}", show_lines=False)
+    table.add_column("ID", justify="right")
+    table.add_column("Type")
+    table.add_column("Payload", overflow="fold")
+    table.add_column("Created at")
+    for ov in overrides:
+        table.add_row(
+            str(ov.override_id),
+            ov.override_type,
+            ", ".join(f"{k}={v}" for k, v in ov.payload.items()),
+            ov.created_at,
+        )
+    console.print(table)
+    return 0
+
+
+def _run_clear_override(
+    db: CatalogDB, console: Console, override_id: int
+) -> int:
+    """Delete one override row and recompute the affected variant."""
+    if db.clear_override(override_id):
+        console.print(
+            f"[green]Cleared override {override_id}; stats recomputed.[/green]"
+        )
+        return 0
+    console.print(f"[yellow]No override with id {override_id}.[/yellow]")
+    return 1
+
+
+def _print_post_recompute_summary(
+    db: CatalogDB, console: Console, variant_id: str
+) -> None:
+    """Render a small post-recompute table so the editor sees the effect."""
+    variant = db.get_variant(variant_id)
+    if variant is None:
+        return
+    stats = db.get_ingredient_stats(variant_id)
+    table = Table(
+        title=f"Post-override stats — n={variant.n_recipes} sources",
+        show_lines=False,
+    )
+    table.add_column("Ingredient")
+    table.add_column("Mean", justify="right")
+    table.add_column("Stddev", justify="right")
+    table.add_column("n", justify="right")
+    for s in stats:
+        table.add_row(
+            s.canonical_name,
+            f"{s.mean_proportion:.3f}",
+            f"{s.stddev:.3f}" if s.stddev is not None else "—",
+            str(s.min_sample_size),
+        )
+    console.print(table)
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--db",
@@ -276,6 +389,41 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_DB_PATH,
         help=f"Path to recipes.db (default: {DEFAULT_DB_PATH})",
     )
+    sub = parser.add_subparsers(dest="command")
+
+    sub.add_parser("review", help="Interactive review loop (default).")
+
+    p_sub = sub.add_parser(
+        "substitute",
+        help="Fold canonical ingredient FROM_NAME into TO_NAME for a variant.",
+    )
+    p_sub.add_argument("variant_id")
+    p_sub.add_argument("from_name")
+    p_sub.add_argument("to_name")
+
+    p_filter = sub.add_parser(
+        "filter", help="Exclude one source recipe from a variant's average."
+    )
+    p_filter.add_argument("variant_id")
+    p_filter.add_argument("recipe_id")
+    p_filter.add_argument("--reason", default="")
+
+    p_overrides = sub.add_parser(
+        "overrides", help="List active overrides on a variant."
+    )
+    p_overrides.add_argument("variant_id")
+
+    p_clear = sub.add_parser(
+        "clear-override",
+        help="Remove one override row (reverses substitute or filter).",
+    )
+    p_clear.add_argument("override_id", type=int)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_arg_parser()
     args = parser.parse_args(argv)
 
     console = Console()
@@ -285,10 +433,26 @@ def main(argv: list[str] | None = None) -> int:
 
     db = CatalogDB.open(args.db)
     try:
-        review_loop(db, console=console)
+        command = args.command or "review"
+        if command == "review":
+            review_loop(db, console=console)
+            return 0
+        if command == "substitute":
+            return _run_substitute(
+                db, console, args.variant_id, args.from_name, args.to_name
+            )
+        if command == "filter":
+            return _run_filter(
+                db, console, args.variant_id, args.recipe_id, args.reason
+            )
+        if command == "overrides":
+            return _run_overrides(db, console, args.variant_id)
+        if command == "clear-override":
+            return _run_clear_override(db, console, args.override_id)
+        console.print(f"[red]Unknown command: {command}[/red]")
+        return 2
     finally:
         db.close()
-    return 0
 
 
 if __name__ == "__main__":

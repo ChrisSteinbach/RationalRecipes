@@ -244,3 +244,137 @@ class TestCLIEntrypoint:
     def test_missing_db_exits_nonzero(self, tmp_path: Path) -> None:
         missing = tmp_path / "nope.db"
         assert rv.main(["--db", str(missing)]) == 1
+
+
+def _seed_persisted(path: Path, *titles: str) -> dict[str, str]:
+    """Write seed variants to a real on-disk DB and close it."""
+    db = CatalogDB.open(path)
+    try:
+        ids = _seed(db, *titles)
+    finally:
+        db.close()
+    return ids
+
+
+class TestCLISubstituteSubcommand:
+    def test_substitute_records_override_and_recomputes(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "recipes.db"
+        ids = _seed_persisted(path, "pannkakor")
+        vid = ids["pannkakor"]
+
+        exit_code = rv.main(
+            ["--db", str(path), "substitute", vid, "milk", "buttermilk"]
+        )
+        assert exit_code == 0
+
+        db = CatalogDB.open(path)
+        try:
+            overrides = db.list_overrides(vid)
+            assert len(overrides) == 1
+            assert overrides[0].override_type == "substitute"
+            assert overrides[0].payload == {"from": "milk", "to": "buttermilk"}
+            stats = {s.canonical_name for s in db.get_ingredient_stats(vid)}
+            assert "milk" not in stats
+            assert "buttermilk" in stats
+        finally:
+            db.close()
+
+    def test_substitute_with_unknown_variant_returns_error(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "recipes.db"
+        _seed_persisted(path, "pannkakor")
+        exit_code = rv.main(
+            ["--db", str(path), "substitute", "nope", "milk", "buttermilk"]
+        )
+        assert exit_code == 2
+
+
+class TestCLIFilterSubcommand:
+    def test_filter_excludes_recipe_and_recomputes(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        ids = _seed_persisted(path, "pannkakor")
+        vid = ids["pannkakor"]
+
+        db = CatalogDB.open(path)
+        try:
+            members = db.get_variant_members(vid)
+            assert len(members) == 3
+            target = members[0].recipe_id
+        finally:
+            db.close()
+
+        exit_code = rv.main(
+            ["--db", str(path), "filter", vid, target, "--reason", "outlier"]
+        )
+        assert exit_code == 0
+
+        db = CatalogDB.open(path)
+        try:
+            v = db.get_variant(vid)
+            assert v is not None
+            assert v.n_recipes == 2
+            # variant_members rows are preserved (excluded, not deleted).
+            assert len(db.get_variant_members(vid)) == 3
+            overrides = db.list_overrides(vid)
+            assert overrides[0].payload["recipe_id"] == target
+            assert overrides[0].payload["reason"] == "outlier"
+        finally:
+            db.close()
+
+    def test_filter_unknown_recipe_returns_error(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        ids = _seed_persisted(path, "pannkakor")
+        exit_code = rv.main(
+            ["--db", str(path), "filter", ids["pannkakor"], "ghost"]
+        )
+        assert exit_code == 2
+
+
+class TestCLIOverridesSubcommand:
+    def test_overrides_lists_active_rows(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        ids = _seed_persisted(path, "pannkakor")
+        vid = ids["pannkakor"]
+        rv.main(["--db", str(path), "substitute", vid, "milk", "buttermilk"])
+        # Should not error and should print a table; just assert exit 0.
+        assert rv.main(["--db", str(path), "overrides", vid]) == 0
+
+    def test_overrides_empty_returns_zero(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        ids = _seed_persisted(path, "pannkakor")
+        assert rv.main(["--db", str(path), "overrides", ids["pannkakor"]]) == 0
+
+
+class TestCLIClearOverrideSubcommand:
+    def test_clear_existing_override(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        ids = _seed_persisted(path, "pannkakor")
+        vid = ids["pannkakor"]
+
+        db = CatalogDB.open(path)
+        try:
+            override_id = db.add_substitute_override(vid, "milk", "buttermilk")
+        finally:
+            db.close()
+
+        exit_code = rv.main(
+            ["--db", str(path), "clear-override", str(override_id)]
+        )
+        assert exit_code == 0
+
+        db = CatalogDB.open(path)
+        try:
+            assert db.list_overrides(vid) == []
+            stats = {s.canonical_name for s in db.get_ingredient_stats(vid)}
+            assert "milk" in stats
+            assert "buttermilk" not in stats
+        finally:
+            db.close()
+
+    def test_clear_unknown_override_returns_error(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        _seed_persisted(path, "pannkakor")
+        assert rv.main(["--db", str(path), "clear-override", "9999"]) == 1
