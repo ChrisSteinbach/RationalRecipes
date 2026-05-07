@@ -49,18 +49,19 @@ from rational_recipes.scrape.pipeline_merged import (
 _SCHEMA: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS recipes (
-      recipe_id      TEXT PRIMARY KEY,
-      url            TEXT,
-      title          TEXT,
-      corpus         TEXT NOT NULL
-                     CHECK(corpus IN ('recipenlg', 'wdc', 'curated')),
-      language       TEXT,
-      source_type    TEXT DEFAULT 'url'
-                     CHECK(source_type IN ('url', 'book', 'text')),
-      cooking_method TEXT,
-      cook_time_min  INTEGER,
-      total_time_min INTEGER,
-      extracted_at   TEXT
+      recipe_id       TEXT PRIMARY KEY,
+      url             TEXT,
+      title           TEXT,
+      corpus          TEXT NOT NULL
+                      CHECK(corpus IN ('recipenlg', 'wdc', 'curated')),
+      language        TEXT,
+      source_type     TEXT DEFAULT 'url'
+                      CHECK(source_type IN ('url', 'book', 'text')),
+      cooking_method  TEXT,
+      cook_time_min   INTEGER,
+      total_time_min  INTEGER,
+      extracted_at    TEXT,
+      directions_text TEXT
     )
     """,
     """
@@ -347,7 +348,33 @@ class CatalogDB:
             for stmt in _SCHEMA:
                 self._conn.execute(stmt)
             self._migrate_variants_columns()
+            self._migrate_recipes_columns()
             self._migrate_variant_overrides_check_constraint()
+
+    def _migrate_recipes_columns(self) -> None:
+        """Add columns to ``recipes`` that pre-existing DBs are missing.
+
+        F5 (RationalRecipes-15g4): cache RNLG source directions in
+        ``recipes.directions_text`` so the median-source render path
+        doesn't have to reach back into ``dataset/full_dataset.csv``
+        every drop. Mirrors ``_migrate_variants_columns`` (h6q1, ia1x):
+        ``CREATE TABLE IF NOT EXISTS`` is a no-op when the table exists,
+        so columns added later need explicit ``ALTER TABLE``. Idempotent
+        via ``PRAGMA table_info`` check; nullable so legacy rows stay
+        backward-compatible.
+        """
+        existing = {
+            row[1]
+            for row in self._conn.execute("PRAGMA table_info(recipes)")
+        }
+        migrations: tuple[tuple[str, str], ...] = (
+            ("directions_text", "TEXT"),
+        )
+        for column, sqltype in migrations:
+            if column not in existing:
+                self._conn.execute(
+                    f"ALTER TABLE recipes ADD COLUMN {column} {sqltype}"
+                )
 
     def _migrate_variants_columns(self) -> None:
         """Add columns to ``variants`` that pre-existing DBs are missing.
@@ -1935,15 +1962,16 @@ def _upsert_recipe_row(
     conn.execute(
         """
         INSERT INTO recipes (
-          recipe_id, url, title, corpus, language, source_type
-        ) VALUES (?, ?, ?, ?, ?, 'url')
+          recipe_id, url, title, corpus, language, source_type, directions_text
+        ) VALUES (?, ?, ?, ?, ?, 'url', ?)
         ON CONFLICT(recipe_id) DO UPDATE SET
           url=excluded.url,
           title=excluded.title,
           corpus=excluded.corpus,
-          language=excluded.language
+          language=excluded.language,
+          directions_text=COALESCE(excluded.directions_text, directions_text)
         """,
-        (recipe_id, row.url, row.title, row.corpus, language),
+        (recipe_id, row.url, row.title, row.corpus, language, row.directions_text),
     )
     conn.execute("DELETE FROM parsed_ingredients WHERE recipe_id = ?", (recipe_id,))
     for name, cell in row.cells.items():

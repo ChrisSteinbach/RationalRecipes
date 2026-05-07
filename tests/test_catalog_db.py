@@ -1585,6 +1585,106 @@ class TestCanonicalInstructionsMigration:
         assert cleared.canonical_instructions_reviewed_at is None
 
 
+class TestRecipesDirectionsTextMigration:
+    """RationalRecipes-15g4 / F5: ``recipes.directions_text`` migration
+    is idempotent on legacy DBs and present on fresh ones."""
+
+    def test_column_exists_on_fresh_db(self) -> None:
+        db = CatalogDB.in_memory()
+        cols = {row[1] for row in db.connection.execute("PRAGMA table_info(recipes)")}
+        assert "directions_text" in cols
+
+    def test_legacy_db_gains_column_on_reopen(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        import sqlite3 as _sqlite
+
+        conn = _sqlite.connect(str(path))
+        conn.execute(
+            """
+            CREATE TABLE recipes (
+              recipe_id   TEXT PRIMARY KEY,
+              url         TEXT,
+              title       TEXT,
+              corpus      TEXT NOT NULL,
+              language    TEXT,
+              source_type TEXT DEFAULT 'url'
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO recipes (recipe_id, corpus) VALUES (?, ?)",
+            ("rid-1", "recipenlg"),
+        )
+        conn.commit()
+        conn.close()
+
+        db = CatalogDB.open(path)
+        try:
+            cols = {
+                row[1]
+                for row in db.connection.execute("PRAGMA table_info(recipes)")
+            }
+            assert "directions_text" in cols
+            row = db.connection.execute(
+                "SELECT directions_text FROM recipes WHERE recipe_id = ?",
+                ("rid-1",),
+            ).fetchone()
+            assert row == (None,)
+        finally:
+            db.close()
+
+    def test_migration_idempotent_on_repeat_open(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        CatalogDB.open(path).close()
+        CatalogDB.open(path).close()
+        db = CatalogDB.open(path)
+        try:
+            cols = [
+                row[1]
+                for row in db.connection.execute("PRAGMA table_info(recipes)")
+            ]
+            assert cols.count("directions_text") == 1
+        finally:
+            db.close()
+
+    def test_directions_text_round_trip_via_upsert_variant(
+        self, tmp_path: Path
+    ) -> None:
+        """A variant carrying populated ``directions_text`` rows lands in
+        ``recipes.directions_text`` on write."""
+        rows = [
+            MergedNormalizedRow(
+                url=f"https://example.com/r/{i}",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"flour": "100 g", "milk": "100 ml"},
+                proportions={"flour": 50.0 + i * 0.1, "milk": 50.0 - i * 0.1},
+                directions_text=f"step {i}.1\nstep {i}.2",
+            )
+            for i in range(3)
+        ]
+        variant = MergedVariantResult(
+            variant_title="cookies",
+            canonical_ingredients=frozenset({"flour", "milk"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["flour", "milk"],
+        )
+        db = CatalogDB.in_memory()
+        db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+        directions = [
+            row[0]
+            for row in db.connection.execute(
+                "SELECT directions_text FROM recipes ORDER BY recipe_id"
+            )
+        ]
+        # Every recipe row picked up a non-NULL directions_text value.
+        assert len(directions) == 3
+        for d in directions:
+            assert d is not None
+            assert "step" in d
+
+
 class TestIngredientMetadataPopulation:
     """RationalRecipes-4ba4 / F4: density + whole-unit fields land on
     every freshly-extracted variant_ingredient_stats row when ingredients.db

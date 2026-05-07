@@ -88,6 +88,12 @@ class MergedRecipe:
     methods for L3 (empty on the RecipeNLG side until a second signal
     exists). Corpus-specific fields stay on the source object, which is
     preserved via ``source``.
+
+    ``directions_text`` is the joined source instructions (newline-
+    separated). Populated for RNLG sources, ``None`` for WDC pending
+    a follow-up bead. Used by F5 / 15g4 to cache directions in
+    ``recipes.directions_text`` so the median-source render path can
+    skip the manual CSV lookup.
     """
 
     title: str
@@ -97,9 +103,11 @@ class MergedRecipe:
     cooking_methods: frozenset[str]
     corpus: str
     source: Recipe | WDCRecipe
+    directions_text: str | None = None
 
 
 def _from_recipenlg(r: Recipe) -> MergedRecipe:
+    directions_text = "\n".join(r.directions) if r.directions else None
     return MergedRecipe(
         title=r.title,
         ingredients=tuple(r.ingredients),
@@ -108,6 +116,7 @@ def _from_recipenlg(r: Recipe) -> MergedRecipe:
         cooking_methods=frozenset(),
         corpus="recipenlg",
         source=r,
+        directions_text=directions_text,
     )
 
 
@@ -120,6 +129,7 @@ def _from_wdc(w: WDCRecipe) -> MergedRecipe:
         cooking_methods=w.cooking_methods,
         corpus="wdc",
         source=w,
+        directions_text=None,
     )
 
 

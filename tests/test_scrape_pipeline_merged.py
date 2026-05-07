@@ -321,6 +321,32 @@ class TestEmitVariants:
         assert a.variant_id != b.variant_id
 
 
+class TestNormalizeMergedRowDirections:
+    """RationalRecipes-15g4 / F5: directions_text propagates through
+    normalize_merged_row to the resulting MergedNormalizedRow."""
+
+    def test_directions_text_default_is_none(self) -> None:
+        row, _skipped = normalize_merged_row(
+            "u",
+            "t",
+            "recipenlg",
+            [_parsed("flour", 100, "g")],
+        )
+        assert row is not None
+        assert row.directions_text is None
+
+    def test_directions_text_passed_through(self) -> None:
+        row, _skipped = normalize_merged_row(
+            "u",
+            "t",
+            "recipenlg",
+            [_parsed("flour", 100, "g")],
+            directions_text="1. mix\n2. bake",
+        )
+        assert row is not None
+        assert row.directions_text == "1. mix\n2. bake"
+
+
 class TestNormalizeMergedRow:
     def test_empty_parsed_returns_none(self) -> None:
         row, skipped = normalize_merged_row("u", "t", "wdc", [])

@@ -87,6 +87,53 @@ class TestRenderBaseline:
         assert "milk" in md
 
 
+class TestRenderConsumesDirectionsText:
+    """RationalRecipes-15g4 / F5: when the chosen median source has
+    ``recipes.directions_text`` populated, render inlines it instead of
+    the manual-fetch placeholder."""
+
+    def test_inlines_directions_when_populated(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = _seed_variant(db)
+            members = db.get_variant_members(vid)
+        finally:
+            db.close()
+
+        # Now that directions_text is part of the schema, write directly
+        # — no migration helper needed.
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                "UPDATE recipes SET directions_text = ? WHERE recipe_id = ?",
+                ("1. Whisk.\n2. Pour.", members[0].recipe_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        md = render_drop.render(db_path, vid)
+        assert "1. Whisk." in md
+        assert "2. Pour." in md
+        # The manual-fetch placeholder must NOT appear when directions
+        # are inlined.
+        assert "manual step" not in md
+
+    def test_falls_back_to_manual_fetch_when_directions_null(
+        self, tmp_path: Path
+    ) -> None:
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = _seed_variant(db)
+        finally:
+            db.close()
+        # Leave every recipe's directions_text NULL.
+        md = render_drop.render(db_path, vid)
+        assert "manual step" in md
+
+
 class TestNaturalLanguageQuantities:
     """RationalRecipes-4ba4 / F4: density + whole-unit metadata renders
     a human-friendly Quantity column alongside the gram count."""

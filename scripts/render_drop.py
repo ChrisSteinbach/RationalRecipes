@@ -20,7 +20,10 @@ import sys
 from pathlib import Path
 
 from rational_recipes.catalog_db import CatalogDB
-from rational_recipes.render.instruction_picker import pick_median_source
+from rational_recipes.render.instruction_picker import (
+    fetch_directions_text,
+    pick_median_source,
+)
 
 
 def _format_pct(value: float | None, *, places: int = 1) -> str:
@@ -327,11 +330,23 @@ def render(
                 f"({_format_url(median_source['url'])})"
             )
             lines.append("")
-            lines.append(
-                "*Fetch the instructions from that source and paste them "
-                "here. For the hand-cycle drop, this is a manual step.*"
+            # F5 / 15g4: when ``recipes.directions_text`` is populated for
+            # the picked source, inline the instructions directly so the
+            # drop is a finished artifact rather than a placeholder. Falls
+            # back to the manual-fetch guidance when the column is missing
+            # or NULL (pre-F5 baseline, WDC sources, etc).
+            picked_directions = fetch_directions_text(
+                conn, median_source["recipe_id"]
             )
-            lines.append("")
+            if picked_directions:
+                lines.append(picked_directions.rstrip())
+                lines.append("")
+            else:
+                lines.append(
+                    "*Fetch the instructions from that source and paste them "
+                    "here. For the hand-cycle drop, this is a manual step.*"
+                )
+                lines.append("")
         else:
             lines.append(
                 "*No source recipes found in variant_members — extraction "

@@ -195,6 +195,10 @@ class MergedNormalizedRow:
     ``cells`` maps canonical ingredient name to a ``"value unit"`` string
     compatible with ``rr-stats``. ``proportions`` maps the same names to
     grams-per-100g floats (the input to ``proportion_bucket_dedup``).
+
+    ``directions_text`` carries the source instructions joined by
+    newlines. RNLG sources populate it from the corpus's ``directions``
+    column; WDC stays ``None`` (15g4 out of scope, follow-up bead).
     """
 
     url: str
@@ -202,6 +206,7 @@ class MergedNormalizedRow:
     corpus: str
     cells: dict[str, str]
     proportions: dict[str, float]
+    directions_text: str | None = None
 
 
 @dataclass
@@ -336,6 +341,8 @@ def normalize_merged_row(
     title: str,
     corpus: str,
     parsed_ingredients: Iterable[ParsedIngredient],
+    *,
+    directions_text: str | None = None,
 ) -> tuple[MergedNormalizedRow | None, list[str]]:
     """Normalize one recipe's parsed ingredients into a merged row.
 
@@ -401,6 +408,7 @@ def normalize_merged_row(
             corpus=corpus,
             cells=cells,
             proportions=proportions,
+            directions_text=directions_text,
         ),
         skipped,
     )
@@ -616,6 +624,7 @@ def build_variants(
                     title=recipe.title,
                     corpus=recipe.corpus,
                     parsed_ingredients=parsed,
+                    directions_text=recipe.directions_text,
                 )
                 for miss in skipped:
                     base = miss.split(" (")[0]

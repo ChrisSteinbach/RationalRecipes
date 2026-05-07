@@ -26,6 +26,13 @@ class Recipe:
     ner: tuple[str, ...]
     source: str
     link: str
+    # ``directions`` is a tuple of step strings as decoded from the
+    # CSV's stringified Python list. Default ``()`` so existing call
+    # sites (tests, fixtures) don't have to pass the field through —
+    # the recipenlg loader is the only path that materially populates
+    # it. F5 / 15g4: surfaces the source instructions for caching in
+    # ``recipes.directions_text``.
+    directions: tuple[str, ...] = ()
     _ingredient_names: frozenset[str] = field(
         default=frozenset(), init=False, repr=False
     )
@@ -82,6 +89,7 @@ class RecipeNLGLoader:
                     ner=_parse_string_list(row.get("NER", "[]")),
                     source=row.get("source", ""),
                     link=row.get("link", ""),
+                    directions=_parse_string_list(row.get("directions", "[]")),
                 )
 
     def search_title(self, query: str) -> Iterator[Recipe]:
