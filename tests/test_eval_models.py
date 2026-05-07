@@ -191,6 +191,53 @@ class TestCheckReachable:
         ) is False
 
 
+class TestUnloadModel:
+    def test_unload_returns_false_on_connection_refused(self) -> None:
+        assert (
+            eval_models.unload_model(
+                "any-model", "http://127.0.0.1:1", timeout=0.5
+            )
+            is False
+        )
+
+
+class TestEvictionBetweenModels:
+    """run_parse_eval must evict the previous candidate before loading the next.
+
+    On the project's single-GPU Ollama box the 24-35GB candidates can't
+    co-reside, so a missing eviction trips ``HTTP 500 — resource
+    limitations`` on the second model's first call.
+    """
+
+    def test_unload_called_between_models_not_before_first(self) -> None:
+        sample = (("common", "1 cup flour"),)
+        ok = ParsedIngredient(
+            quantity=1.0, unit="cup", ingredient="flour", preparation="", raw="r"
+        )
+        unload_calls: list[str] = []
+
+        def fake_unload(model: str, *_: object, **__: object) -> bool:
+            unload_calls.append(model)
+            return True
+
+        with (
+            patch.object(
+                eval_models, "list_available_models", return_value={"a", "b", "c"}
+            ),
+            patch.object(eval_models, "parse_ingredient_line", return_value=ok),
+            patch.object(eval_models, "unload_model", side_effect=fake_unload),
+        ):
+            eval_models.run_parse_eval(
+                ["a", "b", "c"],
+                sample,
+                base_url="http://localhost:0",
+                timeout=1.0,
+            )
+        # Unload happens before model b (evicting a) and before c (evicting b).
+        # Never before a (nothing to unload yet).
+        assert unload_calls == ["a", "b"]
+
+
 class TestMainCli:
     def test_aborts_when_ollama_unreachable(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

@@ -160,6 +160,34 @@ def list_available_models(base_url: str, timeout: float = 5.0) -> set[str]:
     return {m.get("name", "") for m in body.get("models", [])}
 
 
+def unload_model(
+    model: str, base_url: str, timeout: float = 30.0
+) -> bool:
+    """Issue ``/api/generate`` with ``keep_alive=0`` to evict ``model`` from VRAM.
+
+    The remote Ollama server only fits one large (24-35GB) model at a
+    time. Without an explicit unload between candidates the next model
+    fails to load with ``HTTP 500 - resource limitations``. Returns
+    True on success, False on any failure (the caller can decide
+    whether to bail or push on).
+    """
+    payload = json.dumps(
+        {"model": model, "prompt": "", "keep_alive": 0}
+    ).encode()
+    req = urllib.request.Request(
+        f"{base_url}/api/generate",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout):
+            pass
+        return True
+    except (urllib.error.URLError, TimeoutError):
+        return False
+
+
 def run_parse_eval(
     models: Iterable[str],
     sample: Iterable[tuple[str, str]],
@@ -167,21 +195,49 @@ def run_parse_eval(
     base_url: str,
     timeout: float,
     skip_unavailable: bool = True,
+    progress: bool = False,
+    checkpoint_path: Path | None = None,
 ) -> tuple[list[ParseAttempt], list[str]]:
     """Run each model on each sample line.
 
     Returns ``(attempts, skipped_models)``. Models absent from
     ``/api/tags`` are skipped (not silently — they're returned in
-    ``skipped_models`` so the report can flag the gap).
+    ``skipped_models`` so the report can flag the gap). When
+    ``progress`` is true, prints one line per call to stderr; when
+    ``checkpoint_path`` is set, dumps partial results as JSON after
+    every call so a long run isn't lost on Ctrl-C.
     """
     available = list_available_models(base_url) if skip_unavailable else set()
     attempts: list[ParseAttempt] = []
     skipped: list[str] = []
     samples = list(sample)
+    runnable = [
+        m for m in models
+        if not skip_unavailable or not available or m in available
+    ]
+    total = len(runnable) * len(samples)
+    done = 0
+    last_loaded: str | None = None
     for model in models:
         if skip_unavailable and available and model not in available:
             skipped.append(model)
+            if progress:
+                print(f"[eval] SKIP {model} (not loaded)", file=sys.stderr, flush=True)
             continue
+        # Evict the previous candidate so the new one isn't blocked
+        # by VRAM still occupied by its predecessor (24-35GB models on
+        # a single GPU). Skip on the first model (nothing to unload).
+        if last_loaded is not None and last_loaded != model:
+            if progress:
+                print(
+                    f"[eval] unload {last_loaded}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            unload_model(last_loaded, base_url)
+        last_loaded = model
+        if progress:
+            print(f"[eval] === MODEL {model} ===", file=sys.stderr, flush=True)
         for category, line in samples:
             t0 = time.monotonic()
             err: str | None = None
@@ -206,6 +262,31 @@ def run_parse_eval(
                     error=err,
                 )
             )
+            done += 1
+            if progress:
+                status = "ok" if parsed is not None else "FAIL"
+                snippet = (
+                    f"q={parsed.quantity} u={parsed.unit!r} i={parsed.ingredient!r}"
+                    if parsed is not None
+                    else (err or "no result")
+                )
+                print(
+                    f"[eval] {done}/{total} {model} cat={category} {elapsed:.1f}s "
+                    f"{status}: {line[:60]!r} -> {snippet[:100]}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            if checkpoint_path is not None:
+                checkpoint_path.write_text(
+                    json.dumps(
+                        {
+                            "skipped_models": skipped,
+                            "attempts": [a.to_dict() for a in attempts],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
     return attempts, skipped
 
 
@@ -384,6 +465,20 @@ def main(argv: list[str] | None = None) -> int:
         default=180.0,
         help="Per-call Ollama timeout in seconds (default: 180s).",
     )
+    parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="Print one line per call to stderr.",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        help=(
+            "Path to dump partial results as JSON after every call. "
+            "Lets a long run survive Ctrl-C."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if not check_ollama_reachable(args.ollama_url):
@@ -399,6 +494,8 @@ def main(argv: list[str] | None = None) -> int:
         SAMPLE_LINES,
         base_url=args.ollama_url,
         timeout=args.timeout,
+        progress=args.progress,
+        checkpoint_path=args.checkpoint,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
