@@ -29,6 +29,7 @@ from pathlib import Path
 
 from rational_recipes.scrape.parse import OLLAMA_BASE_URL
 from rational_recipes.scrape.pipeline_merged import (
+    DEFAULT_PARSE_CONCURRENCY,
     ProgressEvent,
     run_merged_pipeline,
 )
@@ -154,6 +155,17 @@ def main() -> int:
         help=f"Ollama API base URL (default: {OLLAMA_BASE_URL})",
     )
     parser.add_argument(
+        "--parse-concurrency",
+        type=int,
+        default=DEFAULT_PARSE_CONCURRENCY,
+        help=(
+            "Concurrent ingredient-line parser calls (RationalRecipes-e6rl). "
+            f"Default {DEFAULT_PARSE_CONCURRENCY} matches parse-fast NUM_PARALLEL. "
+            "Set to 1 for fully sequential dispatch (debugging or non-parse-fast "
+            "endpoints)."
+        ),
+    )
+    parser.add_argument(
         "--db",
         type=Path,
         default=Path("output/catalog/recipes.db"),
@@ -230,6 +242,7 @@ def main() -> int:
         delete_stale_l1=args.clean_l1,
         emit_csv=emit_csv,
         progress_callback=progress_callback,
+        parse_concurrency=args.parse_concurrency,
     )
 
     print(f"Loaded rnlg={stats.recipenlg_in} wdc={stats.wdc_in}")

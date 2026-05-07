@@ -21,12 +21,14 @@ The module owns two kinds of work:
 
 from __future__ import annotations
 
+import concurrent.futures
 import csv
 import logging
 import re
+import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -106,6 +108,14 @@ with the LLM params bound. Tests inject a stub that returns canned
 # across runs. Phase 2 closed bead.
 _CACHE_SEED: int = 42
 
+# Default concurrency for parallel ingredient-line parsing
+# (RationalRecipes-e6rl). Matches NUM_PARALLEL=4 on the parse-fast Ollama
+# endpoint — going wider doesn't earn more throughput (server-side cap)
+# and going narrower leaves throughput on the table. Set to 1 to revert
+# to fully sequential dispatch (useful for debugging or for non-parse-
+# fast endpoints where parallelism doesn't help).
+DEFAULT_PARSE_CONCURRENCY: int = 4
+
 
 @dataclass
 class ParseCache:
@@ -124,6 +134,14 @@ class ParseCache:
     Tracks line-grain ``cache_hits`` and ``ollama_lines`` counters so
     progress reporting (RationalRecipes-1g5h / F8) can show how often
     the LLM was actually invoked vs short-circuited by prior parses.
+
+    Thread-safe (RationalRecipes-e6rl): an internal ``threading.Lock``
+    serializes SQLite cache lookups, counter increments, and write-back
+    so multiple worker threads can call ``parse_with_cache`` concurrently
+    without corrupting the connection's transaction state. The slow LLM
+    call itself (``parse_fn``) runs *outside* the lock so the parallel
+    dispatch actually overlaps Ollama HTTP calls — that's the whole
+    point of the bead.
     """
 
     db: CatalogDB
@@ -131,6 +149,7 @@ class ParseCache:
     seed: int = _CACHE_SEED
     cache_hits: int = 0
     ollama_lines: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def parse_with_cache(
         self,
@@ -147,6 +166,15 @@ class ParseCache:
         Both successful parses and ``None`` (failed) parses are cached;
         callers should not retry cached failures (matches the existing
         ``upsert_parsed_lines`` contract).
+
+        Concurrent dispatch: cache lookups + write-back are guarded by
+        ``self._lock``; the LLM call itself runs unlocked so multiple
+        threads can overlap Ollama requests. Cache writes use the
+        existing ``INSERT OR REPLACE`` on ``parsed_ingredient_lines``
+        (catalog_db.upsert_parsed_lines) which is idempotent on the
+        ``(raw_line, model, seed)`` unique index — so even the rare
+        collision where two threads race on the same novel line ends
+        with a coherent cache row.
         """
         if not lines:
             return []
@@ -163,22 +191,24 @@ class ParseCache:
         miss_indices: list[int] = []
         miss_lines: list[str] = []
 
-        for i, line in enumerate(lines):
-            found, payload = self.db.lookup_cached_parse(
-                line, model=self.model, seed=self.seed,
-            )
-            if found:
-                results[i] = parsed_from_json(payload, line)
-                self.cache_hits += 1
-            else:
-                miss_indices.append(i)
-                miss_lines.append(line)
+        with self._lock:
+            for i, line in enumerate(lines):
+                found, payload = self.db.lookup_cached_parse(
+                    line, model=self.model, seed=self.seed,
+                )
+                if found:
+                    results[i] = parsed_from_json(payload, line)
+                    self.cache_hits += 1
+                else:
+                    miss_indices.append(i)
+                    miss_lines.append(line)
 
         if not miss_lines:
             return results
 
-        self.ollama_lines += len(miss_lines)
+        # LLM call OUTSIDE the lock — overlap requests across threads.
         llm_results = parse_fn(miss_lines)
+
         rows_to_write: list[ParsedLineRow] = []
         for idx, parsed in zip(miss_indices, llm_results, strict=True):
             results[idx] = parsed
@@ -193,7 +223,9 @@ class ParseCache:
                     seed=self.seed,
                 )
             )
-        self.db.upsert_parsed_lines(rows_to_write)
+        with self._lock:
+            self.ollama_lines += len(miss_lines)
+            self.db.upsert_parsed_lines(rows_to_write)
         return results
 
 
@@ -596,6 +628,7 @@ def build_variants(
     max_variants_per_l1: int = DEFAULT_MAX_VARIANTS_PER_L1,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
     progress_callback: ProgressCallback | None = None,
+    parse_concurrency: int = DEFAULT_PARSE_CONCURRENCY,
 ) -> tuple[list[MergedVariantResult], PipelineRunStats]:
     """Group merged recipes, LLM-parse each, normalize, and dedup.
 
@@ -618,6 +651,15 @@ def build_variants(
     - ``max_variants_per_l1`` (default 5) keeps only the top-N largest
       variants within each L1 group, ranked by ``n_recipes``. Pass 0 to
       disable the cap entirely.
+
+    ``parse_concurrency`` (RationalRecipes-e6rl, default 4) controls how
+    many ingredient-line parser calls dispatch in parallel — matches the
+    parse-fast Ollama endpoint's NUM_PARALLEL=4. Within each L2 cluster
+    recipes are parsed in parallel via a ``ThreadPoolExecutor``; results
+    are consumed in input order so per-recipe progress events fire
+    deterministically and downstream normalization sees the same row
+    sequence as a sequential run. Set to 1 to disable parallel dispatch
+    (useful for debugging or for non-parse-fast endpoints).
     """
     l1_groups = group_by_title(merged_recipes, min_group_size=l1_min_group_size)
     logger.info("L1: %d title groups kept", len(l1_groups))
@@ -650,85 +692,120 @@ def build_variants(
             )
         )
 
-    for title_key, l1_members in l1_groups.items():
-        l2_clusters = group_by_ingredients(
-            l1_members,
-            similarity_threshold=l2_similarity_threshold,
-            min_group_size=l2_min_group_size,
-        )
-        logger.info(
-            "  L1 %r (%d recipes) → %d L2 cluster(s)",
-            title_key,
-            len(l1_members),
-            len(l2_clusters),
+    # Per-recipe parse closure used by both the sequential and parallel
+    # paths below. Captures ``parse_cache`` + ``parse_fn`` and returns
+    # this recipe's raw ParsedIngredient list (unfiltered — the
+    # downstream loop drops Nones).
+    def _parse_one(recipe: MergedRecipe) -> list[ParsedIngredient | None]:
+        recipe_lines = list(recipe.ingredients)
+        if parse_cache is not None:
+            return parse_cache.parse_with_cache(
+                corpus=recipe.corpus,
+                recipe_id=recipe.url,
+                lines=recipe_lines,
+                parse_fn=parse_fn,
+            )
+        return parse_fn(recipe_lines)
+
+    # Concurrency knob (RationalRecipes-e6rl). Pool reused across all L2
+    # clusters so we don't pay the spawn-per-cluster cost. Sequential
+    # path bypasses the executor entirely so concurrency=1 retains the
+    # exact pre-bead control flow (and stays test-friendly for stubs
+    # that aren't thread-safe).
+    workers = max(1, parse_concurrency)
+    executor: concurrent.futures.ThreadPoolExecutor | None = None
+    if workers > 1:
+        executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=workers,
+            thread_name_prefix="rr-parse",
         )
 
-        for cluster in l2_clusters:
-            canonical_ingredients: set[str] = set()
-            normalized_rows: list[MergedNormalizedRow] = []
+    try:
+        for title_key, l1_members in l1_groups.items():
+            l2_clusters = group_by_ingredients(
+                l1_members,
+                similarity_threshold=l2_similarity_threshold,
+                min_group_size=l2_min_group_size,
+            )
+            logger.info(
+                "  L1 %r (%d recipes) → %d L2 cluster(s)",
+                title_key,
+                len(l1_members),
+                len(l2_clusters),
+            )
 
-            for recipe in cluster.recipes:
-                rows_parsed += 1
-                _emit_progress()
-                recipe_lines = list(recipe.ingredients)
-                if parse_cache is not None:
-                    raw_parsed = parse_cache.parse_with_cache(
-                        corpus=recipe.corpus,
-                        recipe_id=recipe.url,
-                        lines=recipe_lines,
-                        parse_fn=parse_fn,
-                    )
+            for cluster in l2_clusters:
+                canonical_ingredients: set[str] = set()
+                normalized_rows: list[MergedNormalizedRow] = []
+
+                # Parse this cluster's recipes. ``executor.map`` yields
+                # results in input order so progress events + collection
+                # below are byte-identical to the sequential path —
+                # only the wall-clock changes (RationalRecipes-e6rl).
+                if executor is not None:
+                    parse_iter: Iterable[
+                        list[ParsedIngredient | None]
+                    ] = executor.map(_parse_one, cluster.recipes)
                 else:
-                    raw_parsed = parse_fn(recipe_lines)
-                parsed = [p for p in raw_parsed if p is not None]
-                if not parsed:
+                    parse_iter = (_parse_one(r) for r in cluster.recipes)
+
+                for recipe, raw_parsed in zip(
+                    cluster.recipes, parse_iter, strict=True
+                ):
+                    rows_parsed += 1
+                    _emit_progress()
+                    parsed = [p for p in raw_parsed if p is not None]
+                    if not parsed:
+                        continue
+
+                    row, skipped = normalize_merged_row(
+                        url=recipe.url,
+                        title=recipe.title,
+                        corpus=recipe.corpus,
+                        parsed_ingredients=parsed,
+                        directions_text=recipe.directions_text,
+                    )
+                    for miss in skipped:
+                        base = miss.split(" (")[0]
+                        db_misses[base] = db_misses.get(base, 0) + 1
+                    if row is None:
+                        continue
+
+                    normalized_rows.append(row)
+                    canonical_ingredients.update(row.cells.keys())
+                    rows_normalized += 1
+
+                if len(normalized_rows) < min_variant_size:
                     continue
 
-                row, skipped = normalize_merged_row(
-                    url=recipe.url,
-                    title=recipe.title,
-                    corpus=recipe.corpus,
-                    parsed_ingredients=parsed,
-                    directions_text=recipe.directions_text,
+                filtered_canonical = _apply_freq_filter(
+                    canonical_ingredients, normalized_rows
                 )
-                for miss in skipped:
-                    base = miss.split(" (")[0]
-                    db_misses[base] = db_misses.get(base, 0) + 1
-                if row is None:
+                if not filtered_canonical:
                     continue
 
-                normalized_rows.append(row)
-                canonical_ingredients.update(row.cells.keys())
-                rows_normalized += 1
+                header = _derive_header(normalized_rows, filtered_canonical)
+                if not header:
+                    continue
 
-            if len(normalized_rows) < min_variant_size:
-                continue
-
-            filtered_canonical = _apply_freq_filter(
-                canonical_ingredients, normalized_rows
-            )
-            if not filtered_canonical:
-                continue
-
-            header = _derive_header(normalized_rows, filtered_canonical)
-            if not header:
-                continue
-
-            variant = MergedVariantResult(
-                variant_title=title_key,
-                canonical_ingredients=frozenset(filtered_canonical),
-                cooking_methods=frozenset(),
-                normalized_rows=normalized_rows,
-                header_ingredients=header,
-            )
-            # RationalRecipes-2p6: collapse generic/specific sibling
-            # forms (e.g. salt + kosher salt) before dedup so post-fold
-            # rows that became identical can collide and dedup naturally.
-            apply_fold_to_variant(variant)
-            dropped = variant.dedup_in_place(bucket_size=bucket_size)
-            rows_dedup_dropped += dropped
-            if len(variant.normalized_rows) >= min_variant_size:
-                variants.append(variant)
+                variant = MergedVariantResult(
+                    variant_title=title_key,
+                    canonical_ingredients=frozenset(filtered_canonical),
+                    cooking_methods=frozenset(),
+                    normalized_rows=normalized_rows,
+                    header_ingredients=header,
+                )
+                # RationalRecipes-2p6: collapse generic/specific sibling
+                # forms (e.g. salt + kosher salt) before dedup so post-fold
+                # rows that became identical can collide and dedup naturally.
+                apply_fold_to_variant(variant)
+                dropped = variant.dedup_in_place(bucket_size=bucket_size)
+                rows_dedup_dropped += dropped
+                if len(variant.normalized_rows) >= min_variant_size:
+                    variants.append(variant)
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=True)
 
     variants, merge_dedup_dropped = _merge_duplicate_variants(
         variants, bucket_size=bucket_size
@@ -774,6 +851,7 @@ def run_merged_pipeline(
     delete_stale_l1: bool = False,
     emit_csv: bool = True,
     progress_callback: ProgressCallback | None = None,
+    parse_concurrency: int = DEFAULT_PARSE_CONCURRENCY,
 ) -> tuple[Manifest, PipelineRunStats]:
     """End-to-end: load both corpora, merge, LLM-parse, normalize, emit.
 
@@ -796,6 +874,12 @@ def run_merged_pipeline(
     ``emit_csv``: keep the CSV+manifest emission step. Default True
     (debugging affordance — same shape ``rr-stats`` consumed). Set
     False for DB-only runs.
+
+    ``parse_concurrency``: how many ingredient-line parser calls to
+    dispatch in parallel (RationalRecipes-e6rl). Default 4 matches the
+    parse-fast Ollama endpoint's NUM_PARALLEL=4. Set to 1 to revert to
+    sequential dispatch — useful for debugging and for non-parse-fast
+    endpoints where concurrency provides no throughput benefit.
     """
     rnlg_loader = RecipeNLGLoader(path=recipenlg_path)
     rnlg_matching: list[Recipe] = list(rnlg_loader.search_title(title_query))
@@ -850,6 +934,7 @@ def run_merged_pipeline(
             max_variants_per_l1=max_variants_per_l1,
             bucket_size=bucket_size,
             progress_callback=progress_callback,
+            parse_concurrency=parse_concurrency,
         )
 
         if emit_csv:
