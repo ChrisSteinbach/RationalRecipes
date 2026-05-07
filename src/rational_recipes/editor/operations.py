@@ -17,6 +17,7 @@ no recompute drift.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from rational_recipes.catalog_db import (
     CatalogDB,
@@ -26,6 +27,12 @@ from rational_recipes.catalog_db import (
     VariantOverrideRow,
     VariantRow,
 )
+from rational_recipes.provenance import (
+    VariantProvenance,
+    load_variant_provenance,
+)
+
+DEFAULT_RECIPENLG_PATH = Path("dataset/full_dataset.csv")
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +131,45 @@ def apply_filter(
         message=f"Excluded {recipe_id}{detail}.",
         override_id=override_id,
     )
+
+
+def apply_canonical_reassign(
+    db: CatalogDB,
+    variant_id: str,
+    recipe_id: str,
+    raw_text: str,
+    new_canonical: str,
+) -> OperationResult:
+    """Per-source canonical reassignment via add_canonical_reassign_override."""
+    try:
+        override_id = db.add_canonical_reassign_override(
+            variant_id, recipe_id, raw_text, new_canonical
+        )
+    except ValueError as exc:
+        return OperationResult(ok=False, message=str(exc))
+    return OperationResult(
+        ok=True,
+        message=(
+            f"Reassigned {raw_text!r} in {recipe_id} → {new_canonical}."
+        ),
+        override_id=override_id,
+    )
+
+
+def load_provenance(
+    db: CatalogDB,
+    variant_id: str,
+    recipenlg_path: Path = DEFAULT_RECIPENLG_PATH,
+) -> VariantProvenance | None:
+    """Per-canonical raw-form breakdown for a variant.
+
+    Wraps ``rational_recipes.provenance.load_variant_provenance`` so the
+    editor surface depends only on this module. ``recipenlg_path`` may
+    point at a file that doesn't exist — the underlying loader returns
+    a provenance bundle with zero corpus hits rather than raising, so the
+    UI can render an empty state instead of crashing.
+    """
+    return load_variant_provenance(db, variant_id, recipenlg_path)
 
 
 def apply_substitute(

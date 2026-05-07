@@ -1,4 +1,4 @@
-"""Tests for the maintainer-editor helper layer (RationalRecipes-1t8x).
+"""Tests for the maintainer-editor helper layer (RationalRecipes-1t8x + xekj).
 
 Targets the ``rational_recipes.editor.operations`` helpers — they're
 where the editor's behaviour lives, and they have no Streamlit dependency
@@ -6,13 +6,16 @@ so the tests can run in the standard pytest env.
 
 The Streamlit shell in ``scripts/editor.py`` is presentation only: it
 calls these helpers, then renders the result. Anything verifiable about
-the editor's correctness — that filter/substitute writes go through the
-same CatalogDB helpers as the CLI, that stats refresh, that overrides
-list, that errors surface as ``OperationResult(ok=False)`` — is testable
-here.
+the editor's correctness — that filter/substitute/canonical_reassign
+writes go through the same CatalogDB helpers as the CLI, that stats
+refresh, that overrides list, that errors surface as
+``OperationResult(ok=False)`` — is testable here.
 """
 
 from __future__ import annotations
+
+import csv
+from pathlib import Path
 
 from rational_recipes.catalog_db import CatalogDB
 from rational_recipes.editor import operations as ops
@@ -234,3 +237,135 @@ class TestDescribeOverride:
         assert "canonical_reassign" in s
         assert "milk" in s
         assert "buttermilk" in s
+
+
+class TestApplyCanonicalReassign:
+    """Per-source canonical reassignment via the editor operations layer (xekj)."""
+
+    def test_records_override_and_recomputes_stats(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        target = db.get_variant_members(vid)[0].recipe_id
+
+        result = ops.apply_canonical_reassign(
+            db, vid, target, "milk", "buttermilk"
+        )
+        assert result.ok is True
+        assert result.override_id is not None
+        assert "buttermilk" in result.message
+
+        overrides = db.list_overrides(vid)
+        assert len(overrides) == 1
+        assert overrides[0].override_type == "canonical_reassign"
+        assert overrides[0].payload == {
+            "recipe_id": target,
+            "raw_text": "milk",
+            "new_canonical": "buttermilk",
+        }
+        # Stats recomputed: the targeted recipe's milk grams now contribute
+        # to a 'buttermilk' canonical, so 'buttermilk' is now in the stat set.
+        stats = {s.canonical_name for s in db.get_ingredient_stats(vid)}
+        assert "buttermilk" in stats
+
+    def test_unknown_variant_returns_error(self) -> None:
+        db = CatalogDB.in_memory()
+        _seed(db, "pannkakor")
+        result = ops.apply_canonical_reassign(
+            db, "no-such-variant", "x", "milk", "buttermilk"
+        )
+        assert result.ok is False
+        assert "no-such-variant" in result.message
+
+    def test_recipe_not_a_member_returns_error(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        result = ops.apply_canonical_reassign(
+            db, vid, "ghost-recipe", "milk", "buttermilk"
+        )
+        assert result.ok is False
+        assert "ghost-recipe" in result.message
+        assert db.list_overrides(vid) == []
+
+    def test_raw_text_unresolvable_returns_error(self) -> None:
+        # 'salt' isn't in any of this variant's parsed_ingredients rows
+        # (the seed only writes 'flour' and 'milk'), so the override is
+        # rejected before insert.
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        target = db.get_variant_members(vid)[0].recipe_id
+        result = ops.apply_canonical_reassign(
+            db, vid, target, "salt", "kosher salt"
+        )
+        assert result.ok is False
+        assert db.list_overrides(vid) == []
+
+    def test_empty_raw_text_returns_error(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        target = db.get_variant_members(vid)[0].recipe_id
+        result = ops.apply_canonical_reassign(db, vid, target, "", "milk")
+        assert result.ok is False
+
+
+class TestLoadProvenance:
+    """Smoke test for the editor's provenance reader on synthetic corpus data."""
+
+    def _write_synthetic_csv(self, path: Path, urls: list[str]) -> None:
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(
+                ["", "title", "ingredients", "directions", "link", "source", "NER"]
+            )
+            for i, url in enumerate(urls):
+                writer.writerow(
+                    [
+                        str(i),
+                        "Pannkakor",
+                        str(["2 cups all-purpose flour", "1 cup milk"]),
+                        "[]",
+                        url,
+                        "Synthetic",
+                        str(["flour", "milk"]),
+                    ]
+                )
+
+    def test_returns_none_for_unknown_variant(self, tmp_path: Path) -> None:
+        db = CatalogDB.in_memory()
+        prov = ops.load_provenance(db, "no-such", tmp_path / "absent.csv")
+        assert prov is None
+
+    def test_returns_provenance_bundle_for_known_variant(
+        self, tmp_path: Path
+    ) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        urls = [m.url for m in db.get_variant_members(vid) if m.url]
+        csv_path = tmp_path / "rnlg.csv"
+        self._write_synthetic_csv(csv_path, urls)
+
+        prov = ops.load_provenance(db, vid, csv_path)
+        assert prov is not None
+        assert prov.variant_id == vid
+        assert prov.n_recipenlg_hit > 0
+        # 'flour' and 'milk' are the variant's canonicals — both surface.
+        canonicals = {c.canonical for c in prov.canonicals}
+        assert "flour" in canonicals
+        assert "milk" in canonicals
+
+    def test_missing_corpus_returns_empty_provenance(
+        self, tmp_path: Path
+    ) -> None:
+        # full_dataset.csv is gitignored. The editor must render an empty
+        # state, not crash, when the corpus isn't on disk.
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        prov = ops.load_provenance(db, vid, tmp_path / "missing.csv")
+        assert prov is not None
+        assert prov.n_recipenlg_hit == 0
+        assert all(c.total_observations == 0 for c in prov.canonicals)
