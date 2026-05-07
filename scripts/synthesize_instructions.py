@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
 """Synthesize canonical instructions for a variant (RationalRecipes-ia1x).
 
-Implements the non-LLM scaffolding for the r8hx-resolved approach:
-"full LLM synthesis with human review." Reads the variant's averaged
-ingredient profile + the N source instruction sequences and assembles
-the synthesis prompt. The actual Ollama call is deliberately
-unimplemented — the synthesis-side model choice is gated on
-``RationalRecipes-2n09`` and the remote Ollama is offline at the time
-ia1x landed.
+Implements the r8hx-resolved approach: "full LLM synthesis with human
+review." Reads the variant's averaged ingredient profile + the N source
+instruction sequences, assembles a deterministic synthesis prompt, and
+calls Ollama (``_llm_synthesize``) with ``temperature=0, seed=42`` so
+reruns on the same model + same prompt produce identical text.
 
-When ``2n09`` resolves and Ollama is reachable, dropping in a one-line
-``_ollama_generate`` call (see ``rational_recipes.scrape.parse``) with
-``temperature=0, seed=42`` is sufficient — the prompt-builder already
-pins those values.
+The synthesis-side model choice itself is open in ``RationalRecipes-2n09``
+— callers must pass ``--model`` explicitly so the eval driver can
+re-target candidates without picking a winner here. ``--dry-run`` skips
+the LLM call entirely and just prints the assembled prompt.
 
 Usage:
     # Print the synthesis prompt without calling the LLM:
     python3 scripts/synthesize_instructions.py <variant_id> --dry-run
 
-    # Run + save to recipes.db (currently raises NotImplementedError):
-    python3 scripts/synthesize_instructions.py <variant_id> --save
+    # Synthesize with a specific candidate model:
+    python3 scripts/synthesize_instructions.py <variant_id> --model gemma4:31b
+
+    # Synthesize and persist to recipes.db.canonical_instructions:
+    python3 scripts/synthesize_instructions.py <variant_id> --model gemma4:31b --save
 """
 
 from __future__ import annotations
