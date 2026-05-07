@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 from rational_recipes.catalog_db import CatalogDB
+from rational_recipes.render.instruction_picker import pick_median_source
 
 
 def _format_pct(value: float | None, *, places: int = 1) -> str:
@@ -223,10 +224,19 @@ def render(
         lines.append("## Instructions")
         lines.append("")
         if active_sources:
-            median_source = active_sources[0]
+            # ie1a: pick the most-complete instructions among the top-N
+            # most-central sources, not the literal median. F10 in the
+            # ehe7 friction journal observed that the lowest-outlier
+            # recipe is sometimes terse and a near-central runner-up
+            # has substantially better text. The picker falls back to
+            # active_sources[0] when no candidate has directions_text
+            # (pre-F5 behavior), preserving the literal-median outline.
+            median_source = pick_median_source(active_sources, conn)
             lines.append(
-                f"*Per RationalRecipes-r8hx option 1: the source recipe "
-                f"closest to the central tendency (lowest outlier score = "
+                f"*Per RationalRecipes-r8hx option 1 (refined by "
+                f"RationalRecipes-ie1a): the most-completely-instructed "
+                f"source among the top-5 most-central recipes "
+                f"(outlier score = "
                 f"{median_source['outlier_score']:.2f}) is*"
             )
             lines.append("")
