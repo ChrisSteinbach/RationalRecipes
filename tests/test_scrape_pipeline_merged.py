@@ -1492,6 +1492,240 @@ class TestProgressCallback:
             db.close()
 
 
+class TestParseConcurrency:
+    """RationalRecipes-e6rl: parallel ingredient-line parsing dispatch.
+
+    The byte-identical guarantee: ``build_variants(parse_concurrency=1)``
+    and ``build_variants(parse_concurrency=N>1)`` MUST produce the same
+    variant set on the same input — same ``variant_id``, same row order,
+    same canonical ingredient set, same dedup outcome. The parallel
+    dispatch only changes wall-clock; all derived state is deterministic.
+    """
+
+    def _quantity_aware_parse(
+        self, lines: list[str]
+    ) -> list[ParsedIngredient | None]:
+        out: list[ParsedIngredient | None] = []
+        for line in lines:
+            parts = line.split()
+            qty = float(parts[0])
+            ing = parts[-1]
+            out.append(_parsed(ing, qty, "g"))
+        return out
+
+    def _make_recipes(self, n: int) -> list[MergedRecipe]:
+        return [
+            _make_merged(
+                "pancakes",
+                (f"{200 + i * 10} g flour", f"{200 - i * 10} g milk"),
+                frozenset({"flour", "milk"}),
+                url=f"https://x/{i}",
+            )
+            for i in range(n)
+        ]
+
+    def _diverse_recipes(self) -> list[MergedRecipe]:
+        """Several clusters across one L1 group so the parallel path
+        actually exercises multiple cluster iterations + variants.
+        """
+        extras = ["sugar", "salt", "butter", "egg"]
+        recipes: list[MergedRecipe] = []
+        for cluster_idx, extra in enumerate(extras):
+            for i in range(6 - cluster_idx):
+                recipes.append(
+                    _make_merged(
+                        "pancakes",
+                        (
+                            f"{200 + i * 10} g flour",
+                            f"{200 - i * 10} g milk",
+                            f"100 g {extra}",
+                        ),
+                        frozenset({"flour", "milk", extra}),
+                        url=f"https://x/{cluster_idx}/{i}",
+                    )
+                )
+        return recipes
+
+    def _summarize(
+        self, variants: list[MergedVariantResult]
+    ) -> list[tuple[str, tuple[str, ...], tuple[str, ...]]]:
+        """Variant-set fingerprint robust to set ordering: sorted by id,
+        with the row URLs in the order ``build_variants`` produced them.
+        Captures variant_id (the merge-key) + canonical ingredients +
+        the per-row URL sequence — those three pin down dedup + filter
+        + freq-trim + ordering decisions byte-for-byte."""
+        out = []
+        for v in sorted(variants, key=lambda x: x.variant_id):
+            urls = tuple(r.url for r in v.normalized_rows)
+            ingredients = tuple(sorted(v.canonical_ingredients))
+            out.append((v.variant_id, ingredients, urls))
+        return out
+
+    def test_concurrency_1_vs_4_byte_identical(self) -> None:
+        """Regression assertion (RationalRecipes-e6rl acceptance):
+        sequential and concurrent runs produce the same variant set."""
+        recipes = self._diverse_recipes()
+
+        seq_variants, seq_stats = build_variants(
+            recipes,
+            parse_fn=self._quantity_aware_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            min_variant_size=3,
+            parse_concurrency=1,
+        )
+        par_variants, par_stats = build_variants(
+            recipes,
+            parse_fn=self._quantity_aware_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            min_variant_size=3,
+            parse_concurrency=4,
+        )
+
+        assert self._summarize(seq_variants) == self._summarize(par_variants)
+        # Stats counters that don't depend on dict iteration order:
+        assert seq_stats.rows_parsed == par_stats.rows_parsed
+        assert seq_stats.rows_normalized == par_stats.rows_normalized
+        assert seq_stats.rows_dedup_dropped == par_stats.rows_dedup_dropped
+        assert seq_stats.l1_groups_kept == par_stats.l1_groups_kept
+        assert seq_stats.l2_variants_kept == par_stats.l2_variants_kept
+
+    def test_concurrent_with_cache_byte_identical(self) -> None:
+        """ParseCache (vj4b) under concurrent dispatch — F2-on-e6rl.
+
+        Same seeded cache content, two runs (concurrency=1 and =4),
+        identical variant set. Catches the failure mode where the
+        cache lock leaks state across threads (e.g. counters out of
+        order, or rows_to_write tied to the wrong recipe_id).
+        """
+        recipes = self._diverse_recipes()
+
+        db_seq = CatalogDB.in_memory()
+        db_par = CatalogDB.in_memory()
+        try:
+            cache_seq = ParseCache(db=db_seq, model="m")
+            cache_par = ParseCache(db=db_par, model="m")
+
+            seq_variants, _ = build_variants(
+                recipes,
+                parse_fn=self._quantity_aware_parse,
+                parse_cache=cache_seq,
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=2,
+                min_variant_size=3,
+                parse_concurrency=1,
+            )
+            par_variants, _ = build_variants(
+                recipes,
+                parse_fn=self._quantity_aware_parse,
+                parse_cache=cache_par,
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=2,
+                min_variant_size=3,
+                parse_concurrency=4,
+            )
+
+            assert self._summarize(seq_variants) == self._summarize(par_variants)
+            # Cache_hits/ollama_lines differ legitimately across runs:
+            # concurrent threads racing on a cold cache all see the
+            # same novel line as a miss before any thread writes back,
+            # so parallel runs make more redundant LLM calls than
+            # sequential. The byte-identical guarantee is on the
+            # *output* (variant_ingredient_stats), not on these
+            # observational counters. Determinism still holds at the
+            # per-line level because parse.py pins temperature=0 +
+            # seed=42 — redundant calls return the same parse.
+        finally:
+            db_seq.close()
+            db_par.close()
+
+    def test_progress_events_in_input_order_under_concurrency(self) -> None:
+        """F8 compatibility: events arrive in deterministic input order.
+
+        Even under concurrency=4 the per-recipe events fire in the
+        same input sequence as concurrency=1 — guaranteed by the
+        ``executor.map`` iteration order in build_variants.
+        """
+        recipes = self._make_recipes(6)
+
+        seq_events: list[ProgressEvent] = []
+        build_variants(
+            recipes,
+            parse_fn=self._quantity_aware_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            min_variant_size=2,
+            progress_callback=seq_events.append,
+            parse_concurrency=1,
+        )
+        par_events: list[ProgressEvent] = []
+        build_variants(
+            recipes,
+            parse_fn=self._quantity_aware_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            min_variant_size=2,
+            progress_callback=par_events.append,
+            parse_concurrency=4,
+        )
+
+        seq_counts = [e.parsed_count for e in seq_events if not e.final]
+        par_counts = [e.parsed_count for e in par_events if not e.final]
+        assert seq_counts == par_counts == [1, 2, 3, 4, 5, 6]
+
+    def test_parallel_overlaps_blocking_parse_calls(self) -> None:
+        """Smoke test: with a parse_fn that sleeps, concurrency=4 is
+        meaningfully faster than concurrency=1 — confirms the executor
+        actually overlaps the work (and exits the GIL during the
+        ``time.sleep`` proxy for ``requests.post``).
+        """
+        import time as _time
+
+        recipes = self._make_recipes(8)
+
+        def slow_parse(lines: list[str]) -> list[ParsedIngredient | None]:
+            _time.sleep(0.05)  # 50 ms ≈ a fast Ollama call
+            return self._quantity_aware_parse(lines)
+
+        t0 = _time.monotonic()
+        build_variants(
+            recipes,
+            parse_fn=slow_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            min_variant_size=2,
+            parse_concurrency=1,
+        )
+        seq_elapsed = _time.monotonic() - t0
+
+        t0 = _time.monotonic()
+        build_variants(
+            recipes,
+            parse_fn=slow_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            min_variant_size=2,
+            parse_concurrency=4,
+        )
+        par_elapsed = _time.monotonic() - t0
+
+        # 8 sleeps of 50 ms: sequential ≈ 400 ms, concurrency=4 ≈ 100 ms.
+        # Generous bound to keep the test stable on loaded CI: parallel
+        # is at least 1.5× faster than sequential.
+        assert par_elapsed * 1.5 < seq_elapsed, (
+            f"expected speedup; seq={seq_elapsed:.3f}s par={par_elapsed:.3f}s"
+        )
+
+
 class TestCliProgressPrinter:
     """Smoke test for ``scripts/scrape_merged.py``\047s _ProgressPrinter."""
 
