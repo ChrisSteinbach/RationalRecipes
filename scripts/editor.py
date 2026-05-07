@@ -1,24 +1,27 @@
-"""Streamlit maintainer editor for ``recipes.db`` (RationalRecipes-1t8x).
+"""Streamlit maintainer editor for ``recipes.db`` (RationalRecipes-1t8x + xekj).
 
-Localhost, single-maintainer workbench for filter / substitute operations
-on extracted variants. Reads + writes ``recipes.db`` directly via
-``CatalogDB`` — no HTTP layer, no JSON cache, no sql.js.
+Localhost, single-maintainer workbench for filter / substitute /
+canonical-reassign operations on extracted variants. Reads + writes
+``recipes.db`` directly via ``CatalogDB`` — no HTTP layer, no JSON cache,
+no sql.js.
 
 Launch:
 
-    streamlit run scripts/editor.py -- --db output/catalog/recipes.db
+    streamlit run scripts/editor.py -- --db output/catalog/recipes.db \\
+        --recipenlg dataset/full_dataset.csv
 
-Filter / substitute writes go through the same ``add_filter_override``
-and ``add_substitute_override`` helpers as ``scripts/review_variants.py``,
-so an override applied here is indistinguishable from one applied via
-the CLI. ``_recompute_stats_for_variant`` runs eagerly inside each helper
-— after a write the in-process ``CatalogDB`` already holds the updated
+Override writes go through the same ``add_filter_override``,
+``add_substitute_override``, and ``add_canonical_reassign_override``
+helpers as ``scripts/review_variants.py``, so an override applied here
+is indistinguishable from one applied via the CLI.
+``_recompute_stats_for_variant`` runs eagerly inside each helper — after
+a write the in-process ``CatalogDB`` already holds the updated
 ``variant_ingredient_stats``; the UI just needs to re-read.
 
 This module is the **presentation layer only**. The data plumbing — list
-the variants, load a detail, apply / clear overrides — lives in
-``rational_recipes.editor.operations`` and is tested separately so the
-core logic doesn't depend on the Streamlit runtime.
+the variants, load a detail, apply / clear overrides, load provenance —
+lives in ``rational_recipes.editor.operations`` and is tested separately
+so the core logic doesn't depend on the Streamlit runtime.
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ from rational_recipes.catalog_db import CatalogDB
 from rational_recipes.editor import operations as ops
 
 DEFAULT_DB_PATH = Path("output/catalog/recipes.db")
+DEFAULT_RECIPENLG_PATH = Path("dataset/full_dataset.csv")
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -41,6 +45,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=DEFAULT_DB_PATH,
         help=f"Path to recipes.db (default: {DEFAULT_DB_PATH})",
+    )
+    parser.add_argument(
+        "--recipenlg",
+        type=Path,
+        default=DEFAULT_RECIPENLG_PATH,
+        help=(
+            "Path to RecipeNLG full_dataset.csv for provenance breakdown "
+            f"(default: {DEFAULT_RECIPENLG_PATH}; gitignored — provenance "
+            "panels render an empty state when missing)"
+        ),
     )
     return parser.parse_args(argv)
 
@@ -82,6 +96,156 @@ def _render_stats(st: Any, detail: ops.VariantDetail) -> None:
         for s in detail.stats
     ]
     st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+def _render_provenance_panel(
+    st: Any,
+    db: CatalogDB,
+    detail: ops.VariantDetail,
+    recipenlg_path: Path,
+) -> None:
+    """Per-canonical raw-form breakdown + per-source canonical reassignment.
+
+    Surfaces are merged into one expander per canonical: clicking expands
+    the breakdown, and the expander body holds the reassign form so the
+    editor can pick a (recipe_id, raw_text) pair from the same view.
+    """
+    if not detail.stats:
+        return
+    st.subheader("Provenance & per-source reassignment")
+    if not recipenlg_path.exists():
+        st.caption(
+            f"RecipeNLG corpus not found at `{recipenlg_path}` — "
+            "provenance breakdowns will render empty until the dataset is "
+            "available. The reassign UI below still works (it doesn't "
+            "depend on the corpus join)."
+        )
+    prov = ops.load_provenance(db, detail.variant.variant_id, recipenlg_path)
+    if prov is None:
+        st.error("Could not load provenance for this variant.")
+        return
+    st.caption(
+        f"recipenlg members: {prov.n_recipenlg_members}  ·  "
+        f"hit in corpus: {prov.n_recipenlg_hit}/{prov.n_recipenlg_members}  ·  "
+        f"unmatched lines: {prov.unmatched_count}  ·  "
+        f"other corpora (skipped): {prov.n_other_corpora}"
+    )
+    by_canonical = {c.canonical: c for c in prov.canonicals}
+    member_recipe_ids = [m.recipe_id for m in detail.members]
+    for stat in detail.stats:
+        canon = stat.canonical_name
+        canon_prov = by_canonical.get(canon)
+        n_obs = canon_prov.total_observations if canon_prov else 0
+        with st.expander(
+            f"{canon}  ·  mean {round(stat.mean_proportion, 4)}  ·  "
+            f"{n_obs} raw observations"
+        ):
+            _render_canonical_breakdown(st, canon_prov)
+            _render_reassign_form(
+                st, db, detail, canon, canon_prov, member_recipe_ids
+            )
+
+
+def _render_canonical_breakdown(
+    st: Any, canon_prov: ops.VariantProvenance | Any
+) -> None:
+    """Raw-form table for one canonical (or empty state)."""
+    if canon_prov is None or not canon_prov.forms:
+        st.caption(
+            "No raw forms found in source corpus for this canonical "
+            "(the variant's members may be from non-recipenlg corpora, "
+            "or the corpus CSV isn't on disk)."
+        )
+        return
+    rows = [
+        {
+            "raw_form": f.form_key,
+            "count": f.count,
+            "mean_grams": (
+                None if f.mean_grams is None else round(f.mean_grams, 1)
+            ),
+            "n_with_mass": f.n_with_grams,
+            "example": f.example_raw_line,
+        }
+        for f in canon_prov.forms
+    ]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+    distinct_recipes = len({rid for f in canon_prov.forms for rid in f.recipe_ids})
+    st.caption(
+        f"Total: {canon_prov.total_observations} observations across "
+        f"{distinct_recipes} distinct recipes."
+    )
+
+
+def _render_reassign_form(
+    st: Any,
+    db: CatalogDB,
+    detail: ops.VariantDetail,
+    canonical: str,
+    canon_prov: Any,
+    member_recipe_ids: list[str],
+) -> None:
+    """Per-source reassignment form scoped to one canonical."""
+    st.markdown("**Reassign one source's raw line → new canonical**")
+    # The override stores raw_text as a substring handle, so any contributing
+    # raw line under a given form is interchangeable; we surface one
+    # (recipe_id, raw_text) entry per recipe contribution and let the
+    # editor pick.
+    pairs: list[tuple[str, str]] = (
+        [
+            (rid, form.example_raw_line)
+            for form in canon_prov.forms
+            for rid in form.recipe_ids
+        ]
+        if canon_prov is not None
+        else []
+    )
+    vid = detail.variant.variant_id
+    if pairs:
+        labels = [f"{rid}  ·  {raw!r}" for rid, raw in pairs]
+        idx = st.selectbox(
+            "Source line",
+            list(range(len(pairs))),
+            format_func=lambda i: labels[i],
+            key=f"reassign_pair::{vid}::{canonical}",
+        )
+        recipe_id_default, raw_text_default = pairs[idx]
+    else:
+        st.caption(
+            "No raw forms available from the corpus join. Enter the "
+            "(recipe_id, raw_text) by hand below."
+        )
+        recipe_id_default, raw_text_default = "", ""
+    cols = st.columns([2, 3, 3, 1])
+    recipe_id = cols[0].text_input(
+        "recipe_id",
+        value=recipe_id_default,
+        key=f"reassign_rid::{vid}::{canonical}",
+    )
+    raw_text = cols[1].text_input(
+        "raw_text (substring)",
+        value=raw_text_default,
+        key=f"reassign_raw::{vid}::{canonical}",
+    )
+    new_canonical = cols[2].text_input(
+        "new_canonical",
+        key=f"reassign_new::{vid}::{canonical}",
+    )
+    if cols[3].button(
+        "Reassign",
+        key=f"reassign_go::{vid}::{canonical}",
+    ):
+        if recipe_id not in member_recipe_ids:
+            st.error(f"{recipe_id!r} is not a member of this variant.")
+            return
+        result = ops.apply_canonical_reassign(
+            db, vid, recipe_id, raw_text, new_canonical
+        )
+        if result.ok:
+            st.success(result.message)
+            st.rerun()
+        else:
+            st.error(result.message)
 
 
 def _render_filter_panel(
@@ -187,7 +351,7 @@ def _render_overrides_panel(
 
 
 def _render_detail(
-    st: Any, db: CatalogDB, variant_id: str
+    st: Any, db: CatalogDB, variant_id: str, recipenlg_path: Path
 ) -> None:
     detail = ops.load_variant_detail(db, variant_id)
     if detail is None:
@@ -204,6 +368,7 @@ def _render_detail(
     st.subheader("Per-ingredient stats")
     _render_stats(st, detail)
 
+    _render_provenance_panel(st, db, detail, recipenlg_path)
     _render_substitute_panel(st, db, detail)
     _render_overrides_panel(st, db, detail)
     _render_filter_panel(st, db, detail)
@@ -256,7 +421,7 @@ def main() -> None:
                 "review tool sees them immediately."
             )
             return
-        _render_detail(st, db, selected)
+        _render_detail(st, db, selected, args.recipenlg)
     finally:
         db.close()
 
