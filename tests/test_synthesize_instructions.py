@@ -253,6 +253,17 @@ class TestPromptShape:
         # "the consensus."
         assert "average" in prompt or "averaging" in prompt or "mean" in prompt
 
+    def test_system_prompt_forbids_inline_mass_percentages(self) -> None:
+        # Regression for RationalRecipes-pvmd: v2 mistral-small:24b output
+        # inlined the averaged mass percentages parenthetically in each
+        # step (e.g. "flour (32.4%)"), duplicating data that already
+        # appears in the rendered drop's ingredient table. The prompt
+        # must explicitly forbid this so the instructions read like a
+        # normal recipe.
+        prompt = synthesize_instructions.SYSTEM_PROMPT.lower()
+        assert "do not include" in prompt
+        assert "percentage" in prompt
+
 
 class TestDeterminismConstants:
     """Pin deterministic settings so the eventual Ollama call carries them."""

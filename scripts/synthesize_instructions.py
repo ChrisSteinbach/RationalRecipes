@@ -88,8 +88,13 @@ SYSTEM_PROMPT = (
     "these values; mathematical averaging produces operationally "
     "awkward results (e.g., \"362°F\" is no oven setting anyone "
     "uses). Do NOT invent ingredients absent from the averaged "
-    "profile. Output only the instruction steps — no preamble, no "
-    "commentary."
+    "profile. Do NOT include the averaged mass percentages from the "
+    "ingredient profile inside the generated instruction steps; the "
+    "ingredient percentages appear separately in the rendered drop's "
+    "ingredient table, so the instructions should read like a normal "
+    "recipe (e.g., \"add the flour and salt\", not \"add the flour "
+    "(32.4%) and salt (0.5%)\"). Output only the instruction steps — "
+    "no preamble, no commentary."
 )
 
 
