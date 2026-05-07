@@ -241,6 +241,7 @@ def _llm_synthesize(
     base_url: str = OLLAMA_BASE_URL,
     timeout: float = DEFAULT_SYNTHESIS_TIMEOUT,
     num_predict: int = DEFAULT_SYNTHESIS_NUM_PREDICT,
+    num_ctx: int | None = None,
 ) -> str:
     """Call Ollama /api/generate for free-text synthesis.
 
@@ -251,17 +252,20 @@ def _llm_synthesize(
     ``seed=SYNTHESIS_SEED`` so reruns on the same model + same prompt
     return identical text — same determinism guarantee as parsing.
     """
+    options: dict[str, object] = {
+        "num_predict": num_predict,
+        "temperature": SYNTHESIS_TEMPERATURE,
+        "seed": SYNTHESIS_SEED,
+    }
+    if num_ctx is not None:
+        options["num_ctx"] = num_ctx
     payload = json.dumps(
         {
             "model": model,
             "system": SYSTEM_PROMPT,
             "prompt": prompt,
             "stream": False,
-            "options": {
-                "num_predict": num_predict,
-                "temperature": SYNTHESIS_TEMPERATURE,
-                "seed": SYNTHESIS_SEED,
-            },
+            "options": options,
         }
     ).encode()
 
@@ -304,6 +308,7 @@ def synthesize(
     save: bool,
     model: str | None = None,
     base_url: str = OLLAMA_BASE_URL,
+    num_ctx: int | None = None,
 ) -> str:
     """Top-level orchestration: build the prompt and (when wired) call the LLM.
 
@@ -335,7 +340,9 @@ def synthesize(
                 "synthesize() requires model=... when dry_run is False; "
                 "pass --model on the CLI."
             )
-        result = _llm_synthesize(prompt, model=model, base_url=base_url)
+        result = _llm_synthesize(
+            prompt, model=model, base_url=base_url, num_ctx=num_ctx
+        )
         if save:
             db.set_canonical_instructions(variant_id, result)
         return result
@@ -384,9 +391,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--ollama-url",
+        "--base-url",
         type=str,
         default=OLLAMA_BASE_URL,
+        dest="ollama_url",
         help=f"Ollama base URL (default: {OLLAMA_BASE_URL})",
+    )
+    parser.add_argument(
+        "--num-ctx",
+        type=int,
+        default=None,
+        help=(
+            "Override Ollama num_ctx for the synthesis call. The "
+            "synth-deep endpoint (NP=1) is provisioned for 32 k context "
+            "with the recommended candidates — pass --num-ctx 32768 to "
+            "match the tuning report's measurements. Omit to use the "
+            "model's default."
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -427,6 +448,7 @@ def main(argv: list[str] | None = None) -> int:
         save=args.save,
         model=args.model,
         base_url=args.ollama_url,
+        num_ctx=args.num_ctx,
     )
     sys.stdout.write(output)
     if not output.endswith("\n"):

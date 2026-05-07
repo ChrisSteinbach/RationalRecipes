@@ -242,6 +242,89 @@ class TestDeterminismConstants:
         assert synthesize_instructions.SYNTHESIS_SEED == 42
 
 
+class TestNumCtxForwarding:
+    """``num_ctx`` must reach the Ollama options block when set.
+
+    The synth-deep endpoint (NP=1) is provisioned to allow up to 32 k
+    context for the recommended candidates. Passing ``num_ctx=32768``
+    is how the eval driver opts into that ceiling. Capture the request
+    body and assert the option lands.
+    """
+
+    def test_llm_synthesize_includes_num_ctx_when_set(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_urlopen(req, timeout: float = 0):  # type: ignore[no-untyped-def]
+            import json as _json
+
+            captured["body"] = _json.loads(req.data.decode())
+
+            class _Resp:
+                def __enter__(self_inner):  # type: ignore[no-untyped-def]
+                    return self_inner
+
+                def __exit__(self_inner, *_a):  # type: ignore[no-untyped-def]
+                    return False
+
+                def read(self_inner) -> bytes:  # type: ignore[no-untyped-def]
+                    return _json.dumps({"response": "ok"}).encode()
+
+            return _Resp()
+
+        import urllib.request as _ur
+
+        monkeypatch.setattr(_ur, "urlopen", fake_urlopen)
+        out = synthesize_instructions._llm_synthesize(
+            prompt="x",
+            model="mistral-small:24b",
+            base_url="http://x:1",
+            timeout=1.0,
+            num_ctx=32768,
+        )
+        assert out == "ok"
+        body = captured["body"]
+        assert isinstance(body, dict)
+        opts = body.get("options")
+        assert isinstance(opts, dict)
+        assert opts.get("num_ctx") == 32768
+
+    def test_llm_synthesize_omits_num_ctx_when_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_urlopen(req, timeout: float = 0):  # type: ignore[no-untyped-def]
+            import json as _json
+
+            captured["body"] = _json.loads(req.data.decode())
+
+            class _Resp:
+                def __enter__(self_inner):  # type: ignore[no-untyped-def]
+                    return self_inner
+
+                def __exit__(self_inner, *_a):  # type: ignore[no-untyped-def]
+                    return False
+
+                def read(self_inner) -> bytes:  # type: ignore[no-untyped-def]
+                    return _json.dumps({"response": "ok"}).encode()
+
+            return _Resp()
+
+        import urllib.request as _ur
+
+        monkeypatch.setattr(_ur, "urlopen", fake_urlopen)
+        synthesize_instructions._llm_synthesize(
+            prompt="x", model="m", base_url="http://x:1", timeout=1.0
+        )
+        body = captured["body"]
+        assert isinstance(body, dict)
+        opts = body.get("options")
+        assert isinstance(opts, dict)
+        assert "num_ctx" not in opts
+
+
 class TestCli:
     def test_dry_run_main_writes_prompt_to_stdout(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
