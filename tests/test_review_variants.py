@@ -348,6 +348,116 @@ class TestCLIOverridesSubcommand:
         assert rv.main(["--db", str(path), "overrides", ids["pannkakor"]]) == 0
 
 
+class TestCLICanonicalReassignSubcommand:
+    """RationalRecipes-h6q1: per-source canonical reassignment via CLI."""
+
+    def test_canonical_reassign_records_override_and_recomputes(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "recipes.db"
+        ids = _seed_persisted(path, "pannkakor")
+        vid = ids["pannkakor"]
+
+        db = CatalogDB.open(path)
+        try:
+            target = db.get_variant_members(vid)[0].recipe_id
+        finally:
+            db.close()
+
+        exit_code = rv.main(
+            [
+                "--db",
+                str(path),
+                "canonical-reassign",
+                vid,
+                target,
+                "milk",
+                "buttermilk",
+            ]
+        )
+        assert exit_code == 0
+
+        db = CatalogDB.open(path)
+        try:
+            overrides = db.list_overrides(vid)
+            assert len(overrides) == 1
+            assert overrides[0].override_type == "canonical_reassign"
+            assert overrides[0].payload == {
+                "recipe_id": target,
+                "raw_text": "milk",
+                "new_canonical": "buttermilk",
+            }
+            # The reassigned recipe shifts its 'milk' mass-fraction onto
+            # 'buttermilk'; the other two recipes still report 'milk'.
+            stats = {
+                s.canonical_name for s in db.get_ingredient_stats(vid)
+            }
+            assert "buttermilk" in stats
+            assert "milk" in stats  # other recipes still contribute it.
+        finally:
+            db.close()
+
+    def test_canonical_reassign_unknown_variant_returns_error(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "recipes.db"
+        _seed_persisted(path, "pannkakor")
+        exit_code = rv.main(
+            [
+                "--db",
+                str(path),
+                "canonical-reassign",
+                "nope",
+                "ghost",
+                "milk",
+                "buttermilk",
+            ]
+        )
+        assert exit_code == 2
+
+    def test_canonical_reassign_unknown_recipe_returns_error(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "recipes.db"
+        ids = _seed_persisted(path, "pannkakor")
+        exit_code = rv.main(
+            [
+                "--db",
+                str(path),
+                "canonical-reassign",
+                ids["pannkakor"],
+                "ghost",
+                "milk",
+                "buttermilk",
+            ]
+        )
+        assert exit_code == 2
+
+    def test_canonical_reassign_unmatched_raw_text_returns_error(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "recipes.db"
+        ids = _seed_persisted(path, "pannkakor")
+        vid = ids["pannkakor"]
+        db = CatalogDB.open(path)
+        try:
+            target = db.get_variant_members(vid)[0].recipe_id
+        finally:
+            db.close()
+        exit_code = rv.main(
+            [
+                "--db",
+                str(path),
+                "canonical-reassign",
+                vid,
+                target,
+                "raspberry compote",
+                "raspberry-compote",
+            ]
+        )
+        assert exit_code == 2
+
+
 class TestCLIClearOverrideSubcommand:
     def test_clear_existing_override(self, tmp_path: Path) -> None:
         path = tmp_path / "recipes.db"

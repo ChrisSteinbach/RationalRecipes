@@ -18,18 +18,21 @@ Interactive review keystrokes:
     ?  defer                  → no write; variant stays pending
     q  quit and save
 
-Subcommands (sj18 — editorial overrides on a specific variant):
-    review                          Interactive review loop (default).
-    substitute VID FROM TO          Fold canonical FROM into TO.
-    filter VID RECIPE_ID [--reason] Exclude one source recipe.
-    overrides VID                   List active overrides on a variant.
-    clear-override OVERRIDE_ID      Remove one override (reverses it).
+Subcommands (sj18 + h6q1 — editorial overrides on a specific variant):
+    review                                       Interactive review loop (default).
+    substitute VID FROM TO                       Fold canonical FROM into TO.
+    filter VID RECIPE_ID [--reason]              Exclude one source recipe.
+    canonical-reassign VID RECIPE_ID RAW NEW     Reassign one source's raw line.
+    overrides VID                                List active overrides on a variant.
+    clear-override OVERRIDE_ID                   Remove one override (reverses it).
 
 Usage:
     python3 scripts/review_variants.py
     python3 scripts/review_variants.py --db output/catalog/recipes.db
     python3 scripts/review_variants.py substitute b34c2dce79e2 shortening butter
     python3 scripts/review_variants.py filter b34c2dce79e2 abc123 --reason "bad units"
+    python3 scripts/review_variants.py canonical-reassign b34c2dce79e2 abc123 \\
+        "70% cacao chocolate chips" 70-percent-cacao-chocolate-chips
 """
 
 from __future__ import annotations
@@ -320,6 +323,31 @@ def _run_filter(
     return 0
 
 
+def _run_canonical_reassign(
+    db: CatalogDB,
+    console: Console,
+    variant_id: str,
+    recipe_id: str,
+    raw_text: str,
+    new_canonical: str,
+) -> int:
+    """Apply a per-source canonical_reassign override and print the result."""
+    try:
+        override_id = db.add_canonical_reassign_override(
+            variant_id, recipe_id, raw_text, new_canonical
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return 2
+    console.print(
+        f"[green]Recorded canonical_reassign "
+        f"(override_id={override_id}):[/green]"
+        f" recipe={recipe_id}  {raw_text!r} → {new_canonical}"
+    )
+    _print_post_recompute_summary(db, console, variant_id)
+    return 0
+
+
 def _run_overrides(db: CatalogDB, console: Console, variant_id: str) -> int:
     """List active overrides for one variant."""
     overrides = db.list_overrides(variant_id)
@@ -408,6 +436,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p_filter.add_argument("recipe_id")
     p_filter.add_argument("--reason", default="")
 
+    p_reassign = sub.add_parser(
+        "canonical-reassign",
+        help=(
+            "Reassign a single source's raw ingredient line to a different "
+            "canonical (per-source override; h6q1)."
+        ),
+    )
+    p_reassign.add_argument("variant_id")
+    p_reassign.add_argument("recipe_id")
+    p_reassign.add_argument("raw_text")
+    p_reassign.add_argument("new_canonical")
+
     p_overrides = sub.add_parser(
         "overrides", help="List active overrides on a variant."
     )
@@ -444,6 +484,15 @@ def main(argv: list[str] | None = None) -> int:
         if command == "filter":
             return _run_filter(
                 db, console, args.variant_id, args.recipe_id, args.reason
+            )
+        if command == "canonical-reassign":
+            return _run_canonical_reassign(
+                db,
+                console,
+                args.variant_id,
+                args.recipe_id,
+                args.raw_text,
+                args.new_canonical,
             )
         if command == "overrides":
             return _run_overrides(db, console, args.variant_id)
