@@ -24,6 +24,7 @@ from __future__ import annotations
 import csv
 import logging
 import re
+import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from io import StringIO
@@ -119,11 +120,17 @@ class ParseCache:
 
     The cache key is the raw line text **verbatim** — no normalization
     — so two runs of the same line text produce the same lookup.
+
+    Tracks line-grain ``cache_hits`` and ``ollama_lines`` counters so
+    progress reporting (RationalRecipes-1g5h / F8) can show how often
+    the LLM was actually invoked vs short-circuited by prior parses.
     """
 
     db: CatalogDB
     model: str
     seed: int = _CACHE_SEED
+    cache_hits: int = 0
+    ollama_lines: int = 0
 
     def parse_with_cache(
         self,
@@ -162,6 +169,7 @@ class ParseCache:
             )
             if found:
                 results[i] = parsed_from_json(payload, line)
+                self.cache_hits += 1
             else:
                 miss_indices.append(i)
                 miss_lines.append(line)
@@ -169,6 +177,7 @@ class ParseCache:
         if not miss_lines:
             return results
 
+        self.ollama_lines += len(miss_lines)
         llm_results = parse_fn(miss_lines)
         rows_to_write: list[ParsedLineRow] = []
         for idx, parsed in zip(miss_indices, llm_results, strict=True):
@@ -429,6 +438,38 @@ class PipelineRunStats:
     db_misses: dict[str, int]
 
 
+@dataclass(frozen=True)
+class ProgressEvent:
+    """One progress emission from ``build_variants`` (1g5h / F8).
+
+    Counters are cumulative since the pipeline started:
+
+    - ``parsed_count``: recipes that have entered the parse step so far
+      (cluster-membership-passing ones — recipes dropped pre-cluster
+      never appear here).
+    - ``total``: upper bound of recipes that may reach the parse step,
+      computed once after L1+L2 clustering completes. Useful for ETA
+      arithmetic; shrinks if a row is dropped pre-parse, so callers
+      should treat this as an upper bound, not an exact count.
+    - ``cache_hits`` / ``ollama_lines``: line-grain counters from the
+      ``ParseCache`` (when supplied). Both are 0 when no cache is
+      attached — the LLM is then invoked once per recipe regardless.
+    - ``elapsed_seconds``: wall-clock since the start of build_variants.
+    - ``final``: True for the single end-of-run summary event so a CLI
+      printer can pick a different format (and skip its rate-throttle).
+    """
+
+    parsed_count: int
+    total: int
+    cache_hits: int
+    ollama_lines: int
+    elapsed_seconds: float
+    final: bool = False
+
+
+ProgressCallback = Callable[[ProgressEvent], None]
+
+
 def _apply_freq_filter(
     canonical: Iterable[str],
     normalized_rows: Sequence[MergedNormalizedRow],
@@ -554,6 +595,7 @@ def build_variants(
     min_variant_size: int = DEFAULT_MIN_VARIANT_SIZE,
     max_variants_per_l1: int = DEFAULT_MAX_VARIANTS_PER_L1,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
+    progress_callback: ProgressCallback | None = None,
 ) -> tuple[list[MergedVariantResult], PipelineRunStats]:
     """Group merged recipes, LLM-parse each, normalize, and dedup.
 
@@ -586,6 +628,28 @@ def build_variants(
     rows_dedup_dropped = 0
     db_misses: dict[str, int] = {}
 
+    # Upper bound for progress reporting (1g5h / F8). Recipes can still
+    # be dropped pre-parse if they fall into a sub-min L2 cluster, so
+    # this overestimates work remaining — fine for a coarse ETA.
+    total_upper_bound = sum(len(members) for members in l1_groups.values())
+    start_time = time.monotonic()
+
+    def _emit_progress(*, final: bool = False) -> None:
+        if progress_callback is None:
+            return
+        cache_hits = parse_cache.cache_hits if parse_cache is not None else 0
+        ollama_lines = parse_cache.ollama_lines if parse_cache is not None else 0
+        progress_callback(
+            ProgressEvent(
+                parsed_count=rows_parsed,
+                total=total_upper_bound,
+                cache_hits=cache_hits,
+                ollama_lines=ollama_lines,
+                elapsed_seconds=time.monotonic() - start_time,
+                final=final,
+            )
+        )
+
     for title_key, l1_members in l1_groups.items():
         l2_clusters = group_by_ingredients(
             l1_members,
@@ -605,6 +669,7 @@ def build_variants(
 
             for recipe in cluster.recipes:
                 rows_parsed += 1
+                _emit_progress()
                 recipe_lines = list(recipe.ingredients)
                 if parse_cache is not None:
                     raw_parsed = parse_cache.parse_with_cache(
@@ -674,6 +739,8 @@ def build_variants(
     ]
     variants = _cap_per_l1(variants, max_per_l1=max_variants_per_l1)
 
+    _emit_progress(final=True)
+
     stats = PipelineRunStats(
         recipenlg_in=0,  # filled by caller
         wdc_in=0,
@@ -706,6 +773,7 @@ def run_merged_pipeline(
     db_path: Path | None = None,
     delete_stale_l1: bool = False,
     emit_csv: bool = True,
+    progress_callback: ProgressCallback | None = None,
 ) -> tuple[Manifest, PipelineRunStats]:
     """End-to-end: load both corpora, merge, LLM-parse, normalize, emit.
 
@@ -781,6 +849,7 @@ def run_merged_pipeline(
             min_variant_size=min_variant_size,
             max_variants_per_l1=max_variants_per_l1,
             bucket_size=bucket_size,
+            progress_callback=progress_callback,
         )
 
         if emit_csv:

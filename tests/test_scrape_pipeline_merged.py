@@ -17,6 +17,7 @@ from rational_recipes.scrape.pipeline_merged import (
     MergedNormalizedRow,
     MergedVariantResult,
     ParseCache,
+    ProgressEvent,
     build_variants,
     emit_variants,
     normalize_merged_row,
@@ -1376,3 +1377,155 @@ class TestBuildVariantsCacheReuse:
         # One parse_fn call per recipe.
         assert llm.call_count == 3
         assert len(variants) == 1
+
+
+class TestProgressCallback:
+    """RationalRecipes-1g5h / F8: build_variants emits ProgressEvents
+    when a callback is registered."""
+
+    def _quantity_aware_parse(
+        self, lines: list[str]
+    ) -> list[ParsedIngredient | None]:
+        out: list[ParsedIngredient | None] = []
+        for line in lines:
+            parts = line.split()
+            qty = float(parts[0])
+            ing = parts[-1]
+            out.append(_parsed(ing, qty, "g"))
+        return out
+
+    def _make_recipes(self, n: int) -> list:
+        return [
+            _make_merged(
+                "pancakes",
+                (f"{200 + i * 10} g flour", f"{200 - i * 10} g milk"),
+                frozenset({"flour", "milk"}),
+                url=f"https://x/{i}",
+            )
+            for i in range(n)
+        ]
+
+    def test_callback_receives_per_recipe_events(self) -> None:
+        events: list[ProgressEvent] = []
+        recipes = self._make_recipes(3)
+        build_variants(
+            recipes,
+            parse_fn=self._quantity_aware_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            min_variant_size=2,
+            progress_callback=events.append,
+        )
+        # One per-recipe event during the loop, plus one final summary.
+        non_final = [e for e in events if not e.final]
+        assert len(non_final) == 3
+        # Final event marks the end of the run.
+        finals = [e for e in events if e.final]
+        assert len(finals) == 1
+        assert finals[0].parsed_count == 3
+        # total upper bound matches the cluster-passing recipes.
+        assert finals[0].total >= 3
+
+    def test_default_callback_is_none(self) -> None:
+        """Backward compat: omitting progress_callback preserves the
+        previous behavior (no-op for the new path)."""
+        recipes = self._make_recipes(3)
+        variants, _stats = build_variants(
+            recipes,
+            parse_fn=self._quantity_aware_parse,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            min_variant_size=2,
+        )
+        assert len(variants) == 1
+
+    def test_cache_hits_and_ollama_counters_track_lines(self) -> None:
+        """ParseCache exposes per-line cache_hits / ollama_lines so the
+        progress event can report them. F2-aware visibility."""
+        from rational_recipes.catalog_db import (
+            CatalogDB,
+            ParsedLineRow,
+            parsed_to_json,
+        )
+        recipes = self._make_recipes(3)
+        db = CatalogDB.in_memory()
+        try:
+            cache = ParseCache(db=db, model="m")
+            # Cold cache: every line is a miss → ollama_lines grows.
+            events: list[ProgressEvent] = []
+            build_variants(
+                recipes,
+                parse_fn=self._quantity_aware_parse,
+                parse_cache=cache,
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=2,
+                min_variant_size=2,
+                progress_callback=events.append,
+            )
+            final = [e for e in events if e.final][0]
+            assert final.cache_hits == 0
+            assert final.ollama_lines > 0
+
+            # Warm rerun: every line is a hit.
+            events_warm: list[ProgressEvent] = []
+            warm_cache = ParseCache(db=db, model="m")
+            build_variants(
+                recipes,
+                parse_fn=self._quantity_aware_parse,
+                parse_cache=warm_cache,
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=2,
+                min_variant_size=2,
+                progress_callback=events_warm.append,
+            )
+            final_warm = [e for e in events_warm if e.final][0]
+            assert final_warm.cache_hits > 0
+            assert final_warm.ollama_lines == 0
+
+            # Suppress unused warning on imported types.
+            _ = (ParsedLineRow, parsed_to_json)
+        finally:
+            db.close()
+
+
+class TestCliProgressPrinter:
+    """Smoke test for ``scripts/scrape_merged.py``\047s _ProgressPrinter."""
+
+    def test_throttle_prints_first_then_skips(self, capsys) -> None:
+        import sys as _sys
+        from pathlib import Path as _Path
+        scripts_dir = _Path(__file__).resolve().parent.parent / "scripts"
+        if str(scripts_dir) not in _sys.path:
+            _sys.path.insert(0, str(scripts_dir))
+        from scrape_merged import _ProgressPrinter
+
+        printer = _ProgressPrinter(every_n=10, every_seconds=10.0)
+        # First event clears the throttle (last_seconds is -every_seconds).
+        printer(ProgressEvent(
+            parsed_count=1, total=100, cache_hits=0, ollama_lines=1,
+            elapsed_seconds=0.1, final=False,
+        ))
+        # Within the throttle window: must NOT print.
+        printer(ProgressEvent(
+            parsed_count=2, total=100, cache_hits=0, ollama_lines=2,
+            elapsed_seconds=0.2, final=False,
+        ))
+        # Final event always prints.
+        printer(ProgressEvent(
+            parsed_count=3, total=100, cache_hits=1, ollama_lines=2,
+            elapsed_seconds=0.3, final=True,
+        ))
+        captured = capsys.readouterr()
+        # Two lines: first per-recipe + final summary. Substantive
+        # fields appear in the output.
+        assert "Progress: parsed 1/100" in captured.out
+        assert "Final: parsed 3 recipes" in captured.out
+        assert "cache_hits=1" in captured.out
+        assert "ollama_lines=2" in captured.out
+        assert "throughput=" in captured.out
+        # Middle event (parsed_count=2) was throttled out.
+        assert "parsed 2/" not in captured.out

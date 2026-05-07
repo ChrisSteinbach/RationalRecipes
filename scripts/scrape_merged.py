@@ -28,10 +28,66 @@ import sys
 from pathlib import Path
 
 from rational_recipes.scrape.parse import OLLAMA_BASE_URL
-from rational_recipes.scrape.pipeline_merged import run_merged_pipeline
+from rational_recipes.scrape.pipeline_merged import (
+    ProgressEvent,
+    run_merged_pipeline,
+)
 
 DEFAULT_RECIPENLG = Path("dataset/full_dataset.csv")
 DEFAULT_WDC_ZIP = Path("dataset/wdc/Recipe_top100.zip")
+
+# Progress reporting cadence (1g5h / F8). Print a line after at least
+# this many recipes parsed OR after this many seconds, whichever comes
+# first. 50 / 10 was picked to be useful in the ehe7 timescale (a few
+# minutes per drop): roughly every 10 s during the LLM phase, never
+# more than 50 recipes apart even on a fast cache-warm rerun.
+_PROGRESS_EVERY_N = 50
+_PROGRESS_EVERY_SECONDS = 10.0
+
+
+class _ProgressPrinter:
+    """Throttle ``ProgressEvent`` emissions to one line per K rows / T seconds.
+
+    The pipeline emits an event after every recipe — the printer
+    decides which ones reach stdout. ``final=True`` events always
+    print, in summary form, regardless of throttle state.
+    """
+
+    def __init__(
+        self,
+        *,
+        every_n: int = _PROGRESS_EVERY_N,
+        every_seconds: float = _PROGRESS_EVERY_SECONDS,
+    ) -> None:
+        self.every_n = every_n
+        self.every_seconds = every_seconds
+        self._last_count = 0
+        self._last_seconds = -every_seconds
+
+    def __call__(self, ev: ProgressEvent) -> None:
+        if ev.final:
+            recipes_per_hour = (
+                ev.parsed_count / ev.elapsed_seconds * 3600.0
+                if ev.elapsed_seconds > 0
+                else 0.0
+            )
+            print(
+                f"Final: parsed {ev.parsed_count} recipes in "
+                f"{ev.elapsed_seconds:.1f}s "
+                f"(cache_hits={ev.cache_hits}, ollama_lines={ev.ollama_lines}, "
+                f"throughput={recipes_per_hour:.0f} recipes/hour)"
+            )
+            return
+        n_delta = ev.parsed_count - self._last_count
+        t_delta = ev.elapsed_seconds - self._last_seconds
+        if n_delta >= self.every_n or t_delta >= self.every_seconds:
+            print(
+                f"Progress: parsed {ev.parsed_count}/{ev.total} "
+                f"(cache_hits={ev.cache_hits}, ollama_lines={ev.ollama_lines}, "
+                f"elapsed={ev.elapsed_seconds:.1f}s)"
+            )
+            self._last_count = ev.parsed_count
+            self._last_seconds = ev.elapsed_seconds
 
 
 def main() -> int:
@@ -151,6 +207,11 @@ def main() -> int:
     db_path = None if args.no_db else args.db
     emit_csv = not args.no_csv
 
+    # Verbose runs register a throttled progress printer (1g5h / F8) so
+    # long Ollama phases give incremental signs of life. Default off so
+    # non-verbose runs keep their tidy single-line summary.
+    progress_callback = _ProgressPrinter() if args.verbose else None
+
     manifest, stats = run_merged_pipeline(
         recipenlg_path=args.recipenlg,
         wdc_zip_path=args.wdc_zip,
@@ -168,6 +229,7 @@ def main() -> int:
         db_path=db_path,
         delete_stale_l1=args.clean_l1,
         emit_csv=emit_csv,
+        progress_callback=progress_callback,
     )
 
     print(f"Loaded rnlg={stats.recipenlg_in} wdc={stats.wdc_in}")
