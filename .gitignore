@@ -64,6 +64,9 @@ nosetests.xml
 # Regenerable cross-corpus title-frequency survey (vwt.1)
 /artifacts/corpus_title_survey.json
 
+# Regenerable diagnostic outputs from scripts/diagnose_component_structure.py (0x1z)
+/artifacts/0x1z_diagnostic*
+
 # Run logs from benchmark and pipeline scripts (regenerable, investigation artifacts)
 /logs/
 
