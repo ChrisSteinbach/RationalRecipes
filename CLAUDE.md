@@ -100,7 +100,16 @@ python3 scripts/import_merged_artifacts.py output/merged/<dir>/
 bd ready
 ```
 
-Default Ollama: `http://192.168.50.189:11434`, model historically `gemma4:e2b` (chosen for catalog-scale throughput per closed bead `vwt.18`). Under the pivot, the model choice is being reconsidered — quality matters more per-recipe than throughput. Override with `--ollama-url` and `--model` as needed.
+Default Ollama endpoints (per `ollama-tuning-report.md`, 2026-05-07):
+
+- **Parsing → `http://192.168.50.189:11444`** (parse-fast, NP=4, KEEP_ALIVE=5m). Default for `scrape_merged.py` and `eval_models.py` via `parse.OLLAMA_BASE_URL`.
+- **Synthesis → `http://192.168.50.189:11446`** (synth-deep, NP=1, KEEP_ALIVE=0). Default for `synthesize_instructions.py` via `SYNTHESIS_OLLAMA_BASE_URL`.
+- **Balanced (`:11445`, NP=2)** is dominated on both throughput and ctx ceiling — not recommended; do not point production traffic at it.
+- **Legacy `:11434`** is the auto-tuned NP=8 instance — wrong for both parsing (KV cache headroom) and synthesis (no long-ctx provisioning). Fallback / debug only.
+
+parse-fast's NP=4 only beats the alternatives under concurrent dispatch — parsing clients must run with concurrency ≥4 to see the speedup (already wired in via `RationalRecipes-e6rl`, commit `cab5c32`, `--parse-concurrency` flag, default 4).
+
+Model historically `gemma4:e2b` (chosen for catalog-scale throughput per closed bead `vwt.18`). Under the pivot, the model choice is being reconsidered — quality matters more per-recipe than throughput; the 2n09 eval flagged `mistral-small:24b` as the strongest 24 B candidate but the production parsing default is not yet picked. Override with `--ollama-url` / `--base-url` and `--model` as needed.
 
 ## Dependencies
 
