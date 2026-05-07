@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
+from rational_recipes.catalog_db import (
+    CatalogDB,
+    ParsedLineRow,
+    parsed_to_json,
+)
 from rational_recipes.scrape.manifest import Manifest, compute_variant_id
 from rational_recipes.scrape.merge import MergedRecipe
 from rational_recipes.scrape.parse import ParsedIngredient
 from rational_recipes.scrape.pipeline_merged import (
     MergedNormalizedRow,
     MergedVariantResult,
+    ParseCache,
     build_variants,
     emit_variants,
     normalize_merged_row,
@@ -995,3 +1002,351 @@ class TestCapPerL1:
         sizes = sorted((len(v.normalized_rows) for v in variants), reverse=True)
         # Largest two clusters (size 7 and 6) survive.
         assert sizes == [7, 6]
+
+
+class TestParseCache:
+    """RationalRecipes-vj4b: parsed_ingredient_lines reuse."""
+
+    def _seed_cache_row(
+        self,
+        db: CatalogDB,
+        *,
+        raw: str,
+        parsed: ParsedIngredient,
+        model: str,
+        corpus: str = "wdc",
+        recipe_id: str = "https://prior/r/0",
+        line_index: int = 0,
+        seed: int = 42,
+    ) -> None:
+        db.upsert_parsed_lines(
+            [
+                ParsedLineRow(
+                    corpus=corpus,
+                    recipe_id=recipe_id,
+                    line_index=line_index,
+                    raw_line=raw,
+                    parsed_json=parsed_to_json(parsed),
+                    model=model,
+                    seed=seed,
+                )
+            ]
+        )
+
+    def test_cache_hit_skips_llm(self) -> None:
+        """Lines whose parses are already cached short-circuit parse_fn."""
+        db = CatalogDB.in_memory()
+        try:
+            cached = _parsed("flour", 1.0, "cup")
+            self._seed_cache_row(db, raw="1 cup flour", parsed=cached, model="m")
+
+            cache = ParseCache(db=db, model="m")
+            llm = MagicMock(name="llm_parse_fn")
+
+            result = cache.parse_with_cache(
+                corpus="wdc",
+                recipe_id="https://x/r/1",
+                lines=["1 cup flour"],
+                parse_fn=llm,
+            )
+
+            assert llm.call_count == 0
+            assert len(result) == 1
+            assert result[0] is not None
+            assert result[0].ingredient == "flour"
+            assert result[0].quantity == 1.0
+            assert result[0].unit == "cup"
+            # ``raw`` is reattached from the input line, not the cached row.
+            assert result[0].raw == "1 cup flour"
+        finally:
+            db.close()
+
+    def test_cache_miss_calls_llm_and_writes_back(self) -> None:
+        """A line with no cached parse falls through to parse_fn and is
+        persisted to ``parsed_ingredient_lines`` for future runs."""
+        db = CatalogDB.in_memory()
+        try:
+            cache = ParseCache(db=db, model="m")
+            new_parse = _parsed("egg", 2.0, "MEDIUM")
+            llm = MagicMock(return_value=[new_parse])
+
+            result = cache.parse_with_cache(
+                corpus="wdc",
+                recipe_id="https://x/r/1",
+                lines=["2 eggs"],
+                parse_fn=llm,
+            )
+
+            assert llm.call_count == 1
+            assert llm.call_args.args[0] == ["2 eggs"]
+            assert result == [new_parse]
+
+            # The LLM result was written back to the cache.
+            found, payload = db.lookup_cached_parse("2 eggs", model="m", seed=42)
+            assert found is True
+            assert payload is not None
+            assert "egg" in payload
+        finally:
+            db.close()
+
+    def test_mixed_hits_and_misses(self) -> None:
+        """Only the missing lines reach parse_fn; results align with input order."""
+        db = CatalogDB.in_memory()
+        try:
+            cached = _parsed("flour", 1.0, "cup")
+            self._seed_cache_row(db, raw="1 cup flour", parsed=cached, model="m")
+
+            cache = ParseCache(db=db, model="m")
+            new_parse = _parsed("egg", 2.0, "MEDIUM")
+            llm = MagicMock(return_value=[new_parse])
+
+            result = cache.parse_with_cache(
+                corpus="wdc",
+                recipe_id="https://x/r/1",
+                lines=["1 cup flour", "2 eggs"],
+                parse_fn=llm,
+            )
+
+            # Only the cache miss reached the LLM.
+            assert llm.call_count == 1
+            assert llm.call_args.args[0] == ["2 eggs"]
+
+            assert len(result) == 2
+            assert result[0] is not None and result[0].ingredient == "flour"
+            assert result[1] is not None and result[1].ingredient == "egg"
+
+            # The previously-uncached line is now cached too.
+            found, payload = db.lookup_cached_parse("2 eggs", model="m", seed=42)
+            assert found is True
+            assert payload is not None
+        finally:
+            db.close()
+
+    def test_cached_failure_returns_none_without_calling_llm(self) -> None:
+        """A cached NULL parsed_json signals a prior failure — no retry."""
+        db = CatalogDB.in_memory()
+        try:
+            db.upsert_parsed_lines(
+                [
+                    ParsedLineRow(
+                        corpus="wdc",
+                        recipe_id="https://prior/r/0",
+                        line_index=0,
+                        raw_line="some gibberish line",
+                        parsed_json=None,
+                        model="m",
+                        seed=42,
+                    )
+                ]
+            )
+            cache = ParseCache(db=db, model="m")
+            llm = MagicMock()
+
+            result = cache.parse_with_cache(
+                corpus="wdc",
+                recipe_id="https://x/r/1",
+                lines=["some gibberish line"],
+                parse_fn=llm,
+            )
+            assert llm.call_count == 0
+            assert result == [None]
+        finally:
+            db.close()
+
+    def test_empty_lines_returns_empty_no_llm(self) -> None:
+        db = CatalogDB.in_memory()
+        try:
+            cache = ParseCache(db=db, model="m")
+            llm = MagicMock()
+            assert cache.parse_with_cache(
+                corpus="wdc",
+                recipe_id="https://x/r/1",
+                lines=[],
+                parse_fn=llm,
+            ) == []
+            assert llm.call_count == 0
+        finally:
+            db.close()
+
+    def test_model_mismatch_is_a_miss(self) -> None:
+        """Cache key includes ``model`` — a different model must miss."""
+        db = CatalogDB.in_memory()
+        try:
+            cached = _parsed("flour", 1.0, "cup")
+            self._seed_cache_row(db, raw="1 cup flour", parsed=cached, model="old")
+
+            cache = ParseCache(db=db, model="new")
+            new_parse = _parsed("flour", 1.0, "cup")
+            llm = MagicMock(return_value=[new_parse])
+
+            cache.parse_with_cache(
+                corpus="wdc",
+                recipe_id="https://x/r/1",
+                lines=["1 cup flour"],
+                parse_fn=llm,
+            )
+            assert llm.call_count == 1
+        finally:
+            db.close()
+
+
+class TestBuildVariantsCacheReuse:
+    """End-to-end: build_variants honors a ParseCache when supplied."""
+
+    def _make_recipes(self, n: int) -> list[MergedRecipe]:
+        return [
+            _make_merged(
+                "pancakes",
+                (f"{200 + i * 10} g flour", f"{200 - i * 10} g milk"),
+                frozenset({"flour", "milk"}),
+                url=f"https://x/{i}",
+            )
+            for i in range(n)
+        ]
+
+    def _quantity_aware_parse(
+        self, lines: list[str]
+    ) -> list[ParsedIngredient | None]:
+        out: list[ParsedIngredient | None] = []
+        for line in lines:
+            parts = line.split()
+            qty = float(parts[0])
+            ing = parts[-1]
+            out.append(_parsed(ing, qty, "g"))
+        return out
+
+    def test_warm_cache_avoids_all_ollama_calls(self) -> None:
+        """Pre-populating the cache for every raw line means parse_fn
+        is never invoked — the F2 acceptance criterion."""
+        db = CatalogDB.in_memory()
+        try:
+            recipes = self._make_recipes(3)
+            # Seed cache for every raw line in every recipe.
+            for r in recipes:
+                for idx, line in enumerate(r.ingredients):
+                    parsed_iter = self._quantity_aware_parse([line])
+                    parsed = parsed_iter[0]
+                    assert parsed is not None
+                    db.upsert_parsed_lines(
+                        [
+                            ParsedLineRow(
+                                corpus=r.corpus,
+                                recipe_id=r.url,
+                                line_index=idx,
+                                raw_line=line,
+                                parsed_json=parsed_to_json(parsed),
+                                model="m",
+                                seed=42,
+                            )
+                        ]
+                    )
+
+            llm = MagicMock(side_effect=AssertionError("LLM must not be called"))
+            cache = ParseCache(db=db, model="m")
+
+            variants, _stats = build_variants(
+                recipes,
+                parse_fn=llm,
+                parse_cache=cache,
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=2,
+                min_variant_size=2,
+            )
+            assert llm.call_count == 0
+            assert len(variants) == 1
+            assert {"flour", "milk"} <= variants[0].canonical_ingredients
+        finally:
+            db.close()
+
+    def test_cold_cache_calls_llm_and_persists_results(self) -> None:
+        """Empty cache → parse_fn invoked → results land in the cache."""
+        db = CatalogDB.in_memory()
+        try:
+            recipes = self._make_recipes(3)
+            llm = MagicMock(side_effect=self._quantity_aware_parse)
+            cache = ParseCache(db=db, model="m")
+
+            build_variants(
+                recipes,
+                parse_fn=llm,
+                parse_cache=cache,
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=2,
+                min_variant_size=2,
+            )
+
+            assert llm.call_count >= 1
+
+            # Every raw line that the LLM saw is now in the cache.
+            for r in recipes:
+                for line in r.ingredients:
+                    found, payload = db.lookup_cached_parse(
+                        line, model="m", seed=42,
+                    )
+                    assert found is True, f"{line!r} not cached"
+                    assert payload is not None
+        finally:
+            db.close()
+
+    def test_rerun_after_cold_uses_cache_only(self) -> None:
+        """Determinism on re-run: a second build_variants call with the
+        warmed cache must not invoke the LLM, and must produce the same
+        ``variant_id`` / ingredient set as the first run."""
+        db = CatalogDB.in_memory()
+        try:
+            recipes = self._make_recipes(3)
+            cache = ParseCache(db=db, model="m")
+
+            llm_first = MagicMock(side_effect=self._quantity_aware_parse)
+            variants_first, _ = build_variants(
+                recipes,
+                parse_fn=llm_first,
+                parse_cache=cache,
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=2,
+                min_variant_size=2,
+            )
+            assert llm_first.call_count >= 1
+
+            llm_second = MagicMock(
+                side_effect=AssertionError("re-run must hit cache only")
+            )
+            variants_second, _ = build_variants(
+                recipes,
+                parse_fn=llm_second,
+                parse_cache=cache,
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=2,
+                min_variant_size=2,
+            )
+            assert llm_second.call_count == 0
+
+            assert len(variants_first) == len(variants_second) == 1
+            assert variants_first[0].variant_id == variants_second[0].variant_id
+            assert (
+                variants_first[0].canonical_ingredients
+                == variants_second[0].canonical_ingredients
+            )
+        finally:
+            db.close()
+
+    def test_no_cache_preserves_existing_behavior(self) -> None:
+        """Backward compat: build_variants without parse_cache calls
+        parse_fn directly, exactly as before vj4b."""
+        recipes = self._make_recipes(3)
+        llm = MagicMock(side_effect=self._quantity_aware_parse)
+        variants, _stats = build_variants(
+            recipes,
+            parse_fn=llm,
+            l1_min_group_size=2,
+            l2_similarity_threshold=0.6,
+            l2_min_group_size=2,
+            min_variant_size=2,
+        )
+        # One parse_fn call per recipe.
+        assert llm.call_count == 3
+        assert len(variants) == 1

@@ -28,6 +28,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rational_recipes.ingredient import Factory as IngredientFactory
 from rational_recipes.scrape.canonical import canonicalize_name
@@ -62,6 +63,9 @@ from rational_recipes.scrape.wdc import WDCLoader, WDCRecipe, extract_batch
 from rational_recipes.units import BadUnitException
 from rational_recipes.units import Factory as UnitFactory
 
+if TYPE_CHECKING:
+    from rational_recipes.catalog_db import CatalogDB
+
 logger = logging.getLogger(__name__)
 
 # Drop ingredients appearing in fewer than this fraction of a variant's
@@ -95,6 +99,93 @@ Shape matches ``parse_ingredient_lines(lines, model=..., base_url=...)``
 with the LLM params bound. Tests inject a stub that returns canned
 ``ParsedIngredient``s without touching Ollama.
 """
+
+# Determinism contract from parse.py (temperature=0, seed=42) — pinned
+# so cache hits keyed by ``(raw_line, model, seed)`` are safe to reuse
+# across runs. Phase 2 closed bead.
+_CACHE_SEED: int = 42
+
+
+@dataclass
+class ParseCache:
+    """Cache wrapper for LLM ingredient-line parsing (RationalRecipes-vj4b).
+
+    Looks up the verbatim raw ingredient line in
+    ``parsed_ingredient_lines`` keyed by ``(raw_line, model, seed)``
+    before falling back to the LLM. On a miss, writes the result back
+    to the cache so the next run reuses it. Determinism (parse.py pins
+    ``temperature=0``, ``seed=42``) makes any prior parse safe to reuse
+    regardless of which recipe produced it.
+
+    The cache key is the raw line text **verbatim** — no normalization
+    — so two runs of the same line text produce the same lookup.
+    """
+
+    db: CatalogDB
+    model: str
+    seed: int = _CACHE_SEED
+
+    def parse_with_cache(
+        self,
+        corpus: str,
+        recipe_id: str,
+        lines: list[str],
+        parse_fn: ParseFn,
+    ) -> list[ParsedIngredient | None]:
+        """Cache-aware parse of one recipe's ingredient lines.
+
+        Cache hits skip the LLM. Misses fall through to ``parse_fn``
+        (typically Ollama) and are written back to the cache as
+        ``ParsedLineRow``s keyed by ``(corpus, recipe_id, line_index)``.
+        Both successful parses and ``None`` (failed) parses are cached;
+        callers should not retry cached failures (matches the existing
+        ``upsert_parsed_lines`` contract).
+        """
+        if not lines:
+            return []
+
+        # Lazy import: catalog_db imports from this module, so a top-
+        # level import would cycle.
+        from rational_recipes.catalog_db import (
+            ParsedLineRow,
+            parsed_from_json,
+            parsed_to_json,
+        )
+
+        results: list[ParsedIngredient | None] = [None] * len(lines)
+        miss_indices: list[int] = []
+        miss_lines: list[str] = []
+
+        for i, line in enumerate(lines):
+            found, payload = self.db.lookup_cached_parse(
+                line, model=self.model, seed=self.seed,
+            )
+            if found:
+                results[i] = parsed_from_json(payload, line)
+            else:
+                miss_indices.append(i)
+                miss_lines.append(line)
+
+        if not miss_lines:
+            return results
+
+        llm_results = parse_fn(miss_lines)
+        rows_to_write: list[ParsedLineRow] = []
+        for idx, parsed in zip(miss_indices, llm_results, strict=True):
+            results[idx] = parsed
+            rows_to_write.append(
+                ParsedLineRow(
+                    corpus=corpus,
+                    recipe_id=recipe_id,
+                    line_index=idx,
+                    raw_line=lines[idx],
+                    parsed_json=parsed_to_json(parsed),
+                    model=self.model,
+                    seed=self.seed,
+                )
+            )
+        self.db.upsert_parsed_lines(rows_to_write)
+        return results
 
 
 @dataclass(frozen=True, slots=True)
@@ -448,6 +539,7 @@ def build_variants(
     merged_recipes: Sequence[MergedRecipe],
     *,
     parse_fn: ParseFn,
+    parse_cache: ParseCache | None = None,
     l1_min_group_size: int,
     l2_similarity_threshold: float,
     l2_min_group_size: int,
@@ -505,7 +597,16 @@ def build_variants(
 
             for recipe in cluster.recipes:
                 rows_parsed += 1
-                raw_parsed = parse_fn(list(recipe.ingredients))
+                recipe_lines = list(recipe.ingredients)
+                if parse_cache is not None:
+                    raw_parsed = parse_cache.parse_with_cache(
+                        corpus=recipe.corpus,
+                        recipe_id=recipe.url,
+                        lines=recipe_lines,
+                        parse_fn=parse_fn,
+                    )
+                else:
+                    raw_parsed = parse_fn(recipe_lines)
                 parsed = [p for p in raw_parsed if p is not None]
                 if not parsed:
                     continue
@@ -646,53 +747,65 @@ def run_merged_pipeline(
     def _parse(lines: list[str]) -> list[ParsedIngredient | None]:
         return parse_ingredient_lines(lines, model=llm_model, base_url=ollama_url)
 
-    variants, partial_stats = build_variants(
-        merged,
-        parse_fn=_parse,
-        l1_min_group_size=l1_min_group_size,
-        l2_similarity_threshold=l2_similarity_threshold,
-        l2_min_group_size=l2_min_group_size,
-        min_variant_size=min_variant_size,
-        max_variants_per_l1=max_variants_per_l1,
-        bucket_size=bucket_size,
-    )
-
-    if emit_csv:
-        manifest = emit_variants(variants, output_dir)
-        logger.info(
-            "Emitted %d variant(s) to %s (dropped %d rows in within-variant dedup)",
-            len(manifest.variants),
-            output_dir,
-            partial_stats.rows_dedup_dropped,
-        )
-    else:
-        manifest = Manifest(
-            variants=[
-                v.to_manifest_entry(v.csv_filename())
-                for v in variants
-                if v.normalized_rows
-            ]
-        )
-        logger.info(
-            "Skipped CSV emission (emit_csv=False); built %d variant manifest "
-            "entries in memory (dropped %d rows in within-variant dedup)",
-            len(manifest.variants),
-            partial_stats.rows_dedup_dropped,
-        )
-
+    # Lazy import: catalog_db imports from this module, so a top-level
+    # import would cycle. Open the DB up-front when ``db_path`` is set
+    # so the ParseCache (RationalRecipes-vj4b) can short-circuit Ollama
+    # for raw ingredient lines already parsed in prior runs, and so the
+    # same connection can write variants at the end.
+    db: CatalogDB | None = None
+    parse_cache: ParseCache | None = None
     if db_path is not None:
-        # Lazy import: catalog_db imports MergedNormalizedRow / MergedVariantResult
-        # from this module, so a top-level import would cycle.
-        from rational_recipes.catalog_db import CatalogDB, emit_variants_to_db
+        from rational_recipes.catalog_db import CatalogDB as _CatalogDB
 
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        db = CatalogDB.open(db_path)
-        try:
+        db = _CatalogDB.open(db_path)
+        parse_cache = ParseCache(db=db, model=llm_model)
+
+    try:
+        variants, partial_stats = build_variants(
+            merged,
+            parse_fn=_parse,
+            parse_cache=parse_cache,
+            l1_min_group_size=l1_min_group_size,
+            l2_similarity_threshold=l2_similarity_threshold,
+            l2_min_group_size=l2_min_group_size,
+            min_variant_size=min_variant_size,
+            max_variants_per_l1=max_variants_per_l1,
+            bucket_size=bucket_size,
+        )
+
+        if emit_csv:
+            manifest = emit_variants(variants, output_dir)
+            logger.info(
+                "Emitted %d variant(s) to %s (dropped %d rows in within-variant dedup)",
+                len(manifest.variants),
+                output_dir,
+                partial_stats.rows_dedup_dropped,
+            )
+        else:
+            manifest = Manifest(
+                variants=[
+                    v.to_manifest_entry(v.csv_filename())
+                    for v in variants
+                    if v.normalized_rows
+                ]
+            )
+            logger.info(
+                "Skipped CSV emission (emit_csv=False); built %d variant manifest "
+                "entries in memory (dropped %d rows in within-variant dedup)",
+                len(manifest.variants),
+                partial_stats.rows_dedup_dropped,
+            )
+
+        if db is not None:
+            from rational_recipes.catalog_db import emit_variants_to_db
+
             written = emit_variants_to_db(
                 variants, db, delete_stale_for_l1=delete_stale_l1
             )
             logger.info("Wrote %d variant(s) to %s", written, db_path)
-        finally:
+    finally:
+        if db is not None:
             db.close()
 
     stats = PipelineRunStats(
