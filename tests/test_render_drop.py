@@ -87,6 +87,109 @@ class TestRenderBaseline:
         assert "milk" in md
 
 
+class TestNaturalLanguageQuantities:
+    """RationalRecipes-4ba4 / F4: density + whole-unit metadata renders
+    a human-friendly Quantity column alongside the gram count."""
+
+    def test_table_has_quantity_column(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = _seed_variant(db)
+        finally:
+            db.close()
+        md = render_drop.render(db_path, vid)
+        # New column header lands in the markdown table.
+        assert "Quantity" in md
+
+    def test_flour_renders_volume_form(self, tmp_path: Path) -> None:
+        """flour has density data; the Quantity column should show a
+        cup / tbsp / tsp form, not just the gram count."""
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = _seed_variant(db)
+        finally:
+            db.close()
+        md = render_drop.render(db_path, vid)
+        # The rendered drop must mention a volume unit somewhere in the
+        # Quantity column. "cup" is the most likely for a 1 kg batch.
+        assert "cup" in md
+
+    def test_null_metadata_renders_em_dash_fallback(
+        self, tmp_path: Path
+    ) -> None:
+        """When a canonical has no density / whole-unit data, the
+        Quantity cell renders an em-dash so the column stays aligned
+        rather than collapsing the table."""
+        from rational_recipes.scrape.pipeline_merged import (
+            MergedNormalizedRow as _Row,
+        )
+        from rational_recipes.scrape.pipeline_merged import (
+            MergedVariantResult as _Variant,
+        )
+
+        # Use the pipeline's stat-write path but blank out the metadata
+        # afterward so we exercise the render-side fallback.
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            rows = [
+                _Row(
+                    url=f"https://example.com/n/{i}",
+                    title="cookies",
+                    corpus="recipenlg",
+                    cells={"flour": "100 g"},
+                    proportions={"flour": 100.0},
+                )
+                for i in range(3)
+            ]
+            variant = _Variant(
+                variant_title="cookies",
+                canonical_ingredients=frozenset({"flour"}),
+                cooking_methods=frozenset(),
+                normalized_rows=rows,
+                header_ingredients=["flour"],
+            )
+            db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+            # Force NULL metadata to test the fallback branch.
+            db.connection.execute(
+                "UPDATE variant_ingredient_stats "
+                "SET density_g_per_ml = NULL, whole_unit_name = NULL, "
+                "whole_unit_grams = NULL"
+            )
+            db.connection.commit()
+            vid = variant.variant_id
+        finally:
+            db.close()
+        md = render_drop.render(db_path, vid)
+        # An em-dash appears in the Quantity column; the gram column
+        # still renders normally.
+        assert "—" in md
+
+    def test_format_natural_quantity_whole_unit_wins(self) -> None:
+        from render_drop import _format_natural_quantity
+
+        # Egg-like ingredient: density is also populated, but whole-unit
+        # rendering should win because "3 medium" reads better than "0.6 cup".
+        out = _format_natural_quantity(150.0, 1.03, "medium", 50.0)
+        assert "3 medium" == out
+
+    def test_format_natural_quantity_density_form(self) -> None:
+        from render_drop import _format_natural_quantity
+
+        # 200 g flour at 0.55 g/ml ≈ 363 ml ≈ 1.5 cups → "1½ cup".
+        out = _format_natural_quantity(200.0, 0.55, None, None)
+        assert "cup" in out
+        # Should be a fractional-cup form, not a tbsp.
+        assert "tbsp" not in out
+
+    def test_format_natural_quantity_empty_when_metadata_null(self) -> None:
+        from render_drop import _format_natural_quantity
+
+        assert _format_natural_quantity(100.0, None, None, None) == ""
+
+
 class TestRenderWithCanonicalInstructions:
     """Populated canonical_instructions: render emits the new section
     with the exact label the bead requires."""

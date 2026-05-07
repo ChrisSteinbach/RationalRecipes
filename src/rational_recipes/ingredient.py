@@ -368,6 +368,10 @@ class Ingredient:
         else:
             return None
 
+    def default_wholeunit_name(self) -> str | None:
+        """Return the name of the default whole-unit (e.g. "medium")."""
+        return self._default_wholeunit_weight
+
     def __repr__(self) -> str:
         return self.name()
 

@@ -39,6 +39,73 @@ def _scale_to_grams(mean_proportion: float, batch_grams: float) -> float:
     return mean_proportion * batch_grams
 
 
+# Natural-language quantity rendering (RationalRecipes-4ba4 / F4).
+#
+# When ``variant_ingredient_stats`` carries density or whole-unit data,
+# render the per-batch mass as something readable ("1¼ cups flour", "3
+# medium eggs") next to the gram count. Volume conversions use US legal
+# cup (236.588 ml), Tbsp (14.7868 ml), tsp (4.92892 ml). Whole-unit
+# rendering wins when both are populated (an egg has both a density of
+# ~1.03 g/ml and a "1 medium = 44 g" entry; "3 eggs" beats "0.6 cups").
+# Fractions round to nearest ¼ for readability — finer rounding is
+# spurious precision against the CIs already printed in the table.
+
+_CUP_ML = 236.588
+_TBSP_ML = 14.7868
+_TSP_ML = 4.92892
+_FRACTION_GLYPHS = {0.25: "¼", 0.5: "½", 0.75: "¾"}
+
+
+def _format_quarter_fraction(value: float) -> str:
+    """Format ``value`` to nearest ¼ with unicode fractions.
+
+    Sub-quarter values (under 0.125) fall back to two decimals so a
+    "1 tbsp" rendering for a near-zero value doesn't round up to "¼".
+    """
+    if value < 0.125:
+        return f"{value:.2f}"
+    rounded = round(value * 4) / 4
+    whole = int(rounded)
+    frac = rounded - whole
+    glyph = _FRACTION_GLYPHS.get(round(frac, 2), "")
+    if whole == 0:
+        return glyph or f"{rounded:.2f}"
+    if glyph:
+        return f"{whole}{glyph}"
+    return str(whole)
+
+
+def _format_natural_quantity(
+    grams: float,
+    density: float | None,
+    whole_unit_name: str | None,
+    whole_unit_grams: float | None,
+) -> str:
+    """Render ``grams`` as a human-friendly quantity (4ba4).
+
+    Strategy:
+    - Whole-unit form ("3 medium", "1 large") wins when populated —
+      eggs/lemons/onions read better as a count than as a volume.
+    - Density form: cups for ≥ ½ cup, tbsp for ≥ ½ tbsp, else tsp.
+    - Empty fallback: "" (caller renders "— g" or just the gram count
+      in the dedicated column).
+    """
+    if whole_unit_grams and whole_unit_grams > 0:
+        n = round(grams / whole_unit_grams)
+        if n < 1:
+            n = 1
+        unit = whole_unit_name or "unit"
+        return f"{n} {unit}"
+    if density and density > 0:
+        ml = grams / density
+        if ml >= _CUP_ML * 0.5:
+            return f"{_format_quarter_fraction(ml / _CUP_ML)} cup"
+        if ml >= _TBSP_ML * 0.5:
+            return f"{_format_quarter_fraction(ml / _TBSP_ML)} tbsp"
+        return f"{_format_quarter_fraction(ml / _TSP_ML)} tsp"
+    return ""
+
+
 def _format_url(url: str | None) -> str:
     """Prepend ``https://`` only when the URL doesn't already carry a scheme.
 
@@ -140,17 +207,32 @@ def render(
 
     lines.append("## Ingredients (mass fractions)")
     lines.append("")
-    lines.append("| Ingredient | Mass % | ± stddev | 95% CI | n | per 1 kg |")
-    lines.append("|---|---:|---:|---:|---:|---:|")
+    # The "Quantity" column is the F4 addition (RationalRecipes-4ba4):
+    # natural-language form ("1¼ cups", "3 medium") rendered from
+    # density / whole-unit metadata in variant_ingredient_stats. When the
+    # row is missing those columns the cell stays blank and the gram
+    # column carries the load — that's the pre-F4 baseline.
+    lines.append(
+        "| Ingredient | Mass % | ± stddev | 95% CI | n | per 1 kg | Quantity |"
+    )
+    lines.append("|---|---:|---:|---:|---:|---:|---:|")
     for s in stats:
         grams_for_batch = _scale_to_grams(s["mean_proportion"], batch_grams)
+        natural = _format_natural_quantity(
+            grams_for_batch,
+            s["density_g_per_ml"],
+            s["whole_unit_name"],
+            s["whole_unit_grams"],
+        )
+        natural_cell = natural if natural else "—"
         lines.append(
             f"| {s['canonical_name']} "
             f"| {_format_pct(s['mean_proportion'])} "
             f"| {_format_pct(s['stddev'])} "
             f"| {_format_ci(s['ci_lower'], s['ci_upper'])} "
             f"| {s['min_sample_size']} "
-            f"| {grams_for_batch:.0f} g |"
+            f"| {grams_for_batch:.0f} g "
+            f"| {natural_cell} |"
         )
     lines.append("")
 

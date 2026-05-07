@@ -39,6 +39,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from rational_recipes.ingredient import Factory as IngredientFactory
 from rational_recipes.scrape.parse import ParsedIngredient
 from rational_recipes.scrape.pipeline_merged import (
     MergedNormalizedRow,
@@ -1058,9 +1059,14 @@ class CatalogDB:
             else:
                 ordinal = next_ord
                 next_ord += 1
-                density = None
-                whole_unit_name = None
-                whole_unit_grams = None
+                # New canonical introduced by an override (h6q1 reassign or
+                # substitute folding into an unseen target). Resolve density
+                # / whole-unit fresh against ingredients.db so the rebuilt
+                # row carries the same metadata a freshly-extracted variant
+                # would (F4 / 4ba4).
+                density, whole_unit_name, whole_unit_grams = (
+                    lookup_ingredient_metadata(name)
+                )
             new_rows.append(
                 (
                     variant_id,
@@ -1792,6 +1798,7 @@ def _compute_ingredient_stats(
         )
 
         fallback_ordinal = len(header_order) + canonicals.index(name)
+        density, whole_unit_name, whole_unit_grams = lookup_ingredient_metadata(name)
         stats.append(
             _ComputedStat(
                 canonical_name=name,
@@ -1802,6 +1809,9 @@ def _compute_ingredient_stats(
                 ci_upper=ci_upper,
                 ratio=None,
                 min_sample_size=min_sample,
+                density_g_per_ml=density,
+                whole_unit_name=whole_unit_name,
+                whole_unit_grams=whole_unit_grams,
             )
         )
 
@@ -1818,6 +1828,9 @@ def _compute_ingredient_stats(
                 ci_upper=s.ci_upper,
                 ratio=s.mean_proportion / base_mean,
                 min_sample_size=s.min_sample_size,
+                density_g_per_ml=s.density_g_per_ml,
+                whole_unit_name=s.whole_unit_name,
+                whole_unit_grams=s.whole_unit_grams,
             )
             for s in stats
         ]
@@ -1832,9 +1845,49 @@ def _compute_ingredient_stats(
             ci_upper=s.ci_upper,
             ratio=s.ratio,
             min_sample_size=s.min_sample_size,
+            density_g_per_ml=s.density_g_per_ml,
+            whole_unit_name=s.whole_unit_name,
+            whole_unit_grams=s.whole_unit_grams,
         )
         for i, s in enumerate(stats)
     ]
+
+
+def lookup_ingredient_metadata(
+    canonical: str,
+) -> tuple[float | None, str | None, float | None]:
+    """Resolve density + default whole-unit for ``canonical`` (F4 / 4ba4).
+
+    Looks up the canonical name against ``ingredients.db`` via
+    ``IngredientFactory``. Returns ``(density_g_per_ml, whole_unit_name,
+    whole_unit_grams)``; any field is ``None`` when the underlying data
+    is absent. Density is reported only when the source is non-default
+    (the factory falls back to ``1.0`` with ``source='default'`` when no
+    density entry exists — that's not a measurement and must not be
+    persisted as one).
+
+    Whole-unit name + grams come from the ingredient's
+    ``default_wholeunit_*`` accessors so a canonical ingredient that has
+    a sensible "1 medium" / "1 large" mapping (eggs, lemons, onions)
+    surfaces a single representative pair.
+    """
+    if not canonical:
+        return (None, None, None)
+    try:
+        ing = IngredientFactory.get_by_name(canonical)
+    except KeyError:
+        return (None, None, None)
+    density: float | None
+    if ing.density_source != "default":
+        density = float(ing.density)
+    else:
+        density = None
+    whole_unit_grams = ing.default_wholeunit_weight()
+    whole_unit_name = ing.default_wholeunit_name()
+    if whole_unit_grams is None or whole_unit_name is None:
+        whole_unit_grams = None
+        whole_unit_name = None
+    return (density, whole_unit_name, whole_unit_grams)
 
 
 def _resolve_reassign_target(

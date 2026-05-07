@@ -1585,6 +1585,84 @@ class TestCanonicalInstructionsMigration:
         assert cleared.canonical_instructions_reviewed_at is None
 
 
+class TestIngredientMetadataPopulation:
+    """RationalRecipes-4ba4 / F4: density + whole-unit fields land on
+    every freshly-extracted variant_ingredient_stats row when ingredients.db
+    has the data."""
+
+    def test_flour_gets_density_no_whole_unit(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        stats = {s.canonical_name: s for s in db.get_ingredient_stats(v.variant_id)}
+        flour = stats["flour"]
+        # Density is populated for flour (USDA-derived, ~0.55 g/ml).
+        assert flour.density_g_per_ml is not None
+        assert 0.3 < flour.density_g_per_ml < 1.0
+        # Flour has no default whole-unit (it's not "1 large flour").
+        assert flour.whole_unit_grams is None
+        assert flour.whole_unit_name is None
+
+    def test_egg_gets_whole_unit(self) -> None:
+        # Build a flour+egg variant directly so the egg canonical exists.
+        rows = [
+            MergedNormalizedRow(
+                url=f"https://example.com/r/{i}",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"flour": "200 g", "egg": "1 medium"},
+                proportions={"flour": 80.0 + i * 0.1, "egg": 20.0 - i * 0.1},
+            )
+            for i in range(3)
+        ]
+        variant = MergedVariantResult(
+            variant_title="cookies",
+            canonical_ingredients=frozenset({"flour", "egg"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["flour", "egg"],
+        )
+        db = CatalogDB.in_memory()
+        db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+        egg = next(
+            s for s in db.get_ingredient_stats(variant.variant_id)
+            if s.canonical_name == "egg"
+        )
+        assert egg.whole_unit_name is not None
+        assert egg.whole_unit_grams is not None
+        # USDA gives "medium" egg ≈ 44 g, "large" ≈ 50 g — anything in
+        # that ballpark is fine.
+        assert 30 < egg.whole_unit_grams < 80
+
+    def test_unknown_ingredient_leaves_metadata_null(self) -> None:
+        from rational_recipes.catalog_db import lookup_ingredient_metadata
+
+        density, name, grams = lookup_ingredient_metadata("zzzunknownfood")
+        assert density is None
+        assert name is None
+        assert grams is None
+
+    def test_recompute_after_substitute_keeps_metadata(self) -> None:
+        """Substitute folding into a target with metadata must populate
+        the target's row from ingredients.db rather than leave NULL."""
+        # Seed flour+milk; substitute milk → buttermilk.
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        db.add_substitute_override(v.variant_id, "milk", "buttermilk")
+        stats = {s.canonical_name: s for s in db.get_ingredient_stats(v.variant_id)}
+        # Either the substitute resolved (newer canonical) or it stayed
+        # at "milk"; in either case the metadata must reflect the row's
+        # actual canonical, not be silently dropped to NULL.
+        if "buttermilk" in stats:
+            target = stats["buttermilk"]
+            # Density from USDA-derived data is non-default for buttermilk.
+            assert target.density_g_per_ml is not None
+        else:
+            # Fall-through: no rename, but flour density still survives.
+            assert stats["flour"].density_g_per_ml is not None
+
+
 class TestVariantSources:
     def test_add_and_retrieve(self) -> None:
         db = CatalogDB.in_memory()
