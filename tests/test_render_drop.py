@@ -164,6 +164,100 @@ class TestRenderWithCanonicalInstructions:
             render_drop.render(db_path, "nope")
 
 
+class TestRenderHonorsFilterOverrides:
+    """bz2e: a filter override removes a recipe from the source list,
+    fixes the 'Averaged across N sources' count, and prevents the
+    filtered recipe from being picked as the median-source for
+    instructions. variant_members rows are intentionally preserved
+    (sj18: filter is reversible) so render must derive the active set
+    client-side from variant_overrides."""
+
+    def test_filtered_recipe_omitted_from_source_list(
+        self, tmp_path: Path
+    ) -> None:
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = _seed_variant(db)
+            members = db.get_variant_members(vid)
+            assert len(members) == 3
+            target = members[0].recipe_id
+            target_url = members[0].url
+            db.add_filter_override(vid, target, reason="test")
+        finally:
+            db.close()
+
+        md = render_drop.render(db_path, vid)
+
+        # The filtered URL must not appear under the source-recipes list.
+        assert target_url not in md
+        # The remaining two URLs do appear.
+        survivors = [m.url for m in members if m.recipe_id != target]
+        for url in survivors:
+            assert url in md
+
+    def test_averaged_count_matches_post_filter_member_set(
+        self, tmp_path: Path
+    ) -> None:
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = _seed_variant(db)
+            members = db.get_variant_members(vid)
+            db.add_filter_override(vid, members[0].recipe_id, reason="test")
+        finally:
+            db.close()
+
+        md = render_drop.render(db_path, vid)
+        assert "Averaged across 2 sources" in md
+        assert "Averaged across 3 sources" not in md
+
+    def test_filter_redirects_median_source_pick(
+        self, tmp_path: Path
+    ) -> None:
+        """The median-source path must not name a filtered recipe.
+        The seeded variant orders members by outlier_score; filtering
+        the lowest-outlier member must shift the rendered link to the
+        next-best survivor."""
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = _seed_variant(db)
+            members = db.get_variant_members(vid)
+            # Members come back in best-outlier-first order — same
+            # ordering render_drop's sources query uses. The first
+            # is the median-source candidate by default.
+            top = members[0]
+            db.add_filter_override(vid, top.recipe_id, reason="outlier")
+        finally:
+            db.close()
+
+        md = render_drop.render(db_path, vid)
+        # The filtered recipe's URL must not appear as the bracketed
+        # median-source link.
+        assert top.url not in md
+
+    def test_substitute_override_leaves_source_list_intact(
+        self, tmp_path: Path
+    ) -> None:
+        """Substitute overrides reshape variant_ingredient_stats but
+        contribute no excluded recipes — the source list must remain
+        complete."""
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = _seed_variant(db)
+            members = db.get_variant_members(vid)
+            db.add_substitute_override(vid, "milk", "buttermilk")
+        finally:
+            db.close()
+
+        md = render_drop.render(db_path, vid)
+        assert "Averaged across 3 sources" in md
+        for m in members:
+            assert m.url in md
+
+
 # Mirror test_synthesize_instructions.py: be defensive about scripts/
 # being on sys.path even when this file is invoked outside pytest.
 def _ensure_scripts_on_path() -> None:

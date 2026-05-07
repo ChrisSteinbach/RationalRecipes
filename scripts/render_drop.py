@@ -88,13 +88,37 @@ def render(
     ).fetchall()
 
     sources = conn.execute(
-        """SELECT r.title, r.url, r.corpus, r.language, vm.outlier_score
+        """SELECT vm.recipe_id, r.title, r.url, r.corpus, r.language,
+                  vm.outlier_score
            FROM variant_members vm
            JOIN recipes r ON r.recipe_id = vm.recipe_id
            WHERE vm.variant_id = ?
            ORDER BY vm.outlier_score""",
         (variant_id,),
     ).fetchall()
+
+    # variant_members rows are deliberately preserved when an editor
+    # filters a recipe (sj18: filter is reversible by clearing the
+    # override). The rendered drop must NOT expose filtered-out recipes
+    # — neither in the source list nor as the median-source for
+    # instructions. Read filter overrides and exclude their recipe_ids
+    # client-side. Substitute overrides need no handling here: the
+    # ingredient table is already rendered from the recomputed
+    # variant_ingredient_stats, which honored substitutions at write
+    # time.
+    excluded_recipe_ids = {
+        row["recipe_id"]
+        for row in conn.execute(
+            """SELECT json_extract(payload, '$.recipe_id') AS recipe_id
+               FROM variant_overrides
+               WHERE variant_id = ? AND override_type = 'filter'""",
+            (variant_id,),
+        ).fetchall()
+        if row["recipe_id"] is not None
+    }
+    active_sources = [
+        s for s in sources if s["recipe_id"] not in excluded_recipe_ids
+    ]
 
     title = variant["display_title"] or variant["normalized_title"]
     n = variant["n_recipes"]
@@ -198,8 +222,8 @@ def render(
     else:
         lines.append("## Instructions")
         lines.append("")
-        if sources:
-            median_source = sources[0]
+        if active_sources:
+            median_source = active_sources[0]
             lines.append(
                 f"*Per RationalRecipes-r8hx option 1: the source recipe "
                 f"closest to the central tendency (lowest outlier score = "
@@ -223,16 +247,18 @@ def render(
             )
             lines.append("")
 
-    # Source attribution — list all source URLs.
-    if sources:
+    # Source attribution — list active source URLs (filter overrides
+    # exclude recipes from the count and the list, but the underlying
+    # variant_members rows are intentionally preserved).
+    if active_sources:
         lines.append("## Source recipes")
         lines.append("")
         lines.append(
-            f"Averaged across {len(sources)} sources from RecipeNLG and "
-            f"WDC corpora:"
+            f"Averaged across {len(active_sources)} sources from RecipeNLG "
+            f"and WDC corpora:"
         )
         lines.append("")
-        for src in sources:
+        for src in active_sources:
             corpus_tag = src["corpus"]
             url = _format_url(src["url"])
             outlier = src["outlier_score"]
