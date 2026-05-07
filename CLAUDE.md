@@ -109,7 +109,12 @@ Default Ollama endpoints (per `ollama-tuning-report.md`, 2026-05-07):
 
 parse-fast's NP=4 only beats the alternatives under concurrent dispatch — parsing clients must run with concurrency ≥4 to see the speedup (already wired in via `RationalRecipes-e6rl`, commit `cab5c32`, `--parse-concurrency` flag, default 4).
 
-Model historically `gemma4:e2b` (chosen for catalog-scale throughput per closed bead `vwt.18`). Under the pivot, the model choice is being reconsidered — quality matters more per-recipe than throughput; the 2n09 eval flagged `mistral-small:24b` as the strongest 24 B candidate but the production parsing default is not yet picked. Override with `--ollama-url` / `--base-url` and `--model` as needed.
+Model choice (resolved 2026-05-07 via 2n09 eval; full reasoning in `docs/design/recipe-drops.md` § LLM model choice):
+
+- **Parsing default: `gemma4:e2b`** (unchanged). 2n09's quality winner is `mistral-small:24b` (only model to read parenthetical-quantity edge cases correctly) but at 2.3× single-call latency. Cache reuse means the cost is paid once per fresh extraction; opt in per-cluster with `scrape_merged.py --model mistral-small:24b` when needed. Excluded for parsing: `gemma4:26b`/`:31b` (broken or too big), `qwen3.6:35b-a3b`/`nemotron-3-nano:30b` (overflow), `devstral:24b`/`qwen3.5:27b` (too slow).
+- **Synthesis default: `mistral-small:24b`** at `num_ctx=32768` against synth-deep. Per 2n09 it's the only viable synthesis candidate on this host — gemma4 family produces empty output for instruction-following on Ollama 0.21+ROCm, qwen3.5:27b doesn't exit thinking mode, and the larger candidates overflow the 24 GiB ceiling. The synthesis prompt is tightened to prefer modal consensus over numerical averaging and to keep averaged percentages out of the generated steps (per `RationalRecipes-lhmp` + `pvmd`).
+
+Override with `--ollama-url` / `--base-url` and `--model` as needed.
 
 ## Dependencies
 

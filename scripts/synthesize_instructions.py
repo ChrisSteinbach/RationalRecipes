@@ -64,6 +64,13 @@ SYNTHESIS_SEED = 42
 DEFAULT_SYNTHESIS_NUM_PREDICT = 1024
 DEFAULT_SYNTHESIS_TIMEOUT = 300.0
 
+# Synthesis model winner per RationalRecipes-2n09 (resolved 2026-05-07):
+# only viable candidate on this host. gemma4 family produces empty output
+# for instruction-following on Ollama 0.21+ROCm; qwen3.5:27b doesn't exit
+# thinking mode; qwen3.6:35b-a3b and nemotron-3-nano:30b overflow the
+# 24 GiB ceiling. Override with --model on the CLI for ad-hoc sweeps.
+DEFAULT_SYNTHESIS_MODEL = "mistral-small:24b"
+
 DEFAULT_DB_PATH = Path("output/catalog/recipes.db")
 DEFAULT_RECIPENLG_PATH = Path("dataset/full_dataset.csv")
 # Cap the number of source instruction sequences we send to the LLM.
@@ -401,12 +408,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--model",
         type=str,
-        default=None,
+        default=DEFAULT_SYNTHESIS_MODEL,
         help=(
-            "Ollama model name to use for synthesis (e.g. gemma4:31b, "
-            "qwen3.5:27b, mistral-small:24b). Required unless --dry-run. "
-            "The synthesis-side model winner is open in RationalRecipes-2n09 "
-            "— the eval driver passes this explicitly per candidate."
+            f"Ollama model name to use for synthesis (default: "
+            f"{DEFAULT_SYNTHESIS_MODEL!r} — the 2n09-resolved winner; "
+            f"only viable candidate on host trellis at 24 GiB VRAM). "
+            f"Override for ad-hoc sweeps."
         ),
     )
     parser.add_argument(

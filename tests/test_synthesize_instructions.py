@@ -274,6 +274,16 @@ class TestDeterminismConstants:
     def test_seed_is_42(self) -> None:
         assert synthesize_instructions.SYNTHESIS_SEED == 42
 
+    def test_default_synthesis_model_is_2n09_winner(self) -> None:
+        # 2n09 resolved 2026-05-07: mistral-small:24b is the only viable
+        # synthesis candidate on the trellis 24 GiB ROCm host. Pin the
+        # default so a future model swap is a deliberate edit, not a
+        # silent regression.
+        assert (
+            synthesize_instructions.DEFAULT_SYNTHESIS_MODEL
+            == "mistral-small:24b"
+        )
+
 
 class TestNumCtxForwarding:
     """``num_ctx`` must reach the Ollama options block when set.
