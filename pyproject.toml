@@ -21,6 +21,12 @@ dev = [
     "jsonschema",
     "types-jsonschema",
 ]
+# Maintainer-only Streamlit editor (RationalRecipes-1t8x).
+# Install with: pip install -e '.[editor]'
+# Launch:       streamlit run scripts/editor.py -- --db output/catalog/recipes.db
+editor = [
+    "streamlit>=1.36",
+]
 
 [project.scripts]
 rr-discover = "rational_recipes.discover_cli:run"

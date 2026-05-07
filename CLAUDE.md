@@ -18,8 +18,8 @@ The methodology (averaging quantities across many independent source recipes fro
 
 - **Primary deliverable is the next drop**, not a complete catalog. Each drop is a finished artifact with central-tendency masses, CIs, and a chosen instruction set.
 - **Public canonical home is a static site** (z9cz resolved 2026-05-06). Each drop's permanent record is markdown; default host GitHub Pages. Social posts (Bluesky/Twitter) link to it.
-- **The PWA is repurposed as a maintainer-only editor** (`RationalRecipes-bl4y`). It is no longer the public catalog browser. Planned operations: drop source recipes from a cluster, reassign canonical mappings for source ingredients, combine ingredients with equivalence ratios.
-- **Maintainer review has two surfaces under design.** CLI track: `scripts/review_variants.py` (extended per `RationalRecipes-sj18`). PWA track: `RationalRecipes-bl4y`. Both share an operations layer. `review_variants.py` currently reads `recipes.db` and persists `review_status` via UPDATE.
+- **Maintainer editor is a Streamlit app on localhost** (`scripts/editor.py`, RationalRecipes-1t8x — bl4y revised after the PWA's sql.js retirement in y43). It reads + writes `recipes.db` directly via `CatalogDB`. Planned operations: drop source recipes from a cluster (filter), combine ingredients with equivalence ratios (substitute), reassign canonical mappings for source ingredients (h6q1/xekj — pending). The previous "PWA-as-editor" plan was abandoned because the PWA's sql.js + recipes.db path was retired in y43; the PWA's fate is now tracked separately in `RationalRecipes-n1q3`.
+- **Maintainer review has two surfaces.** CLI track: `scripts/review_variants.py` (extended per `RationalRecipes-sj18`). Editor track: `scripts/editor.py` (Streamlit). Both call into the same `CatalogDB` helpers — `add_filter_override` / `add_substitute_override` / `clear_override` — and share `_recompute_stats_for_variant`, so an override applied via either surface produces the same `variant_ingredient_stats`.
 - **Historical design docs**: `docs/design/full-catalog.md` (Phase 5 catalog framing, superseded), `docs/design/recipe-scraping.md` (Phase 1–4 rationale), `docs/design/phase-5e-investigation.md` (closed merge-gate investigation).
 
 ## Architecture
@@ -50,11 +50,13 @@ The `scrape/` submodule (`src/rational_recipes/scrape/`) handles loaders (Recipe
 | `src/rational_recipes/discover.py`, `discover_cli.py` | `rr-discover` threshold diagnostic |
 | `src/rational_recipes/corpus_title_survey.py` | Title-frequency survey (feeds the recipe queue) |
 | `src/rational_recipes/data/ingredients.db` | USDA/FAO ingredient DB |
-| `web/` | PWA — repurposed as maintainer editor per `RationalRecipes-bl4y`; public catalog-browse role retired |
+| `web/` | PWA — public catalog-browse role retired (z9cz). Future fate tracked in `RationalRecipes-n1q3`; the maintainer-editor role moved to Streamlit (1t8x) after sql.js was retired in y43. |
+| `src/rational_recipes/editor/` | Maintainer-editor helper layer (`operations.py`) — testable wrappers around `CatalogDB` consumed by `scripts/editor.py` and any future editor surface |
 | `scripts/scrape_merged.py` | Per-recipe extractor (the production path under the pivot). Writes `variants` + `variant_members` + `variant_ingredient_stats` directly to `recipes.db`; `--no-csv` skips the legacy CSV+manifest output. |
 | `scripts/import_merged_artifacts.py` | One-shot importer: rebuild variants from a directory's `manifest.json` + per-variant CSVs into `recipes.db`. Built for `RationalRecipes-ehe7` to retro-fit pre-v61w extractions; not needed for fresh runs. |
 | `scripts/render_drop.py` | Render one `recipes.db` variant as a publication-ready markdown drop. |
 | `scripts/review_variants.py` | CLI review tool against `recipes.db` |
+| `scripts/editor.py` | Streamlit maintainer editor (filter / substitute / clear-override) — `streamlit run scripts/editor.py -- --db output/catalog/recipes.db`. Optional dep: `pip install -e '.[editor]'` |
 | `scripts/explore_groups.py` | Quick L1/L2 grouping exploration (no LLM) |
 | `scripts/corpus_title_survey.py` | Title-frequency diagnostic CLI |
 | `scripts/build_db.py` | Rebuild `ingredients.db` from FDC/FAO sources |
@@ -78,7 +80,11 @@ python3 -m pytest
 python3 -m ruff check .
 python3 -m mypy src
 
-# PWA dev loop (now a maintainer editor — see RationalRecipes-bl4y)
+# Maintainer editor (Streamlit, localhost) — RationalRecipes-1t8x
+pip install -e '.[editor]'
+streamlit run scripts/editor.py -- --db output/catalog/recipes.db
+
+# PWA dev loop (legacy public-catalog browser; future role TBD per RationalRecipes-n1q3)
 cd web && npm install && npm run dev
 # or: npm test (Vitest), npm run build
 
@@ -103,7 +109,7 @@ Default Ollama: `http://192.168.50.189:11434`, model historically `gemma4:e2b` (
 
 ## Dependencies
 
-Python 3.12+. Runtime: `numpy`, stdlib `sqlite3`. LLM extraction: Ollama (model under reconsideration — see above). Dev: `ruff`, `mypy`, `pytest`, `pytest-cov`, `pre-commit`. Frontend: Node 20+, `vite`, `sql.js`, `vitest`. Declared in `pyproject.toml` and `web/package.json`.
+Python 3.12+. Runtime: `numpy`, stdlib `sqlite3`. LLM extraction: Ollama (model under reconsideration — see above). Dev: `ruff`, `mypy`, `pytest`, `pytest-cov`, `pre-commit`. Maintainer editor (optional, `[editor]` extra): `streamlit`. Legacy PWA: Node 20+, `vite`, `vitest` (sql.js was retired in y43; the PWA today ships a static `catalog.json` and is no longer used as the editor surface). Declared in `pyproject.toml` and `web/package.json`.
 
 ## Conventions
 
