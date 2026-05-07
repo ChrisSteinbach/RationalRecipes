@@ -57,6 +57,7 @@ from rational_recipes.scrape.merge import (
 )
 from rational_recipes.scrape.outlier import compute_outlier_scores
 from rational_recipes.scrape.parse import (
+    DEFAULT_NUM_CTX,
     OLLAMA_BASE_URL,
     ParsedIngredient,
     parse_ingredient_lines,
@@ -629,6 +630,7 @@ def build_variants(
     bucket_size: float = DEFAULT_BUCKET_SIZE,
     progress_callback: ProgressCallback | None = None,
     parse_concurrency: int = DEFAULT_PARSE_CONCURRENCY,
+    num_ctx: int = DEFAULT_NUM_CTX,
 ) -> tuple[list[MergedVariantResult], PipelineRunStats]:
     """Group merged recipes, LLM-parse each, normalize, and dedup.
 
@@ -660,7 +662,26 @@ def build_variants(
     deterministically and downstream normalization sees the same row
     sequence as a sequential run. Set to 1 to disable parallel dispatch
     (useful for debugging or for non-parse-fast endpoints).
+
+    ``num_ctx`` (RationalRecipes-rjqg, default 4096) is the per-call
+    Ollama context-window size that ``parse_fn`` is expected to honor.
+    The caller (``run_merged_pipeline``) binds it into the parse
+    closure; we accept it on this signature so the orchestration
+    boundary documents the value and downstream maintainers don't have
+    to chase it through parse.py internals. The ``parse_cache`` key is
+    *not* num_ctx-dependent — same raw line under a different num_ctx
+    still resolves to the cached parse, mirroring the determinism
+    contract on temperature/seed.
     """
+    # The actual propagation of num_ctx happens through the parse_fn
+    # closure the caller built — we don't call parse.py directly here,
+    # so the value is logged for traceability but not re-bound. Keeping
+    # the parameter on this signature makes the pipeline-level tuning
+    # knob discoverable without forcing pipeline-internals readers to
+    # chase it through the parse closure.
+    logger.info(
+        "build_variants: num_ctx=%d (forwarded via parse_fn closure)", num_ctx,
+    )
     l1_groups = group_by_title(merged_recipes, min_group_size=l1_min_group_size)
     logger.info("L1: %d title groups kept", len(l1_groups))
 
@@ -852,6 +873,7 @@ def run_merged_pipeline(
     emit_csv: bool = True,
     progress_callback: ProgressCallback | None = None,
     parse_concurrency: int = DEFAULT_PARSE_CONCURRENCY,
+    num_ctx: int = DEFAULT_NUM_CTX,
 ) -> tuple[Manifest, PipelineRunStats]:
     """End-to-end: load both corpora, merge, LLM-parse, normalize, emit.
 
@@ -880,6 +902,12 @@ def run_merged_pipeline(
     parse-fast Ollama endpoint's NUM_PARALLEL=4. Set to 1 to revert to
     sequential dispatch — useful for debugging and for non-parse-fast
     endpoints where concurrency provides no throughput benefit.
+
+    ``num_ctx``: per-call Ollama context-window size (RationalRecipes-
+    rjqg). Default 4096 matches the parse-fast tuning report. Set
+    higher only if a model needs more context per parse — but be aware
+    that the parse-fast endpoint allocates ``num_ctx × NP`` worth of
+    KV cache per slot, so 8 k × NP=4 = 32 k effective KV demand.
     """
     rnlg_loader = RecipeNLGLoader(path=recipenlg_path)
     rnlg_matching: list[Recipe] = list(rnlg_loader.search_title(title_query))
@@ -906,7 +934,9 @@ def run_merged_pipeline(
     )
 
     def _parse(lines: list[str]) -> list[ParsedIngredient | None]:
-        return parse_ingredient_lines(lines, model=llm_model, base_url=ollama_url)
+        return parse_ingredient_lines(
+            lines, model=llm_model, base_url=ollama_url, num_ctx=num_ctx,
+        )
 
     # Lazy import: catalog_db imports from this module, so a top-level
     # import would cycle. Open the DB up-front when ``db_path`` is set
@@ -935,6 +965,7 @@ def run_merged_pipeline(
             bucket_size=bucket_size,
             progress_callback=progress_callback,
             parse_concurrency=parse_concurrency,
+            num_ctx=num_ctx,
         )
 
         if emit_csv:

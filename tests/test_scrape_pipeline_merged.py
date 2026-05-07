@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from rational_recipes.catalog_db import (
     CatalogDB,
@@ -1724,6 +1725,362 @@ class TestParseConcurrency:
         assert par_elapsed * 1.5 < seq_elapsed, (
             f"expected speedup; seq={seq_elapsed:.3f}s par={par_elapsed:.3f}s"
         )
+
+
+class TestNumCtxThreading:
+    """RationalRecipes-rjqg: num_ctx propagates from CLI through to parser.
+
+    The acceptance scenario is: ``scrape_merged.py --num-ctx 8192`` reaches
+    the per-line ``_ollama_generate`` call with ``options.num_ctx=8192``.
+    Tested at the pipeline-orchestration boundary because exercising the
+    full CLI requires loading the RecipeNLG/WDC corpora; the pipeline-
+    level closure is the smallest unit that still proves the propagation.
+    """
+
+    def test_run_merged_pipeline_threads_num_ctx_to_parser(
+        self, tmp_path: Path
+    ) -> None:
+        """A run_merged_pipeline call with num_ctx=8192 reaches
+        parse_ingredient_lines with num_ctx=8192."""
+        from unittest.mock import patch as _patch
+
+        from rational_recipes.scrape import pipeline_merged as _pm
+
+        captured: list[int] = []
+
+        def fake_parse_ingredient_lines(
+            lines: list[str], **kwargs: object
+        ) -> list[ParsedIngredient | None]:
+            captured.append(int(kwargs["num_ctx"]))
+            return [
+                _parsed("flour", 100.0, "g") for _ in lines
+            ]
+
+        def fake_extract_batch(
+            recipes: list, **kwargs: object
+        ) -> list:
+            return recipes
+
+        def fake_merge_corpora(
+            rnlg: list, wdc: list
+        ) -> tuple[list[MergedRecipe], object]:
+            from rational_recipes.scrape.merge import MergeStats
+            merged = [
+                _make_merged(
+                    "pancakes",
+                    (f"{200 + i * 10} g flour", f"{200 - i * 10} g milk"),
+                    frozenset({"flour", "milk"}),
+                    url=f"https://x/{i}",
+                )
+                for i in range(3)
+            ]
+            return merged, MergeStats(3, 0, 0, 0, 3)
+
+        class _StubLoader:
+            def __init__(self, *a: object, **kw: object) -> None:
+                pass
+
+            def search_title(self, *a: object, **kw: object) -> Iterable:
+                return iter([])
+
+        with (
+            _patch.object(
+                _pm, "parse_ingredient_lines",
+                side_effect=fake_parse_ingredient_lines,
+            ),
+            _patch.object(_pm, "extract_batch", side_effect=fake_extract_batch),
+            _patch.object(_pm, "merge_corpora", side_effect=fake_merge_corpora),
+            _patch.object(_pm, "RecipeNLGLoader", _StubLoader),
+            _patch.object(_pm, "WDCLoader", _StubLoader),
+        ):
+            from rational_recipes.scrape.pipeline_merged import run_merged_pipeline
+
+            run_merged_pipeline(
+                recipenlg_path=tmp_path / "rnlg.csv",
+                wdc_zip_path=tmp_path / "wdc.zip",
+                title_query="pancakes",
+                output_dir=tmp_path / "out",
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=2,
+                min_variant_size=2,
+                num_ctx=8192,
+                emit_csv=False,
+                db_path=None,
+                parse_concurrency=1,
+            )
+
+        # Every parse_ingredient_lines call carried the supplied num_ctx.
+        assert captured, "parse_ingredient_lines should have been invoked"
+        assert all(n == 8192 for n in captured), (
+            f"expected num_ctx=8192 on every call, got {captured}"
+        )
+
+    def test_run_merged_pipeline_default_num_ctx_is_4096(
+        self, tmp_path: Path
+    ) -> None:
+        """No explicit num_ctx → DEFAULT_NUM_CTX (4096) flows through."""
+        from unittest.mock import patch as _patch
+
+        from rational_recipes.scrape import pipeline_merged as _pm
+        from rational_recipes.scrape.parse import DEFAULT_NUM_CTX
+
+        captured: list[int] = []
+
+        def fake_parse_ingredient_lines(
+            lines: list[str], **kwargs: object
+        ) -> list[ParsedIngredient | None]:
+            captured.append(int(kwargs["num_ctx"]))
+            return [_parsed("flour", 100.0, "g") for _ in lines]
+
+        def fake_merge_corpora(
+            rnlg: list, wdc: list
+        ) -> tuple[list[MergedRecipe], object]:
+            from rational_recipes.scrape.merge import MergeStats
+            merged = [
+                _make_merged(
+                    "pancakes",
+                    (f"{200 + i * 10} g flour",),
+                    frozenset({"flour"}),
+                    url=f"https://x/{i}",
+                )
+                for i in range(2)
+            ]
+            return merged, MergeStats(2, 0, 0, 0, 2)
+
+        class _StubLoader:
+            def __init__(self, *a: object, **kw: object) -> None:
+                pass
+
+            def search_title(self, *a: object, **kw: object) -> Iterable:
+                return iter([])
+
+        with (
+            _patch.object(
+                _pm, "parse_ingredient_lines",
+                side_effect=fake_parse_ingredient_lines,
+            ),
+            _patch.object(_pm, "extract_batch", side_effect=lambda r, **k: r),
+            _patch.object(_pm, "merge_corpora", side_effect=fake_merge_corpora),
+            _patch.object(_pm, "RecipeNLGLoader", _StubLoader),
+            _patch.object(_pm, "WDCLoader", _StubLoader),
+        ):
+            from rational_recipes.scrape.pipeline_merged import run_merged_pipeline
+
+            run_merged_pipeline(
+                recipenlg_path=tmp_path / "rnlg.csv",
+                wdc_zip_path=tmp_path / "wdc.zip",
+                title_query="pancakes",
+                output_dir=tmp_path / "out",
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=1,
+                min_variant_size=2,
+                emit_csv=False,
+                db_path=None,
+                parse_concurrency=1,
+            )
+
+        assert captured
+        assert all(n == DEFAULT_NUM_CTX for n in captured)
+        assert DEFAULT_NUM_CTX == 4096
+
+    def test_cli_exposes_num_ctx_flag(self) -> None:
+        """``scrape_merged.py --num-ctx 8192`` reaches run_merged_pipeline.
+
+        Patches ``run_merged_pipeline`` so the CLI returns immediately and
+        captures the ``num_ctx`` keyword the script forwarded.
+        """
+        import sys as _sys
+        from pathlib import Path as _Path
+
+        from rational_recipes.scrape.manifest import Manifest
+        from rational_recipes.scrape.merge import MergeStats
+        from rational_recipes.scrape.pipeline_merged import PipelineRunStats
+
+        scripts_dir = _Path(__file__).resolve().parent.parent / "scripts"
+        if str(scripts_dir) not in _sys.path:
+            _sys.path.insert(0, str(scripts_dir))
+        import scrape_merged
+
+        captured: dict[str, object] = {}
+
+        def fake_run(**kwargs: object) -> tuple[Manifest, PipelineRunStats]:
+            captured.update(kwargs)
+            return (
+                Manifest(variants=[]),
+                PipelineRunStats(
+                    recipenlg_in=0,
+                    wdc_in=0,
+                    merge_stats=MergeStats(0, 0, 0, 0, 0),
+                    l1_groups_kept=0,
+                    l2_variants_kept=0,
+                    rows_parsed=0,
+                    rows_normalized=0,
+                    rows_dedup_dropped=0,
+                    db_misses={},
+                ),
+            )
+
+        argv = [
+            "scrape_merged.py",
+            "test-query",
+            "--num-ctx", "8192",
+            "--no-csv",
+            "--recipenlg", str(_Path(__file__)),  # any existing path
+            "--wdc-zip", str(_Path(__file__)),
+        ]
+        with (
+            patch.object(_sys, "argv", argv),
+            patch.object(scrape_merged, "run_merged_pipeline", side_effect=fake_run),
+        ):
+            assert scrape_merged.main() == 0
+
+        assert captured.get("num_ctx") == 8192
+
+
+class TestParseCacheNumCtxInvariance:
+    """RationalRecipes-rjqg: ParseCache key MUST be num_ctx-independent.
+
+    The cache is keyed by ``(raw_line, model, seed)`` — the LLM's
+    determinism contract (``temperature=0`` + ``seed=42``) makes prior
+    parses safe to reuse regardless of the num_ctx used to produce them.
+    Critical for cache reuse across runs that intentionally vary num_ctx
+    (e.g. debugging at 8192, production at 4096).
+    """
+
+    def _quantity_aware_parse(
+        self, lines: list[str]
+    ) -> list[ParsedIngredient | None]:
+        out: list[ParsedIngredient | None] = []
+        for line in lines:
+            parts = line.split()
+            qty = float(parts[0])
+            ing = parts[-1]
+            out.append(_parsed(ing, qty, "g"))
+        return out
+
+    def _make_recipes(self, n: int) -> list[MergedRecipe]:
+        return [
+            _make_merged(
+                "pancakes",
+                (f"{200 + i * 10} g flour", f"{200 - i * 10} g milk"),
+                frozenset({"flour", "milk"}),
+                url=f"https://x/{i}",
+            )
+            for i in range(n)
+        ]
+
+    def test_cache_hit_independent_of_num_ctx(self) -> None:
+        """Warm the cache with one num_ctx; second run with a different
+        num_ctx must hit the cache and never call parse_fn."""
+        recipes = self._make_recipes(3)
+        db = CatalogDB.in_memory()
+        try:
+            # First run at num_ctx=4096 — populates the cache.
+            cache_warm = ParseCache(db=db, model="m")
+            llm_warm = MagicMock(side_effect=self._quantity_aware_parse)
+            build_variants(
+                recipes,
+                parse_fn=llm_warm,
+                parse_cache=cache_warm,
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=2,
+                min_variant_size=2,
+                num_ctx=4096,
+            )
+            assert llm_warm.call_count >= 1, "cold cache should call LLM"
+
+            # Second run at num_ctx=8192 — every line must hit the cache.
+            cache_replay = ParseCache(db=db, model="m")
+            llm_replay = MagicMock(
+                side_effect=AssertionError(
+                    "different num_ctx must still hit the cache"
+                )
+            )
+            build_variants(
+                recipes,
+                parse_fn=llm_replay,
+                parse_cache=cache_replay,
+                l1_min_group_size=2,
+                l2_similarity_threshold=0.6,
+                l2_min_group_size=2,
+                min_variant_size=2,
+                num_ctx=8192,
+            )
+            assert llm_replay.call_count == 0
+            assert cache_replay.cache_hits > 0
+            assert cache_replay.ollama_lines == 0
+        finally:
+            db.close()
+
+    def test_cache_lookup_does_not_take_num_ctx(self) -> None:
+        """ParseCache.parse_with_cache has no num_ctx parameter — the
+        cache key is structurally invariant to it. This is a contract
+        test: any future change that adds num_ctx to the cache key would
+        invalidate every prior cached parse and silently re-run them."""
+        import inspect
+
+        sig = inspect.signature(ParseCache.parse_with_cache)
+        assert "num_ctx" not in sig.parameters
+
+    def test_seed_cache_then_two_num_ctx_runs_both_hit(self) -> None:
+        """Direct seed-and-replay: pre-write a parse to the cache, then
+        two parse_with_cache calls with notional num_ctx differences both
+        short-circuit parse_fn."""
+        from rational_recipes.catalog_db import (
+            ParsedLineRow,
+            parsed_to_json,
+        )
+
+        db = CatalogDB.in_memory()
+        try:
+            cached = _parsed("flour", 1.0, "cup")
+            db.upsert_parsed_lines(
+                [
+                    ParsedLineRow(
+                        corpus="wdc",
+                        recipe_id="https://prior/r/0",
+                        line_index=0,
+                        raw_line="1 cup flour",
+                        parsed_json=parsed_to_json(cached),
+                        model="m",
+                        seed=42,
+                    )
+                ]
+            )
+
+            # Build two parse_fn closures that "would" use different
+            # num_ctx values — but should never fire because the cache
+            # short-circuits ahead of them.
+            def parse_fn_low(lines: list[str]) -> list[ParsedIngredient | None]:
+                raise AssertionError("parse_fn (num_ctx=4096) called unexpectedly")
+
+            def parse_fn_high(lines: list[str]) -> list[ParsedIngredient | None]:
+                raise AssertionError("parse_fn (num_ctx=8192) called unexpectedly")
+
+            cache_a = ParseCache(db=db, model="m")
+            result_a = cache_a.parse_with_cache(
+                corpus="wdc",
+                recipe_id="https://x/r/1",
+                lines=["1 cup flour"],
+                parse_fn=parse_fn_low,
+            )
+            cache_b = ParseCache(db=db, model="m")
+            result_b = cache_b.parse_with_cache(
+                corpus="wdc",
+                recipe_id="https://x/r/2",
+                lines=["1 cup flour"],
+                parse_fn=parse_fn_high,
+            )
+
+            assert result_a[0] is not None and result_a[0].ingredient == "flour"
+            assert result_b[0] is not None and result_b[0].ingredient == "flour"
+            assert cache_a.cache_hits == 1
+            assert cache_b.cache_hits == 1
+        finally:
+            db.close()
 
 
 class TestCliProgressPrinter:

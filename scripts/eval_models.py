@@ -41,74 +41,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from rational_recipes.scrape import parse as _parse_mod
 from rational_recipes.scrape.parse import (
+    DEFAULT_NUM_CTX,
     OLLAMA_BASE_URL,
     ParsedIngredient,
     parse_ingredient_line,
 )
-
-
-def install_num_ctx_override(num_ctx: int) -> None:
-    """Monkeypatch ``parse._ollama_generate`` to inject ``num_ctx`` per call.
-
-    Production ``parse.py`` deliberately never passes ``num_ctx``: it
-    relied on the server's auto-tuned default. On the post-egtn
-    parse-fast endpoint (NP=4) that default falls back to each model's
-    native ctx, so ``mistral-nemo:12b`` (128 k) and friends try to claim
-    ``num_ctx × NP`` worth of KV and the daemon returns HTTP 500 with
-    ``model requires more system memory``. The 2n09 eval needs to
-    surface model parse quality, not server-side OOMs from ctx
-    mis-sizing, so this helper rewrites the only point where the
-    payload is built. Restricted to the eval driver — production
-    ``scrape/parse.py`` is owned by the parallel parsing-dispatch work
-    (RationalRecipes-e6rl) and stays untouched.
-    """
-    import urllib.error as _urllib_error
-    import urllib.request as _urllib_request
-
-    def _patched_ollama_generate(
-        prompt: str,
-        model: str,
-        system: str = _parse_mod._SYSTEM_PROMPT,
-        base_url: str = _parse_mod.OLLAMA_BASE_URL,
-        timeout: float = 120.0,
-        num_predict: int = 256,
-    ) -> str | None:
-        payload = json.dumps(
-            {
-                "model": model,
-                "system": system,
-                "prompt": prompt,
-                "format": "json",
-                "stream": False,
-                "options": {
-                    "num_predict": num_predict,
-                    "temperature": 0.0,
-                    "seed": 42,
-                    "num_ctx": num_ctx,
-                },
-            }
-        ).encode()
-        req = _urllib_request.Request(
-            f"{base_url}/api/generate",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with _urllib_request.urlopen(req, timeout=timeout) as resp:
-                body = json.loads(resp.read())
-        except (_urllib_error.URLError, TimeoutError, json.JSONDecodeError) as e:
-            print(f"Ollama API call failed: {e}", file=sys.stderr)
-            return None
-        visible = body.get("response") or ""
-        if visible:
-            return visible
-        thinking = body.get("thinking") or ""
-        return thinking or None
-
-    _parse_mod._ollama_generate = _patched_ollama_generate
 
 # Curated sample of CCC ingredient lines. Hand-picked from
 # ``output/catalog/recipes.db`` variant b34c2dce79e2 (chocolate chip
@@ -257,6 +195,7 @@ def run_parse_eval(
     *,
     base_url: str,
     timeout: float,
+    num_ctx: int = DEFAULT_NUM_CTX,
     skip_unavailable: bool = True,
     progress: bool = False,
     checkpoint_path: Path | None = None,
@@ -311,6 +250,7 @@ def run_parse_eval(
                     model=model,
                     base_url=base_url,
                     timeout=timeout,
+                    num_ctx=num_ctx,
                 )
             except Exception as e:  # noqa: BLE001 - surface any model crash
                 err = f"{type(e).__name__}: {e}"
@@ -533,13 +473,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--num-ctx",
         type=int,
-        default=4096,
+        default=DEFAULT_NUM_CTX,
         help=(
-            "Override Ollama num_ctx per call. Required for the post-egtn "
-            "parse-fast endpoint (NP=4): default-ctx mistral-nemo:12b and "
-            "friends fail to load when the server tries to allocate "
-            "native-ctx * NP worth of KV. Default 4096 matches the tuning "
-            "report's parse-fast measurements. Pass 0 to skip the override."
+            "Per-call Ollama num_ctx. Required for the post-egtn parse-fast "
+            "endpoint (NP=4): default-ctx mistral-nemo:12b and friends fail "
+            "to load when the server tries to allocate native-ctx * NP "
+            f"worth of KV. Default {DEFAULT_NUM_CTX} matches the tuning "
+            "report's parse-fast measurements (RationalRecipes-rjqg)."
         ),
     )
     parser.add_argument(
@@ -565,12 +505,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    if args.num_ctx > 0:
-        install_num_ctx_override(args.num_ctx)
-        print(
-            f"[eval] num_ctx override active: {args.num_ctx}",
-            file=sys.stderr,
-        )
+    print(
+        f"[eval] num_ctx={args.num_ctx} (RationalRecipes-rjqg threading)",
+        file=sys.stderr,
+    )
 
     models = [m.strip() for m in args.models.split(",") if m.strip()]
     attempts, skipped = run_parse_eval(
@@ -578,6 +516,7 @@ def main(argv: list[str] | None = None) -> int:
         SAMPLE_LINES,
         base_url=args.ollama_url,
         timeout=args.timeout,
+        num_ctx=args.num_ctx,
         progress=args.progress,
         checkpoint_path=args.checkpoint,
     )

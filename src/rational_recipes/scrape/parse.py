@@ -26,6 +26,17 @@ logger = logging.getLogger(__name__)
 # wrong for parsing); the legacy port survives as a fallback only.
 OLLAMA_BASE_URL = "http://192.168.50.189:11444"
 
+# Default per-call ``num_ctx`` for ingredient-line parsing
+# (RationalRecipes-rjqg). Without an explicit ``num_ctx`` Ollama
+# allocates each model's NATIVE context window per slot — for a
+# 128 k-ctx model on the parse-fast endpoint (NP=4) that's ~150 GiB
+# of KV demand, blowing past a single 24 GiB GPU and returning HTTP
+# 500 ``model requires more system memory``. 4096 matches the parse-
+# fast tuning report's measurements and is well above the longest
+# single-line prompt we send (a batched prompt of 30 lines + system
+# prompt + JSON wrapper is still well under 4 k tokens).
+DEFAULT_NUM_CTX = 4096
+
 _SYSTEM_PROMPT = """\
 You are an ingredient parser. Given a recipe ingredient line, extract structured fields.
 
@@ -127,6 +138,7 @@ def _ollama_generate(
     base_url: str = OLLAMA_BASE_URL,
     timeout: float = 120.0,
     num_predict: int = 256,
+    num_ctx: int = DEFAULT_NUM_CTX,
 ) -> str | None:
     """Call Ollama REST API /api/generate, return the response text.
 
@@ -134,6 +146,11 @@ def _ollama_generate(
     well under 100 tokens, so a small cap turns degenerate token-loop
     responses (seen on larger models like gemma4:26b) into bounded-length
     failures rather than 300s timeouts.
+
+    ``num_ctx`` (RationalRecipes-rjqg) sizes the per-slot KV cache. We
+    pass it explicitly so the parse-fast endpoint (NP=4) doesn't fall
+    back to each model's native context window — that path OOMs on a
+    single 24 GiB GPU for any 128 k-ctx model (e.g. mistral-nemo:12b).
 
     ``temperature=0`` + ``seed=42`` make the response deterministic so
     that downstream ``variant_id`` hashes are stable across reruns of
@@ -151,6 +168,7 @@ def _ollama_generate(
             "stream": False,
             "options": {
                 "num_predict": num_predict,
+                "num_ctx": num_ctx,
                 "temperature": 0.0,
                 "seed": 42,
             },
@@ -187,6 +205,7 @@ def parse_ingredient_line(
     system_prompt: str | None = None,
     timeout: float = 120.0,
     num_predict: int = 256,
+    num_ctx: int = DEFAULT_NUM_CTX,
 ) -> ParsedIngredient | None:
     """Parse a single ingredient line using Ollama.
 
@@ -201,6 +220,7 @@ def parse_ingredient_line(
         base_url=base_url,
         timeout=timeout,
         num_predict=num_predict,
+        num_ctx=num_ctx,
     )
     if raw_output is None:
         return None
@@ -261,6 +281,7 @@ def parse_ingredient_lines(
     system_prompt: str | None = None,
     timeout: float = 120.0,
     num_predict: int = 256,
+    num_ctx: int = DEFAULT_NUM_CTX,
     *,
     use_regex_prefilter: bool = True,
 ) -> list[ParsedIngredient | None]:
@@ -304,6 +325,7 @@ def parse_ingredient_lines(
             system_prompt=system_prompt,
             timeout=timeout,
             num_predict=num_predict,
+            num_ctx=num_ctx,
         )
         for idx, parsed in zip(residue_indices, llm_results, strict=True):
             results[idx] = parsed
@@ -316,6 +338,7 @@ def parse_ingredient_lines(
         system_prompt=system_prompt,
         timeout=timeout,
         num_predict=num_predict,
+        num_ctx=num_ctx,
     )
 
 
@@ -327,6 +350,7 @@ def _llm_parse_lines(
     system_prompt: str | None,
     timeout: float,
     num_predict: int,
+    num_ctx: int,
 ) -> list[ParsedIngredient | None]:
     """LLM-only parse path: one batched call per ``_MAX_BATCH_SIZE`` chunk."""
     if not lines:
@@ -340,6 +364,7 @@ def _llm_parse_lines(
                 system_prompt=system_prompt,
                 timeout=timeout,
                 num_predict=num_predict,
+                num_ctx=num_ctx,
             )
         ]
 
@@ -354,6 +379,7 @@ def _llm_parse_lines(
                 system_prompt=system_prompt,
                 timeout=timeout,
                 num_predict=num_predict,
+                num_ctx=num_ctx,
             )
         )
     return results
@@ -510,6 +536,7 @@ def _parse_batch_with_fallback(
     system_prompt: str | None,
     timeout: float,
     num_predict: int,
+    num_ctx: int,
     _state: _BatchTreeState | None = None,
     _depth: int = 0,
 ) -> list[ParsedIngredient | None]:
@@ -545,6 +572,7 @@ def _parse_batch_with_fallback(
                     system_prompt=system_prompt,
                     timeout=timeout,
                     num_predict=num_predict,
+                    num_ctx=num_ctx,
                 )
                 for line in lines
             ]
@@ -557,6 +585,7 @@ def _parse_batch_with_fallback(
             system_prompt=system_prompt,
             timeout=timeout,
             num_predict=num_predict,
+            num_ctx=num_ctx,
         )
         if batched is not None:
             return batched
@@ -575,6 +604,7 @@ def _parse_batch_with_fallback(
             system_prompt=system_prompt,
             timeout=timeout,
             num_predict=num_predict,
+            num_ctx=num_ctx,
             _state=_state,
             _depth=_depth + 1,
         )
@@ -585,6 +615,7 @@ def _parse_batch_with_fallback(
             system_prompt=system_prompt,
             timeout=timeout,
             num_predict=num_predict,
+            num_ctx=num_ctx,
             _state=_state,
             _depth=_depth + 1,
         )
@@ -602,6 +633,7 @@ def _parse_batch(
     system_prompt: str | None,
     timeout: float,
     num_predict: int,
+    num_ctx: int,
 ) -> list[ParsedIngredient | None] | None:
     """One batched LLM call. Returns None on any structural failure."""
     # Scale num_predict with batch size so the model isn't truncated mid-array.
@@ -621,6 +653,7 @@ def _parse_batch(
         base_url=base_url,
         timeout=timeout,
         num_predict=batch_num_predict,
+        num_ctx=num_ctx,
     )
     if raw_output is None:
         return None
