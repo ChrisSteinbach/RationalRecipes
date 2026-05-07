@@ -6,14 +6,15 @@ whole-corpus extraction pipeline and persists decisions in-place via
 UPDATE on the ``variants`` table (``review_status``, ``review_note``,
 ``reviewed_at``).
 
-Data flow to the PWA: the DB is copied verbatim into
-``web/public/recipes.db`` by ``web/scripts/sync-catalog.mjs``; the
-PWA's default catalog filter hides any variant with
-``review_status = 'drop'``. Dropping in review = invisible in the PWA.
+Reviewed status flows through the rest of the system: ``render_drop.py``
+renders only the chosen variant regardless of status (the user picks the
+variant_id explicitly), and the Streamlit maintainer editor
+(``scripts/editor.py``) lists ``drop`` variants alongside others so the
+maintainer can revisit a previous reject decision.
 
 Interactive review keystrokes:
     a  accept                 → review_status = 'accept'
-    d  drop                   → review_status = 'drop' (hidden in PWA)
+    d  drop                   → review_status = 'drop' (hidden by default)
     n  annotate (free text)   → review_status = 'annotate', note saved
     ?  defer                  → no write; variant stays pending
     q  quit and save

@@ -8,36 +8,42 @@ compute mean proportions with confidence intervals — produce a single
 across enough independent recipes, shared structure reveals itself and the
 noise averages out.
 
-The project has two halves that meet at a SQLite database:
+The project's current shape (as of the **2026-05-05 recipe-drops pivot**) — see `CLAUDE.md` for the live overview:
 
-- **PWA** (`web/`) — a Vite + vanilla TypeScript + sql.js browser app that
-  serves the averaged catalog as a fully client-side browsable recipe
-  book. No backend, no API; just a static bundle + a prebuilt SQLite
-  file. This is the primary user-facing surface.
 - **Python extraction pipeline** (`src/rational_recipes/`) — discovers
   dishes in existing recipe corpora (RecipeNLG, Web Data Commons), parses
   ingredient lines via a local LLM, normalizes to grams, and writes
-  per-variant statistics into `recipes.db`. The PWA reads that database.
+  per-variant statistics into `recipes.db`.
+- **Streamlit maintainer editor** (`scripts/editor.py`) — local-only UI
+  over `recipes.db` for filter / substitute / canonical-reassign
+  operations on a variant's source recipes.
+- **Per-drop publication artifacts** (`docs/drops/`) — central-tendency
+  recipes rendered as markdown drops (CIs + sources) for distribution
+  via Bluesky/Twitter and a static canonical home.
 
-The CSV-oriented command-line tools (`rr-stats`, `rr-diff`) that led the
-Phase 0 UX were retired under bead `RationalRecipes-vwt.8` — the PWA now
-covers what they used to do. The `rr-discover` diagnostic survives as a
+The earlier PWA (Vite + sql.js browser app) was retired in
+`RationalRecipes-n1q3` (2026-05-07); the static-site canonical home is
+tracked under `RationalRecipes-z9cz`. The CSV-oriented command-line
+tools (`rr-stats`, `rr-diff`) that led the Phase 0 UX were retired
+earlier under `vwt.8`. The `rr-discover` diagnostic survives as a
 threshold-picking aid for the extraction pipeline.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `web/` | Client-side PWA (Vite + TS + sql.js) — primary UI |
 | `src/rational_recipes/scrape/` | RecipeNLG + WDC loaders, dish grouping, LLM parse, extraction pipeline |
 | `src/rational_recipes/catalog_db.py` | SQLite schema + reader/writer (the `recipes.db` contract) |
+| `src/rational_recipes/editor/` | Maintainer-editor helper layer — testable wrappers around `CatalogDB` |
 | `src/rational_recipes/ingredient.py`, `units.py` | Ingredient + unit primitives used by the pipeline |
 | `src/rational_recipes/discover_cli.py` | `rr-discover` — extraction-pipeline threshold diagnostic |
-| `scripts/scrape_catalog.py` | Whole-corpus batch extraction driver (LLM, resumable) |
-| `scripts/review_variants.py` | Maintainer CLI review tool (variant accept/drop/annotate) |
-| `scripts/migrate_curated_to_db.py` | Seed a fresh `recipes.db` from the historical curated JSON |
+| `scripts/scrape_merged.py` | Per-recipe extraction driver (per the recipe-drops pivot — single dish family on demand) |
+| `scripts/review_variants.py` | Maintainer CLI review tool (variant accept/drop/annotate; substitute/filter/canonical-reassign overrides) |
+| `scripts/editor.py` | Streamlit maintainer editor (localhost) |
+| `scripts/render_drop.py` | Render a `recipes.db` variant as a publication-ready markdown drop |
 | `scripts/build_db.py` | Rebuild `ingredients.db` from USDA / FAO sources |
-| `docs/design/full-catalog.md` | Active design doc (Phase 5) |
+| `docs/design/recipe-drops.md` | Active design doc (recipe-drops pivot, 2026-05-05) |
+| `docs/design/full-catalog.md` | Superseded Phase 5 catalog design |
 | `docs/design/recipe-scraping.md` | Historical Phase 1-4 design |
 
 ## Quick start
@@ -46,10 +52,9 @@ threshold-picking aid for the extraction pipeline.
 # Python package (extraction pipeline + diagnostics) in editable mode
 python3 -m pip install -e .
 
-# PWA dev loop
-cd web
-npm install
-npm run dev
+# Maintainer editor (Streamlit, localhost) — optional dep group
+python3 -m pip install -e '.[editor]'
+streamlit run scripts/editor.py -- --db output/catalog/recipes.db
 ```
 
 Run any CLI with `--help` for the full option set.
@@ -88,25 +93,6 @@ gitignored) and a running Ollama instance. See
 the full Phase 1-4 design rationale and
 [`docs/design/full-catalog.md`](docs/design/full-catalog.md) for the
 current Phase 5 direction.
-
-## PWA
-
-`web/` is a fully client-side recipe browser built with Vite, vanilla
-TypeScript, and sql.js. It fetches the prebuilt `recipes.db` over
-static hosting, loads it into the browser via sql.js, and renders a
-catalog view with filters (sample size, variant count, ingredient set)
-plus a detail view that produces a scaled recipe at any target weight.
-No backend, no API.
-
-```bash
-cd web
-npm install
-npm run dev
-# or: npm test (Vitest), npm run build
-```
-
-See epic **RationalRecipes-vwt** (tracked in beads) for the catalog MVP
-scope and progress.
 
 ## Ingredient database
 
