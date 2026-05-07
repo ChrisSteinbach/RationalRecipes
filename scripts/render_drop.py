@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Render one variant from recipes.db as a publication-ready drop.
 
-Hand-cycle prototype for RationalRecipes-ehe7. Demonstrates the shape
-sj18 (review_variants.py extension) would land. Not production code —
-expect rough edges, hardcoded formatting, no tests. The friction this
-exposes is the data we want.
+Hand-cycle prototype for RationalRecipes-ehe7. ia1x extends it: when
+``variants.canonical_instructions`` is non-NULL the rendered drop
+includes a section labeled "Canonical instructions (generative
+consensus)" sourced from the LLM-synthesized + human-reviewed
+instruction set; otherwise the original median-source placeholder
+path runs unchanged.
 
 Usage:
     python3 scripts/render_drop.py <variant_id> [--db PATH] [--out PATH]
@@ -16,6 +18,8 @@ import argparse
 import sqlite3
 import sys
 from pathlib import Path
+
+from rational_recipes.catalog_db import CatalogDB
 
 
 def _format_pct(value: float | None, *, places: int = 1) -> str:
@@ -53,13 +57,20 @@ def _format_url(url: str | None) -> str:
 def render(
     db_path: Path, variant_id: str, batch_grams: float = 1000.0
 ) -> str:
+    # Open via CatalogDB first so any pending schema migrations
+    # (e.g. ia1x's canonical_instructions columns) run before the
+    # raw-sqlite SELECTs below see the table. Closes immediately —
+    # the connection is then re-opened with row_factory tuned for
+    # column-name access.
+    CatalogDB.open(db_path).close()
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
     variant = conn.execute(
         """SELECT variant_id, display_title, normalized_title, n_recipes,
                   canonical_ingredient_set, description, base_ingredient,
-                  cooking_methods
+                  cooking_methods, canonical_instructions,
+                  canonical_instructions_reviewed_at
            FROM variants WHERE variant_id = ?""",
         (variant_id,),
     ).fetchone()
@@ -155,37 +166,62 @@ def render(
             )
         lines.append("")
 
-    # Instructions placeholder — per r8hx, hand-cycle uses option 1
-    # (median source recipe's instructions, picked by lowest outlier
-    # score). The actual instructions are not in recipes.db's variants
-    # table; you'd need to fetch from the source URL. For the
-    # hand-cycle, paste them in manually after picking the median.
-    lines.append("## Instructions")
-    lines.append("")
-    if sources:
-        median_source = sources[0]
-        lines.append(
-            f"*Per RationalRecipes-r8hx option 1: the source recipe "
-            f"closest to the central tendency (lowest outlier score = "
-            f"{median_source['outlier_score']:.2f}) is*"
-        )
+    # Instructions. Two paths:
+    # - canonical_instructions populated → render the synthesized
+    #   consensus (per r8hx, full LLM synthesis with human review;
+    #   ia1x landed the persistence column). Label distinctly so a
+    #   reader can tell empirical-mass-fractions apart from generative
+    #   text.
+    # - canonical_instructions NULL → fall back to the hand-cycle
+    #   "median source" path (r8hx option 1, the ehe7 hand-cycle
+    #   default).
+    canonical_instructions = variant["canonical_instructions"]
+    reviewed_at = variant["canonical_instructions_reviewed_at"]
+    if canonical_instructions:
+        lines.append("## Canonical instructions (generative consensus)")
         lines.append("")
         lines.append(
-            f"> [{median_source['title']}]"
-            f"({_format_url(median_source['url'])})"
+            "> Synthesized from the cluster's source instruction "
+            "sequences via LLM and reviewed by the maintainer "
+            "(RationalRecipes-r8hx, full LLM synthesis with human "
+            "review). This is **generative consensus**, not "
+            "empirically averaged — the mass fractions above are the "
+            "measurement; these instructions are an editorial "
+            "synthesis."
         )
         lines.append("")
-        lines.append(
-            "*Fetch the instructions from that source and paste them "
-            "here. For the hand-cycle drop, this is a manual step.*"
-        )
+        lines.append(canonical_instructions.rstrip())
         lines.append("")
+        if reviewed_at:
+            lines.append(f"*Reviewed at: {reviewed_at}*")
+            lines.append("")
     else:
-        lines.append(
-            "*No source recipes found in variant_members — extraction "
-            "may have run without source linking. Investigate.*"
-        )
+        lines.append("## Instructions")
         lines.append("")
+        if sources:
+            median_source = sources[0]
+            lines.append(
+                f"*Per RationalRecipes-r8hx option 1: the source recipe "
+                f"closest to the central tendency (lowest outlier score = "
+                f"{median_source['outlier_score']:.2f}) is*"
+            )
+            lines.append("")
+            lines.append(
+                f"> [{median_source['title']}]"
+                f"({_format_url(median_source['url'])})"
+            )
+            lines.append("")
+            lines.append(
+                "*Fetch the instructions from that source and paste them "
+                "here. For the hand-cycle drop, this is a manual step.*"
+            )
+            lines.append("")
+        else:
+            lines.append(
+                "*No source recipes found in variant_members — extraction "
+                "may have run without source linking. Investigate.*"
+            )
+            lines.append("")
 
     # Source attribution — list all source URLs.
     if sources:

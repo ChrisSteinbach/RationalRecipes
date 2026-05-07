@@ -85,19 +85,21 @@ _SCHEMA: tuple[str, ...] = (
     """,
     """
     CREATE TABLE IF NOT EXISTS variants (
-      variant_id                 TEXT PRIMARY KEY,
-      normalized_title           TEXT NOT NULL,
-      display_title              TEXT,
-      category                   TEXT,
-      description                TEXT,
-      base_ingredient            TEXT,
-      cooking_methods            TEXT,
-      canonical_ingredient_set   TEXT NOT NULL,
-      n_recipes                  INTEGER NOT NULL,
-      confidence_level           REAL,
-      review_status              TEXT,
-      review_note                TEXT,
-      reviewed_at                TEXT
+      variant_id                          TEXT PRIMARY KEY,
+      normalized_title                    TEXT NOT NULL,
+      display_title                       TEXT,
+      category                            TEXT,
+      description                         TEXT,
+      base_ingredient                     TEXT,
+      cooking_methods                     TEXT,
+      canonical_ingredient_set            TEXT NOT NULL,
+      n_recipes                           INTEGER NOT NULL,
+      confidence_level                    REAL,
+      review_status                       TEXT,
+      review_note                         TEXT,
+      reviewed_at                         TEXT,
+      canonical_instructions              TEXT,
+      canonical_instructions_reviewed_at  TEXT
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_variants_nrecipes ON variants(n_recipes)",
@@ -210,6 +212,8 @@ class VariantRow:
     review_status: str | None
     review_note: str | None
     reviewed_at: str | None
+    canonical_instructions: str | None = None
+    canonical_instructions_reviewed_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,6 +340,33 @@ class CatalogDB:
         with self._conn:
             for stmt in _SCHEMA:
                 self._conn.execute(stmt)
+            self._migrate_variants_columns()
+
+    def _migrate_variants_columns(self) -> None:
+        """Add columns to ``variants`` that pre-existing DBs are missing.
+
+        ``CREATE TABLE IF NOT EXISTS`` is a no-op when the table already
+        exists, so columns added after the initial schema (here:
+        ``canonical_instructions`` + ``canonical_instructions_reviewed_at``
+        for ia1x — the r8hx instruction-synthesis pipeline) need explicit
+        ``ALTER TABLE`` migrations. ``PRAGMA table_info`` is the cheapest
+        existence check; new columns are nullable so existing rows pick
+        up NULL automatically and downstream readers stay
+        backward-compatible.
+        """
+        existing = {
+            row[1]
+            for row in self._conn.execute("PRAGMA table_info(variants)")
+        }
+        migrations: tuple[tuple[str, str], ...] = (
+            ("canonical_instructions", "TEXT"),
+            ("canonical_instructions_reviewed_at", "TEXT"),
+        )
+        for column, sqltype in migrations:
+            if column not in existing:
+                self._conn.execute(
+                    f"ALTER TABLE variants ADD COLUMN {column} {sqltype}"
+                )
 
     # --- Writer ---
 
@@ -954,6 +985,37 @@ class CatalogDB:
                  WHERE variant_id = ?
                 """,
                 (n, ",".join(sorted_names), variant_id),
+            )
+
+    def set_canonical_instructions(
+        self,
+        variant_id: str,
+        instructions: str | None,
+        *,
+        reviewed_at: str | None = None,
+    ) -> None:
+        """Persist a generative-consensus instruction set for a variant (ia1x).
+
+        Pass ``instructions=None`` to clear the value (the column reverts
+        to NULL and ``render_drop.py`` falls back to the per-source
+        median path). ``reviewed_at`` defaults to the current UTC ISO
+        timestamp when ``instructions`` is non-None and to ``None`` when
+        clearing — callers can override (e.g. to record an explicit
+        review time).
+        """
+        if instructions is not None and reviewed_at is None:
+            reviewed_at = datetime.now(UTC).isoformat()
+        elif instructions is None:
+            reviewed_at = None
+        with self._conn:
+            self._conn.execute(
+                """
+                UPDATE variants
+                   SET canonical_instructions = ?,
+                       canonical_instructions_reviewed_at = ?
+                 WHERE variant_id = ?
+                """,
+                (instructions, reviewed_at, variant_id),
             )
 
     def update_display_title(self, variant_id: str, display_title: str) -> None:
@@ -1703,4 +1765,6 @@ def _variant_from_row(row: Iterable[Any]) -> VariantRow:
         review_status=r[10],
         review_note=r[11],
         reviewed_at=r[12],
+        canonical_instructions=r[13] if len(r) > 13 else None,
+        canonical_instructions_reviewed_at=r[14] if len(r) > 14 else None,
     )

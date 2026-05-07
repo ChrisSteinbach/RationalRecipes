@@ -1119,6 +1119,114 @@ class TestVariantOverrides:
         assert db.list_overrides(v.variant_id) == []
 
 
+class TestCanonicalInstructionsMigration:
+    """RationalRecipes-ia1x: canonical_instructions schema migration."""
+
+    def test_columns_exist_on_fresh_db(self) -> None:
+        db = CatalogDB.in_memory()
+        cols = {row[1] for row in db.connection.execute("PRAGMA table_info(variants)")}
+        assert "canonical_instructions" in cols
+        assert "canonical_instructions_reviewed_at" in cols
+
+    def test_legacy_db_migrates_on_reopen(self, tmp_path: Path) -> None:
+        """A pre-ia1x DB (variants table without the new columns) must
+        gain the columns on next ``CatalogDB.open()`` so existing
+        downstream readers (render_drop.py) keep working."""
+        path = tmp_path / "recipes.db"
+        # Build a minimal pre-ia1x variants table — drop the schema's
+        # new columns so the migration has something to do.
+        import sqlite3 as _sqlite
+
+        conn = _sqlite.connect(str(path))
+        conn.execute(
+            """
+            CREATE TABLE variants (
+              variant_id                 TEXT PRIMARY KEY,
+              normalized_title           TEXT NOT NULL,
+              display_title              TEXT,
+              category                   TEXT,
+              description                TEXT,
+              base_ingredient            TEXT,
+              cooking_methods            TEXT,
+              canonical_ingredient_set   TEXT NOT NULL,
+              n_recipes                  INTEGER NOT NULL,
+              confidence_level           REAL,
+              review_status              TEXT,
+              review_note                TEXT,
+              reviewed_at                TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO variants (
+              variant_id, normalized_title, canonical_ingredient_set,
+              n_recipes
+            ) VALUES (?, ?, ?, ?)
+            """,
+            ("vid-1", "pannkakor", "flour,milk", 5),
+        )
+        conn.commit()
+        conn.close()
+
+        # Re-open via CatalogDB; the migration must add the columns.
+        db = CatalogDB.open(path)
+        try:
+            cols = {
+                row[1]
+                for row in db.connection.execute("PRAGMA table_info(variants)")
+            }
+            assert "canonical_instructions" in cols
+            assert "canonical_instructions_reviewed_at" in cols
+
+            # Existing row picks up NULL for both new columns.
+            row = db.connection.execute(
+                "SELECT canonical_instructions, "
+                "canonical_instructions_reviewed_at "
+                "FROM variants WHERE variant_id = ?",
+                ("vid-1",),
+            ).fetchone()
+            assert row == (None, None)
+        finally:
+            db.close()
+
+    def test_migration_is_idempotent(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        CatalogDB.open(path).close()
+        # Reopen — must not error on the duplicate ALTER TABLE.
+        CatalogDB.open(path).close()
+        db = CatalogDB.open(path)
+        try:
+            # Sanity: the column count didn't double.
+            cols = [
+                row[1]
+                for row in db.connection.execute("PRAGMA table_info(variants)")
+            ]
+            assert cols.count("canonical_instructions") == 1
+            assert cols.count("canonical_instructions_reviewed_at") == 1
+        finally:
+            db.close()
+
+    def test_set_and_clear_canonical_instructions(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+
+        db.set_canonical_instructions(v.variant_id, "1. mix\n2. bake")
+        row = db.get_variant(v.variant_id)
+        assert row is not None
+        assert row.canonical_instructions == "1. mix\n2. bake"
+        assert row.canonical_instructions_reviewed_at is not None
+        assert row.canonical_instructions_reviewed_at.endswith("+00:00")
+
+        # Clear: both columns revert to NULL.
+        db.set_canonical_instructions(v.variant_id, None)
+        cleared = db.get_variant(v.variant_id)
+        assert cleared is not None
+        assert cleared.canonical_instructions is None
+        assert cleared.canonical_instructions_reviewed_at is None
+
+
 class TestVariantSources:
     def test_add_and_retrieve(self) -> None:
         db = CatalogDB.in_memory()
