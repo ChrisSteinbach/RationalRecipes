@@ -648,6 +648,7 @@ class TestNumPredictCap:
             body = json.loads(req.data.decode())
             assert body["options"] == {
                 "num_predict": 256,
+                "num_ctx": 4096,
                 "temperature": 0.0,
                 "seed": 42,
             }
@@ -670,6 +671,7 @@ class TestNumPredictCap:
             body = json.loads(req.data.decode())
             assert body["options"] == {
                 "num_predict": 64,
+                "num_ctx": 4096,
                 "temperature": 0.0,
                 "seed": 42,
             }

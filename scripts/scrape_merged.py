@@ -27,7 +27,7 @@ import logging
 import sys
 from pathlib import Path
 
-from rational_recipes.scrape.parse import OLLAMA_BASE_URL
+from rational_recipes.scrape.parse import DEFAULT_NUM_CTX, OLLAMA_BASE_URL
 from rational_recipes.scrape.pipeline_merged import (
     DEFAULT_PARSE_CONCURRENCY,
     ProgressEvent,
@@ -166,6 +166,18 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--num-ctx",
+        type=int,
+        default=DEFAULT_NUM_CTX,
+        help=(
+            "Per-call Ollama num_ctx (RationalRecipes-rjqg). "
+            f"Default {DEFAULT_NUM_CTX} matches the parse-fast tuning report. "
+            "Without an explicit value Ollama allocates each model's NATIVE "
+            "context window per slot — for a 128k-ctx model on parse-fast "
+            "(NP=4) that demands ~150 GiB and OOMs the GPU."
+        ),
+    )
+    parser.add_argument(
         "--db",
         type=Path,
         default=Path("output/catalog/recipes.db"),
@@ -243,6 +255,7 @@ def main() -> int:
         emit_csv=emit_csv,
         progress_callback=progress_callback,
         parse_concurrency=args.parse_concurrency,
+        num_ctx=args.num_ctx,
     )
 
     print(f"Loaded rnlg={stats.recipenlg_in} wdc={stats.wdc_in}")

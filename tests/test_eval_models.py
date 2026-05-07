@@ -238,67 +238,40 @@ class TestEvictionBetweenModels:
         assert unload_calls == ["a", "b"]
 
 
-class TestInstallNumCtxOverride:
-    """``install_num_ctx_override`` must inject ``num_ctx`` into the LLM payload.
+class TestRunParseEvalNumCtx:
+    """eval_models forwards ``num_ctx`` directly to ``parse_ingredient_line``.
 
-    Regression guard for the post-egtn parse-fast (NP=4) failure mode:
-    without ``num_ctx`` set, ``mistral-nemo:12b`` defaults to its 128 k
-    native context and the daemon HTTP-500s on `model requires more
-    system memory`. We don't actually call Ollama here — we capture the
-    request payload and assert the override landed.
+    Replaces the old install_num_ctx_override monkeypatch path (removed
+    when production ``parse.py`` learned to thread ``num_ctx`` through —
+    RationalRecipes-rjqg). The eval driver now passes the user's --num-ctx
+    flag straight into the parser; equivalent regression coverage is in
+    tests/scrape/test_scrape_parse.py for the request-body shape.
     """
 
-    def test_patched_generate_passes_num_ctx_to_ollama(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from rational_recipes.scrape import parse as parse_mod
+    def test_run_parse_eval_forwards_num_ctx(self) -> None:
+        sample = [("brand", "1 c. Crisco")]
+        captured: list[int] = []
 
-        original = parse_mod._ollama_generate
-        try:
-            eval_models.install_num_ctx_override(4096)
-            captured: dict[str, object] = {}
+        def fake_parse(line, **kwargs):  # type: ignore[no-untyped-def]
+            captured.append(int(kwargs["num_ctx"]))
+            return None
 
-            def fake_urlopen(req, timeout: float = 0):  # type: ignore[no-untyped-def]
-                import json as _json
-
-                captured["body"] = _json.loads(req.data.decode())
-
-                class _Resp:
-                    def __enter__(self_inner):  # type: ignore[no-untyped-def]
-                        return self_inner
-
-                    def __exit__(self_inner, *_a):  # type: ignore[no-untyped-def]
-                        return False
-
-                    def read(self_inner) -> bytes:  # type: ignore[no-untyped-def]
-                        return _json.dumps({"response": "{}"}).encode()
-
-                return _Resp()
-
-            # Patch where the patched function looks the symbol up — it
-            # imports urllib.request at function-body time, so patch sys.modules.
-            import urllib.request as _ur
-
-            monkeypatch.setattr(_ur, "urlopen", fake_urlopen)
-            out = parse_mod._ollama_generate(
-                prompt="x",
-                model="mistral-nemo:12b",
-                base_url="http://x:1",
+        with (
+            patch.object(
+                eval_models, "list_available_models", return_value={"a"}
+            ),
+            patch.object(
+                eval_models, "parse_ingredient_line", side_effect=fake_parse
+            ),
+        ):
+            eval_models.run_parse_eval(
+                ["a"],
+                sample,
+                base_url="http://localhost:0",
                 timeout=1.0,
-                num_predict=10,
+                num_ctx=2048,
             )
-        finally:
-            parse_mod._ollama_generate = original
-
-        assert out == "{}"
-        body = captured["body"]
-        assert isinstance(body, dict)
-        opts = body.get("options")
-        assert isinstance(opts, dict)
-        assert opts.get("num_ctx") == 4096
-        # Determinism preserved.
-        assert opts.get("temperature") == 0.0
-        assert opts.get("seed") == 42
+        assert captured == [2048]
 
 
 class TestMainCli:
