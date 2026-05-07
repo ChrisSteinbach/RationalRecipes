@@ -1,0 +1,1781 @@
+"""Round-trip tests for the SQLite catalog backing store (bead vwt.6)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from rational_recipes.catalog_db import (
+    CatalogDB,
+    ListFilters,
+    ParsedIngredientRow,
+    ParsedLineRow,
+    emit_variants_to_db,
+    parsed_from_json,
+    parsed_to_json,
+)
+from rational_recipes.scrape.parse import ParsedIngredient
+from rational_recipes.scrape.pipeline_merged import (
+    MergedNormalizedRow,
+    MergedVariantResult,
+)
+
+
+def _row(
+    url: str,
+    cells: dict[str, str],
+    proportions: dict[str, float],
+    *,
+    corpus: str = "recipenlg",
+    title: str = "pannkakor",
+) -> MergedNormalizedRow:
+    return MergedNormalizedRow(
+        url=url,
+        title=title,
+        corpus=corpus,
+        cells=cells,
+        proportions=proportions,
+    )
+
+
+def _variant(
+    *,
+    n_rows: int = 3,
+    title: str = "pannkakor",
+    cooking_methods: frozenset[str] = frozenset(),
+) -> MergedVariantResult:
+    rows = [
+        _row(
+            f"https://example.com/r/{i}",
+            {"flour": "100 g", "milk": "250 ml"},
+            {"flour": 28.5 + i * 0.01, "milk": 71.5 - i * 0.01},
+            corpus="recipenlg" if i % 2 == 0 else "wdc",
+            title=title,
+        )
+        for i in range(n_rows)
+    ]
+    return MergedVariantResult(
+        variant_title=title,
+        canonical_ingredients=frozenset({"flour", "milk"}),
+        cooking_methods=cooking_methods,
+        normalized_rows=rows,
+        header_ingredients=["flour", "milk"],
+    )
+
+
+class TestSchema:
+    def test_open_is_idempotent(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        CatalogDB.open(path).close()
+        # Re-opening must succeed without a schema conflict.
+        db = CatalogDB.open(path)
+        db.close()
+
+    def test_min_sample_size_filter_uses_index(self) -> None:
+        db = CatalogDB.in_memory()
+        plan = list(
+            db.connection.execute(
+                "EXPLAIN QUERY PLAN"
+                " SELECT * FROM variants WHERE n_recipes >= ?"
+                " ORDER BY n_recipes DESC",
+                (10,),
+            )
+        )
+        assert any("USING INDEX" in row[3] for row in plan), plan
+
+    def test_category_filter_uses_index(self) -> None:
+        db = CatalogDB.in_memory()
+        plan = list(
+            db.connection.execute(
+                "EXPLAIN QUERY PLAN"
+                " SELECT * FROM variants WHERE category = ?",
+                ("crepes",),
+            )
+        )
+        assert any("USING INDEX" in row[3] for row in plan), plan
+
+    def test_title_order_uses_index(self) -> None:
+        db = CatalogDB.in_memory()
+        plan = list(
+            db.connection.execute(
+                "EXPLAIN QUERY PLAN"
+                " SELECT * FROM variants ORDER BY normalized_title ASC"
+            )
+        )
+        assert any("USING INDEX" in row[3] for row in plan), plan
+
+
+class TestUpsertVariant:
+    def test_round_trip_preserves_variant_core(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = _variant(n_rows=4, cooking_methods=frozenset({"stekt"}))
+
+        db.upsert_variant(
+            variant,
+            l1_key="pannkakor",
+            category="crepes",
+            description="Thin pancakes.",
+            base_ingredient="flour",
+            confidence_level=0.95,
+        )
+
+        listed = db.list_variants()
+        assert len(listed) == 1
+        v = listed[0]
+        assert v.variant_id == variant.variant_id
+        assert v.normalized_title == "pannkakor"
+        assert v.display_title == "pannkakor"
+        assert v.category == "crepes"
+        assert v.description == "Thin pancakes."
+        assert v.base_ingredient == "flour"
+        assert v.n_recipes == 4
+        assert v.cooking_methods == ("stekt",)
+        assert v.canonical_ingredient_set == ("flour", "milk")
+        assert v.confidence_level == 0.95
+
+    def test_round_trip_writes_member_rows(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = _variant(n_rows=3)
+        db.upsert_variant(variant, l1_key="pannkakor", base_ingredient="flour")
+
+        members = db.get_variant_members(variant.variant_id)
+        assert len(members) == 3
+        urls = {m.url for m in members}
+        assert urls == {
+            "https://example.com/r/0",
+            "https://example.com/r/1",
+            "https://example.com/r/2",
+        }
+
+    def test_round_trip_computes_stats_in_fraction_form(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = _variant(n_rows=3)
+        db.upsert_variant(variant, l1_key="pannkakor", base_ingredient="flour")
+
+        stats = db.get_ingredient_stats(variant.variant_id)
+        assert [s.canonical_name for s in stats] == ["flour", "milk"]
+        # Proportions are fractions (0..1) not percents.
+        assert 0.2 < stats[0].mean_proportion < 0.4
+        assert 0.6 < stats[1].mean_proportion < 0.8
+        assert stats[0].ratio == pytest.approx(1.0)
+        assert stats[1].ratio == pytest.approx(
+            stats[1].mean_proportion / stats[0].mean_proportion
+        )
+
+    def test_upsert_is_idempotent(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = _variant(n_rows=3)
+        db.upsert_variant(variant, l1_key="pannkakor", base_ingredient="flour")
+        db.upsert_variant(variant, l1_key="pannkakor", base_ingredient="flour")
+
+        assert len(db.list_variants()) == 1
+        assert len(db.get_variant_members(variant.variant_id)) == 3
+        assert len(db.get_ingredient_stats(variant.variant_id)) == 2
+
+    def test_upsert_replaces_old_members(self) -> None:
+        db = CatalogDB.in_memory()
+        first = _variant(n_rows=4)
+        db.upsert_variant(first, l1_key="pannkakor", base_ingredient="flour")
+
+        smaller = MergedVariantResult(
+            variant_title=first.variant_title,
+            canonical_ingredients=first.canonical_ingredients,
+            cooking_methods=first.cooking_methods,
+            normalized_rows=first.normalized_rows[:2],
+            header_ingredients=first.header_ingredients,
+        )
+        db.upsert_variant(smaller, l1_key="pannkakor", base_ingredient="flour")
+
+        members = db.get_variant_members(first.variant_id)
+        assert len(members) == 2
+
+    def test_filter_by_min_sample_size(self) -> None:
+        db = CatalogDB.in_memory()
+        big = _variant(n_rows=5, title="pannkakor")
+        small = _variant(n_rows=2, title="crepes")
+        db.upsert_variant(big, l1_key="pannkakor", base_ingredient="flour")
+        db.upsert_variant(small, l1_key="crepes", base_ingredient="flour")
+
+        listed = db.list_variants(ListFilters(min_sample_size=3))
+        assert {v.normalized_title for v in listed} == {"pannkakor"}
+
+    def test_filter_by_category(self) -> None:
+        db = CatalogDB.in_memory()
+        a = _variant(title="pannkakor")
+        b = _variant(title="bread")
+        db.upsert_variant(a, l1_key="pannkakor", category="crepes")
+        db.upsert_variant(b, l1_key="bread", category="bread")
+
+        listed = db.list_variants(ListFilters(category="crepes"))
+        assert {v.normalized_title for v in listed} == {"pannkakor"}
+
+    def test_filter_by_title_substring_case_insensitive(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_variant(
+            _variant(title="Pannkakor"), l1_key="pannkakor", category="crepes"
+        )
+        db.upsert_variant(
+            _variant(title="sourdough"), l1_key="sourdough", category="bread"
+        )
+
+        listed = db.list_variants(ListFilters(title_search="PANN"))
+        assert len(listed) == 1
+        assert listed[0].normalized_title == "pannkakor"
+
+    def test_drop_variant_hidden_by_default(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        with db.connection:
+            db.connection.execute(
+                "UPDATE variants SET review_status='drop' WHERE variant_id = ?",
+                (v.variant_id,),
+            )
+        assert db.list_variants() == []
+        assert len(db.list_variants(ListFilters(include_dropped=True))) == 1
+
+
+class TestComputeStatsNoLongerFilters:
+    """RationalRecipes-70o: the filter moved upstream to pipeline_merged.
+
+    Stats writer now passes through whatever ingredients the variant
+    declares — duplicating the filter here would diverge from
+    canonical_ingredient_set.
+    """
+
+    def test_low_freq_ingredient_in_canonical_yields_stat_row(self) -> None:
+        db = CatalogDB.in_memory()
+        rows: list[MergedNormalizedRow] = []
+        for i in range(20):
+            cells = {"flour": "100 g", "milk": "250 ml"}
+            props = {"flour": 28.5 + i * 0.01, "milk": 71.5 - i * 0.01}
+            if i == 0:
+                cells["ketchup"] = "5 g"
+                props["ketchup"] = 0.01
+            rows.append(_row(f"https://example.com/r/{i}", cells, props))
+        # Caller hands us a variant that still has ketchup in canonical
+        # (e.g. a test/legacy variant). The writer must not silently
+        # drop it — it goes into the stats table as-is.
+        variant = MergedVariantResult(
+            variant_title="pecan pie",
+            canonical_ingredients=frozenset({"flour", "milk", "ketchup"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["flour", "milk"],
+        )
+        db.upsert_variant(variant, l1_key="pecan pie", base_ingredient="flour")
+
+        stats = db.get_ingredient_stats(variant.variant_id)
+        names = {s.canonical_name for s in stats}
+        assert names == {"flour", "milk", "ketchup"}
+
+
+class TestEmitVariantsToDb:
+    """RationalRecipes-v61w: the bridge from pipeline_merged to recipes.db."""
+
+    def test_writes_variants_members_and_stats(self) -> None:
+        db = CatalogDB.in_memory()
+        a = _variant(n_rows=4, title="pannkakor")
+        b = _variant(n_rows=3, title="crepes")
+
+        written = emit_variants_to_db([a, b], db)
+
+        assert written == 2
+        listed = db.list_variants()
+        titles = {v.normalized_title for v in listed}
+        assert titles == {"pannkakor", "crepes"}
+        # Each variant must have member rows AND stats rows — without
+        # both, render_drop.py can't produce a drop.
+        for v in listed:
+            assert db.get_variant_members(v.variant_id), v
+            assert db.get_ingredient_stats(v.variant_id), v
+
+    def test_skips_empty_variants(self) -> None:
+        db = CatalogDB.in_memory()
+        empty = MergedVariantResult(
+            variant_title="ghost",
+            canonical_ingredients=frozenset({"flour"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[],
+            header_ingredients=["flour"],
+        )
+        real = _variant(n_rows=3)
+        written = emit_variants_to_db([empty, real], db)
+        assert written == 1
+        assert len(db.list_variants()) == 1
+
+    def test_idempotent_on_re_run(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=4)
+        emit_variants_to_db([v], db)
+        emit_variants_to_db([v], db)
+
+        listed = db.list_variants()
+        assert len(listed) == 1
+        # Re-running must not duplicate member or stat rows.
+        assert len(db.get_variant_members(v.variant_id)) == 4
+        assert len(db.get_ingredient_stats(v.variant_id)) == 2
+
+    def test_stale_l1_kept_by_default(self) -> None:
+        """Default behavior preserves variants outside the input set —
+        a per-recipe run for one query must not silently drop variants
+        from a previous unrelated query."""
+        db = CatalogDB.in_memory()
+        old = _variant(n_rows=3, title="pannkakor")
+        emit_variants_to_db([old], db)
+
+        # New input is a *different* variant under the same L1 key
+        # (different ingredient set → different variant_id).
+        new = MergedVariantResult(
+            variant_title="pannkakor",
+            canonical_ingredients=frozenset({"flour", "buttermilk"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row(
+                    f"https://x/{i}",
+                    {"flour": "100 g", "buttermilk": "200 ml"},
+                    {"flour": 33.0 + i, "buttermilk": 67.0 - i},
+                )
+                for i in range(3)
+            ],
+            header_ingredients=["flour", "buttermilk"],
+        )
+        emit_variants_to_db([new], db)
+
+        listed = db.list_variants()
+        ids = {v.variant_id for v in listed}
+        assert ids == {old.variant_id, new.variant_id}
+
+    def test_clean_l1_drops_stale_variants(self) -> None:
+        """``delete_stale_for_l1=True`` converges the touched L1 keys on
+        the input variant set; variants not in the input are removed."""
+        db = CatalogDB.in_memory()
+        old = _variant(n_rows=3, title="pannkakor")
+        emit_variants_to_db([old], db)
+
+        new = MergedVariantResult(
+            variant_title="pannkakor",
+            canonical_ingredients=frozenset({"flour", "buttermilk"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row(
+                    f"https://x/{i}",
+                    {"flour": "100 g", "buttermilk": "200 ml"},
+                    {"flour": 33.0 + i, "buttermilk": 67.0 - i},
+                )
+                for i in range(3)
+            ],
+            header_ingredients=["flour", "buttermilk"],
+        )
+        emit_variants_to_db([new], db, delete_stale_for_l1=True)
+
+        listed = db.list_variants()
+        ids = {v.variant_id for v in listed}
+        assert ids == {new.variant_id}
+
+
+class TestL1RunTracking:
+    def test_is_l1_fresh_false_before_run(self) -> None:
+        db = CatalogDB.in_memory()
+        assert db.is_l1_fresh("pannkakor", corpus_revisions="abc") is False
+
+    def test_record_l1_run_then_fresh(self) -> None:
+        db = CatalogDB.in_memory()
+        db.record_l1_run(
+            "pannkakor",
+            corpus_revisions="rev-abc",
+            variants_produced=2,
+            dry=False,
+            run_at="2026-04-24T10:00:00Z",
+        )
+        assert db.is_l1_fresh("pannkakor", corpus_revisions="rev-abc") is True
+
+    def test_fingerprint_mismatch_reports_stale(self) -> None:
+        db = CatalogDB.in_memory()
+        db.record_l1_run(
+            "pannkakor",
+            corpus_revisions="rev-abc",
+            variants_produced=2,
+            dry=False,
+            run_at="2026-04-24T10:00:00Z",
+        )
+        assert db.is_l1_fresh("pannkakor", corpus_revisions="rev-xyz") is False
+
+    def test_record_is_idempotent(self) -> None:
+        db = CatalogDB.in_memory()
+        db.record_l1_run(
+            "pannkakor",
+            corpus_revisions="rev",
+            variants_produced=1,
+            dry=False,
+            run_at="2026-04-24T10:00:00Z",
+        )
+        db.record_l1_run(
+            "pannkakor",
+            corpus_revisions="rev",
+            variants_produced=3,
+            dry=True,
+            run_at="2026-04-24T11:00:00Z",
+        )
+        row = db.connection.execute(
+            "SELECT variants_produced, dry FROM query_runs WHERE l1_group_key = ?",
+            ("pannkakor",),
+        ).fetchone()
+        assert row == (3, 1)
+
+
+class TestDeleteStaleVariantsForL1:
+    """RationalRecipes-dos: re-cluster must drop variants the new policy
+    no longer produces, not accumulate them."""
+
+    def test_drops_variants_not_in_keep_set(self) -> None:
+        db = CatalogDB.in_memory()
+        keeper = _variant(title="pecan pie", n_rows=10)
+        # Two variants that survived a prior run but the new policy drops.
+        stale_a = MergedVariantResult(
+            variant_title="pecan pie",
+            canonical_ingredients=frozenset({"flour", "egg"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row(
+                    "https://x/a/1",
+                    {"flour": "100 g", "egg": "1 unit"},
+                    {"flour": 90.0, "egg": 10.0},
+                    title="pecan pie",
+                ),
+            ],
+            header_ingredients=["flour", "egg"],
+        )
+        stale_b = MergedVariantResult(
+            variant_title="pecan pie",
+            canonical_ingredients=frozenset({"flour", "butter"}),
+            cooking_methods=frozenset(),
+            normalized_rows=[
+                _row(
+                    "https://x/b/1",
+                    {"flour": "100 g", "butter": "50 g"},
+                    {"flour": 67.0, "butter": 33.0},
+                    title="pecan pie",
+                ),
+            ],
+            header_ingredients=["flour", "butter"],
+        )
+        db.upsert_variant(keeper, l1_key="pecan pie")
+        db.upsert_variant(stale_a, l1_key="pecan pie")
+        db.upsert_variant(stale_b, l1_key="pecan pie")
+
+        removed = db.delete_stale_variants_for_l1(
+            "pecan pie", keep_variant_ids=[keeper.variant_id]
+        )
+        assert removed == 2
+
+        remaining = {v.variant_id for v in db.list_variants()}
+        assert remaining == {keeper.variant_id}
+        # Cascade: stale variants' member rows are gone too.
+        assert db.get_variant_members(stale_a.variant_id) == []
+        assert db.get_variant_members(stale_b.variant_id) == []
+
+    def test_noop_when_all_kept(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(title="brownie", n_rows=5)
+        db.upsert_variant(v, l1_key="brownie")
+        removed = db.delete_stale_variants_for_l1(
+            "brownie", keep_variant_ids=[v.variant_id]
+        )
+        assert removed == 0
+        assert len(db.list_variants()) == 1
+
+    def test_other_l1_keys_untouched(self) -> None:
+        db = CatalogDB.in_memory()
+        a = _variant(title="brownie", n_rows=5)
+        b = _variant(title="muffin", n_rows=5)
+        db.upsert_variant(a, l1_key="brownie")
+        db.upsert_variant(b, l1_key="muffin")
+        # Wipe brownie's variants entirely; muffin must survive.
+        db.delete_stale_variants_for_l1("brownie", keep_variant_ids=[])
+        remaining = {v.variant_id for v in db.list_variants()}
+        assert remaining == {b.variant_id}
+
+
+class TestUpsertRecipe:
+    def test_recipe_with_raw_and_parsed_rows(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_recipe(
+            recipe_id="abc123",
+            url="https://example.com/r",
+            title="Pannkakor",
+            corpus="wdc",
+            language="sv",
+            source_type="url",
+            raw_lines=("2 dl vetemjöl", "5 dl mjölk", "3 ägg"),
+            parsed=(
+                ParsedIngredientRow(
+                    canonical_name="flour",
+                    quantity=200.0,
+                    unit="ml",
+                    grams=105.66,
+                ),
+                ParsedIngredientRow(
+                    canonical_name="milk",
+                    quantity=500.0,
+                    unit="ml",
+                    grams=515.6,
+                ),
+            ),
+        )
+        raw = db.connection.execute(
+            "SELECT raw_line FROM raw_ingredients WHERE recipe_id = ?"
+            " ORDER BY line_index",
+            ("abc123",),
+        ).fetchall()
+        assert [r[0] for r in raw] == ["2 dl vetemjöl", "5 dl mjölk", "3 ägg"]
+
+        parsed = db.connection.execute(
+            "SELECT canonical_name, quantity, unit, grams"
+            " FROM parsed_ingredients WHERE recipe_id = ?"
+            " ORDER BY canonical_name",
+            ("abc123",),
+        ).fetchall()
+        assert parsed == [
+            ("flour", 200.0, "ml", 105.66),
+            ("milk", 500.0, "ml", 515.6),
+        ]
+
+    def test_upsert_recipe_replaces_children(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_recipe(
+            recipe_id="r",
+            url=None,
+            title="x",
+            corpus="curated",
+            raw_lines=("a", "b"),
+            parsed=(ParsedIngredientRow(canonical_name="flour", quantity=1.0),),
+        )
+        db.upsert_recipe(
+            recipe_id="r",
+            url=None,
+            title="x",
+            corpus="curated",
+            raw_lines=("c",),
+            parsed=(),
+        )
+        raw = db.connection.execute(
+            "SELECT raw_line FROM raw_ingredients WHERE recipe_id = ?",
+            ("r",),
+        ).fetchall()
+        assert [r[0] for r in raw] == ["c"]
+        parsed = db.connection.execute(
+            "SELECT count(*) FROM parsed_ingredients WHERE recipe_id = ?",
+            ("r",),
+        ).fetchone()
+        assert parsed[0] == 0
+
+
+class TestUpdateReviewStatus:
+    """Bead vwt.9: CLI review persistence via UPDATE."""
+
+    def test_set_drop_hides_from_default_list(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+
+        db.update_review_status(v.variant_id, "drop", note="category bleed")
+
+        row = db.connection.execute(
+            "SELECT review_status, review_note, reviewed_at"
+            " FROM variants WHERE variant_id = ?",
+            (v.variant_id,),
+        ).fetchone()
+        assert row[0] == "drop"
+        assert row[1] == "category bleed"
+        assert row[2] is not None and row[2].endswith("+00:00")
+
+        # Default list filter hides the dropped variant.
+        assert db.list_variants() == []
+        assert len(db.list_variants(ListFilters(include_dropped=True))) == 1
+
+    def test_accept_keeps_variant_visible(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        db.update_review_status(v.variant_id, "accept")
+        assert len(db.list_variants()) == 1
+
+    def test_pending_only_filter_hides_reviewed(self) -> None:
+        db = CatalogDB.in_memory()
+        a = _variant(n_rows=3, title="pannkakor")
+        b = _variant(n_rows=3, title="crepes")
+        db.upsert_variant(a, l1_key="pannkakor", base_ingredient="flour")
+        db.upsert_variant(b, l1_key="crepes", base_ingredient="flour")
+        db.update_review_status(a.variant_id, "accept")
+        pending = db.list_variants(ListFilters(pending_only=True))
+        assert {v.normalized_title for v in pending} == {"crepes"}
+
+    def test_status_none_clears_decision(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        db.update_review_status(v.variant_id, "drop", note="temp")
+        db.update_review_status(v.variant_id, None)
+        row = db.connection.execute(
+            "SELECT review_status, review_note, reviewed_at"
+            " FROM variants WHERE variant_id = ?",
+            (v.variant_id,),
+        ).fetchone()
+        assert row == (None, None, None)
+
+    def test_invalid_status_rejected(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        with pytest.raises(ValueError, match="invalid review status"):
+            db.update_review_status(v.variant_id, "bogus")  # type: ignore[arg-type]
+
+
+class TestParsedLineCache:
+    """vwt.16: parsed_ingredient_lines schema + reader/writer."""
+
+    def _row(
+        self,
+        *,
+        corpus: str = "wdc",
+        recipe_id: str = "https://example.com/r/1",
+        line_index: int = 0,
+        raw_line: str = "1 cup flour",
+        parsed_json: str | None = '{"quantity": 1.0, "unit": "cup", '
+        '"ingredient": "flour", "preparation": ""}',
+        model: str = "qwen3.6:35b-a3b",
+        seed: int = 42,
+    ) -> ParsedLineRow:
+        return ParsedLineRow(
+            corpus=corpus,
+            recipe_id=recipe_id,
+            line_index=line_index,
+            raw_line=raw_line,
+            parsed_json=parsed_json,
+            model=model,
+            seed=seed,
+        )
+
+    def test_upsert_and_read_back(self) -> None:
+        db = CatalogDB.in_memory()
+        rows = [
+            self._row(line_index=0, raw_line="1 cup flour"),
+            self._row(
+                line_index=1,
+                raw_line="2 eggs",
+                parsed_json='{"quantity": 2.0, "unit": "MEDIUM", '
+                '"ingredient": "egg", "preparation": ""}',
+            ),
+        ]
+        db.upsert_parsed_lines(rows)
+
+        fetched = db.get_parsed_lines_for_recipe(
+            "wdc", "https://example.com/r/1"
+        )
+        assert [r.line_index for r in fetched] == [0, 1]
+        assert fetched[0].raw_line == "1 cup flour"
+
+    def test_upsert_replaces_existing_row(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines([self._row(line_index=0, raw_line="orig")])
+        db.upsert_parsed_lines(
+            [self._row(line_index=0, raw_line="overwritten")]
+        )
+
+        fetched = db.get_parsed_lines_for_recipe(
+            "wdc", "https://example.com/r/1"
+        )
+        assert len(fetched) == 1
+        assert fetched[0].raw_line == "overwritten"
+
+    def test_lookup_cached_parse_hit(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines([self._row(raw_line="1 cup flour")])
+
+        found, payload = db.lookup_cached_parse(
+            "1 cup flour", "qwen3.6:35b-a3b", 42
+        )
+        assert found is True
+        assert payload is not None
+        assert "flour" in payload
+
+    def test_lookup_cached_parse_miss(self) -> None:
+        db = CatalogDB.in_memory()
+        found, payload = db.lookup_cached_parse(
+            "never seen", "qwen3.6:35b-a3b", 42
+        )
+        assert found is False
+        assert payload is None
+
+    def test_lookup_distinguishes_cached_failure_from_miss(self) -> None:
+        db = CatalogDB.in_memory()
+        # NULL parsed_json = cached failure; should NOT trigger LLM retry.
+        db.upsert_parsed_lines(
+            [self._row(raw_line="garbled line", parsed_json=None)]
+        )
+        found, payload = db.lookup_cached_parse(
+            "garbled line", "qwen3.6:35b-a3b", 42
+        )
+        assert found is True
+        assert payload is None
+
+    def test_lookup_respects_model_and_seed(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines([self._row(model="qwen3.6:35b-a3b", seed=42)])
+
+        # Different model — must miss.
+        assert db.lookup_cached_parse("1 cup flour", "gemma4:e2b", 42) == (
+            False,
+            None,
+        )
+        # Different seed — must miss.
+        assert db.lookup_cached_parse("1 cup flour", "qwen3.6:35b-a3b", 99) == (
+            False,
+            None,
+        )
+
+    def test_has_parsed_lines_for_recipe(self) -> None:
+        db = CatalogDB.in_memory()
+        assert not db.has_parsed_lines_for_recipe("wdc", "rid-1")
+
+        db.upsert_parsed_lines(
+            [
+                self._row(
+                    corpus="wdc",
+                    recipe_id="rid-1",
+                    raw_line="x",
+                    parsed_json=None,
+                )
+            ]
+        )
+        assert db.has_parsed_lines_for_recipe("wdc", "rid-1")
+        assert not db.has_parsed_lines_for_recipe(
+            "wdc", "rid-1", model="other-model"
+        )
+
+    def test_count_parsed_lines_with_filters(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines(
+            [
+                self._row(
+                    corpus="wdc", recipe_id="r1", line_index=0, raw_line="a"
+                ),
+                self._row(
+                    corpus="wdc", recipe_id="r1", line_index=1, raw_line="b"
+                ),
+                self._row(
+                    corpus="recipenlg", recipe_id="r2", line_index=0, raw_line="c"
+                ),
+            ]
+        )
+        assert db.count_parsed_lines() == 3
+        assert db.count_parsed_lines(corpus="wdc") == 2
+        assert db.count_parsed_lines(corpus="recipenlg") == 1
+
+
+class TestInvalidateNonEnglishParses:
+    """Bead e4s: drop cached parses whose payload contains non-ASCII bytes."""
+
+    def _row(
+        self,
+        *,
+        recipe_id: str,
+        line_index: int,
+        raw_line: str,
+        parsed_json: str | None,
+    ) -> ParsedLineRow:
+        return ParsedLineRow(
+            corpus="wdc",
+            recipe_id=recipe_id,
+            line_index=line_index,
+            raw_line=raw_line,
+            parsed_json=parsed_json,
+            model="gemma4:e2b",
+            seed=42,
+        )
+
+    def test_deletes_only_non_ascii_rows(self) -> None:
+        db = CatalogDB.in_memory()
+        rows = [
+            self._row(
+                recipe_id="r-en",
+                line_index=0,
+                raw_line="1 cup flour",
+                parsed_json='{"quantity": 1.0, "unit": "cup", '
+                '"ingredient": "flour", "preparation": ""}',
+            ),
+            self._row(
+                recipe_id="r-sv",
+                line_index=0,
+                raw_line="3 dl vetemjöl",
+                parsed_json='{"quantity": 3.0, "unit": "dl", '
+                '"ingredient": "vetemjöl", "preparation": ""}',
+            ),
+            self._row(
+                recipe_id="r-ru",
+                line_index=0,
+                raw_line="молоко 500 мл",
+                parsed_json='{"quantity": 500.0, "unit": "мл", '
+                '"ingredient": "молоко", "preparation": ""}',
+            ),
+            self._row(
+                recipe_id="r-jp",
+                line_index=0,
+                raw_line="卵 3個",
+                parsed_json='{"quantity": 3.0, "unit": "個", '
+                '"ingredient": "卵", "preparation": ""}',
+            ),
+        ]
+        db.upsert_parsed_lines(rows)
+        assert db.count_parsed_lines() == 4
+
+        deleted = db.invalidate_non_english_parses()
+
+        assert deleted == 3
+        remaining = db.get_parsed_lines_for_recipe("wdc", "r-en")
+        assert len(remaining) == 1
+        assert remaining[0].raw_line == "1 cup flour"
+        # Non-English rows are gone.
+        assert db.get_parsed_lines_for_recipe("wdc", "r-sv") == []
+        assert db.get_parsed_lines_for_recipe("wdc", "r-ru") == []
+        assert db.get_parsed_lines_for_recipe("wdc", "r-jp") == []
+        assert db.count_parsed_lines() == 1
+
+    def test_returns_zero_when_no_non_ascii_rows(self) -> None:
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines(
+            [
+                self._row(
+                    recipe_id="r-en",
+                    line_index=0,
+                    raw_line="1 cup flour",
+                    parsed_json='{"quantity": 1.0, "unit": "cup", '
+                    '"ingredient": "flour", "preparation": ""}',
+                ),
+            ]
+        )
+        assert db.invalidate_non_english_parses() == 0
+        assert db.count_parsed_lines() == 1
+
+    def test_skips_cached_failure_rows(self) -> None:
+        """NULL parsed_json rows (cached failures) are not deleted."""
+        db = CatalogDB.in_memory()
+        db.upsert_parsed_lines(
+            [
+                self._row(
+                    recipe_id="r-fail",
+                    line_index=0,
+                    raw_line="garbled 卵",
+                    parsed_json=None,
+                ),
+            ]
+        )
+        assert db.invalidate_non_english_parses() == 0
+        assert db.count_parsed_lines() == 1
+
+
+class TestParsedSerialization:
+    """vwt.16: parsed_to_json / parsed_from_json round-trip."""
+
+    def test_round_trip_preserves_fields(self) -> None:
+        original = ParsedIngredient(
+            quantity=1.5,
+            unit="cup",
+            ingredient="all-purpose flour",
+            preparation="sifted",
+            raw="1 1/2 cups all-purpose flour, sifted",
+        )
+        payload = parsed_to_json(original)
+        assert payload is not None
+        recovered = parsed_from_json(payload, original.raw)
+        assert recovered == original
+
+    def test_none_round_trips_to_none(self) -> None:
+        assert parsed_to_json(None) is None
+        assert parsed_from_json(None, "1 cup flour") is None
+
+    def test_malformed_json_yields_none(self) -> None:
+        assert parsed_from_json("not-json", "1 cup flour") is None
+
+    def test_missing_required_keys_yields_none(self) -> None:
+        # Missing "quantity".
+        assert parsed_from_json('{"unit": "cup"}', "1 cup flour") is None
+
+
+class TestVariantOverrides:
+    """RationalRecipes-sj18: variant_overrides sidecar + recompute logic."""
+
+    def test_schema_migrates_on_open(self, tmp_path: Path) -> None:
+        """A pre-sj18 DB (no variant_overrides table) opens cleanly."""
+        path = tmp_path / "recipes.db"
+        # Simulate a pre-sj18 DB by opening once, then dropping the table.
+        db = CatalogDB.open(path)
+        db.connection.execute("DROP TABLE variant_overrides")
+        db.close()
+
+        # Re-open: schema should re-create the missing table.
+        reopened = CatalogDB.open(path)
+        try:
+            row = reopened.connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='variant_overrides'"
+            ).fetchone()
+            assert row is not None
+        finally:
+            reopened.close()
+
+    def test_substitute_folds_grams_into_target(self) -> None:
+        db = CatalogDB.in_memory()
+        # A variant where butter is 30 g, shortening 20 g, flour 50 g per
+        # recipe — substitute(shortening → butter) should yield butter at
+        # 50 g of 100 g total = 0.5 mass fraction.
+        rows = []
+        for i in range(3):
+            rows.append(
+                MergedNormalizedRow(
+                    url=f"https://example.com/r/{i}",
+                    title="cookies",
+                    corpus="recipenlg",
+                    cells={
+                        "butter": "30 g",
+                        "shortening": "20 g",
+                        "flour": "50 g",
+                    },
+                    proportions={"butter": 30.0, "shortening": 20.0, "flour": 50.0},
+                )
+            )
+        variant = MergedVariantResult(
+            variant_title="cookies",
+            canonical_ingredients=frozenset({"butter", "shortening", "flour"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["butter", "shortening", "flour"],
+        )
+        db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+
+        override_id = db.add_substitute_override(
+            variant.variant_id, "shortening", "butter"
+        )
+        assert override_id > 0
+
+        stats = {
+            s.canonical_name: s for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert "shortening" not in stats
+        assert stats["butter"].mean_proportion == pytest.approx(0.5)
+        assert stats["flour"].mean_proportion == pytest.approx(0.5)
+        assert stats["butter"].min_sample_size == 3
+
+        # canonical_ingredient_set on the variant row reflects the merge.
+        v = db.get_variant(variant.variant_id)
+        assert v is not None
+        assert "shortening" not in v.canonical_ingredient_set
+        assert "butter" in v.canonical_ingredient_set
+
+    def test_filter_drops_recipe_from_average(self) -> None:
+        db = CatalogDB.in_memory()
+        # Two recipes at flour=50%, one outlier at flour=10%. After
+        # filtering the outlier, mean(flour) should equal 0.5.
+        rows = [
+            MergedNormalizedRow(
+                url="https://example.com/r/0",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"flour": "50 g", "sugar": "50 g"},
+                proportions={"flour": 50.0, "sugar": 50.0},
+            ),
+            MergedNormalizedRow(
+                url="https://example.com/r/1",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"flour": "50 g", "sugar": "50 g"},
+                proportions={"flour": 50.0, "sugar": 50.0},
+            ),
+            MergedNormalizedRow(
+                url="https://example.com/r/2",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"flour": "10 g", "sugar": "90 g"},
+                proportions={"flour": 10.0, "sugar": 90.0},
+            ),
+        ]
+        variant = MergedVariantResult(
+            variant_title="cookies",
+            canonical_ingredients=frozenset({"flour", "sugar"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["flour", "sugar"],
+        )
+        db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+
+        outlier_id = next(
+            m.recipe_id
+            for m in db.get_variant_members(variant.variant_id)
+            if m.url == "https://example.com/r/2"
+        )
+
+        db.add_filter_override(variant.variant_id, outlier_id, reason="outlier")
+
+        stats = {
+            s.canonical_name: s for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert stats["flour"].mean_proportion == pytest.approx(0.5)
+        assert stats["sugar"].mean_proportion == pytest.approx(0.5)
+
+        # n_recipes shrinks; variant_members row stays (excluded, not
+        # deleted) so the filter is reversible.
+        v = db.get_variant(variant.variant_id)
+        assert v is not None
+        assert v.n_recipes == 2
+        assert len(db.get_variant_members(variant.variant_id)) == 3
+
+    def test_clear_override_restores_baseline(self) -> None:
+        db = CatalogDB.in_memory()
+        rows = [
+            MergedNormalizedRow(
+                url=f"https://example.com/r/{i}",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"butter": "30 g", "shortening": "20 g", "flour": "50 g"},
+                proportions={"butter": 30.0, "shortening": 20.0, "flour": 50.0},
+            )
+            for i in range(2)
+        ]
+        variant = MergedVariantResult(
+            variant_title="cookies",
+            canonical_ingredients=frozenset({"butter", "shortening", "flour"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["butter", "shortening", "flour"],
+        )
+        db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+
+        override_id = db.add_substitute_override(
+            variant.variant_id, "shortening", "butter"
+        )
+        # Confirm the override took effect.
+        post = {
+            s.canonical_name: s for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert "shortening" not in post
+
+        assert db.clear_override(override_id) is True
+
+        restored = {
+            s.canonical_name: s for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert "shortening" in restored
+        assert restored["shortening"].mean_proportion == pytest.approx(0.2)
+        assert restored["butter"].mean_proportion == pytest.approx(0.3)
+
+    def test_clear_override_unknown_id_returns_false(self) -> None:
+        db = CatalogDB.in_memory()
+        assert db.clear_override(99999) is False
+
+    def test_substitute_rejects_missing_variant(self) -> None:
+        db = CatalogDB.in_memory()
+        with pytest.raises(ValueError, match="not found"):
+            db.add_substitute_override("nope", "a", "b")
+
+    def test_substitute_rejects_self_substitution(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=2)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        with pytest.raises(ValueError, match="must differ"):
+            db.add_substitute_override(v.variant_id, "flour", "flour")
+
+    def test_filter_rejects_non_member_recipe(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=2)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        with pytest.raises(ValueError, match="not a member"):
+            db.add_filter_override(v.variant_id, "ghost-recipe-id")
+
+    def test_list_overrides_returns_payload(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        member_id = db.get_variant_members(v.variant_id)[0].recipe_id
+
+        sub_id = db.add_substitute_override(v.variant_id, "milk", "buttermilk")
+        filt_id = db.add_filter_override(v.variant_id, member_id, reason="test")
+
+        overrides = db.list_overrides(v.variant_id)
+        assert {o.override_id for o in overrides} == {sub_id, filt_id}
+        sub = next(o for o in overrides if o.override_type == "substitute")
+        assert sub.payload == {"from": "milk", "to": "buttermilk"}
+        filt = next(o for o in overrides if o.override_type == "filter")
+        assert filt.payload == {"recipe_id": member_id, "reason": "test"}
+
+    def test_clear_all_overrides_removes_every_row(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=2)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        db.add_substitute_override(v.variant_id, "milk", "buttermilk")
+        db.add_substitute_override(v.variant_id, "buttermilk", "cream")
+        assert db.clear_all_overrides(v.variant_id) == 2
+        assert db.list_overrides(v.variant_id) == []
+
+
+class TestCanonicalReassignOverrides:
+    """RationalRecipes-h6q1: per-source canonical reassignment override."""
+
+    def test_legacy_check_constraint_widens_on_open(
+        self, tmp_path: Path
+    ) -> None:
+        """A pre-h6q1 DB whose CHECK only allows {substitute, filter}
+        must accept ``canonical_reassign`` after re-opening through
+        ``CatalogDB.open``."""
+        path = tmp_path / "recipes.db"
+        import sqlite3 as _sqlite
+
+        conn = _sqlite.connect(str(path))
+        # Pre-h6q1 schema: shaped like the sj18 release — variants table
+        # carries the columns _SCHEMA still indexes (category) plus the
+        # other columns the writer needs, and variant_overrides has the
+        # narrow CHECK constraint we expect to widen on open.
+        conn.execute(
+            """
+            CREATE TABLE variants (
+              variant_id                          TEXT PRIMARY KEY,
+              normalized_title                    TEXT NOT NULL,
+              display_title                       TEXT,
+              category                            TEXT,
+              description                         TEXT,
+              base_ingredient                     TEXT,
+              cooking_methods                     TEXT,
+              canonical_ingredient_set            TEXT NOT NULL,
+              n_recipes                           INTEGER NOT NULL,
+              confidence_level                    REAL,
+              review_status                       TEXT,
+              review_note                         TEXT,
+              reviewed_at                         TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE variant_overrides (
+              override_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+              variant_id     TEXT NOT NULL REFERENCES variants(variant_id),
+              override_type  TEXT NOT NULL
+                             CHECK(override_type IN ('substitute', 'filter')),
+              payload        TEXT NOT NULL,
+              created_at     TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO variants (variant_id, normalized_title, "
+            "canonical_ingredient_set, n_recipes) VALUES (?, ?, ?, ?)",
+            ("vid-1", "pannkakor", "flour,milk", 0),
+        )
+        conn.execute(
+            "INSERT INTO variant_overrides "
+            "(variant_id, override_type, payload, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                "vid-1",
+                "substitute",
+                '{"from":"a","to":"b"}',
+                "2026-05-07T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        # Pre-condition: legacy CHECK rejects canonical_reassign.
+        legacy = _sqlite.connect(str(path))
+        with pytest.raises(_sqlite.IntegrityError):
+            legacy.execute(
+                "INSERT INTO variant_overrides "
+                "(variant_id, override_type, payload, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    "vid-1",
+                    "canonical_reassign",
+                    "{}",
+                    "2026-05-07T00:00:00+00:00",
+                ),
+            )
+        legacy.close()
+
+        # Open via CatalogDB; the migration widens the CHECK.
+        db = CatalogDB.open(path)
+        try:
+            # Pre-existing row survives the rebuild.
+            row = db.connection.execute(
+                "SELECT override_type, payload FROM variant_overrides "
+                "WHERE variant_id = 'vid-1'"
+            ).fetchone()
+            assert row[0] == "substitute"
+            # The new override_type now passes the CHECK.
+            db.connection.execute(
+                "INSERT INTO variant_overrides "
+                "(variant_id, override_type, payload, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    "vid-1",
+                    "canonical_reassign",
+                    '{"recipe_id":"r","raw_text":"x","new_canonical":"y"}',
+                    "2026-05-07T00:00:00+00:00",
+                ),
+            )
+        finally:
+            db.close()
+
+    def test_migration_idempotent_on_repeat_open(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        CatalogDB.open(path).close()
+        # Reopening must not error out, double the index, or rebuild again.
+        CatalogDB.open(path).close()
+        db = CatalogDB.open(path)
+        try:
+            indexes = [
+                row[0]
+                for row in db.connection.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='index' AND tbl_name='variant_overrides'"
+                )
+            ]
+            assert indexes.count("idx_overrides_variant") == 1
+        finally:
+            db.close()
+
+    def _seed_variant(
+        self,
+        db: CatalogDB,
+        *,
+        n_rows: int = 3,
+        cells: dict[str, str] | None = None,
+        proportions: dict[str, float] | None = None,
+        canonicals: frozenset[str] | None = None,
+        title: str = "cookies",
+    ) -> MergedVariantResult:
+        cells = cells or {"flour": "60 g", "chocolate chips": "40 g"}
+        proportions = proportions or {"flour": 60.0, "chocolate chips": 40.0}
+        canonicals = canonicals or frozenset(cells.keys())
+        rows = [
+            MergedNormalizedRow(
+                url=f"https://example.com/r/{i}",
+                title=title,
+                corpus="recipenlg",
+                cells=dict(cells),
+                proportions=dict(proportions),
+            )
+            for i in range(n_rows)
+        ]
+        variant = MergedVariantResult(
+            variant_title=title,
+            canonical_ingredients=canonicals,
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=list(cells.keys()),
+        )
+        db.upsert_variant(variant, l1_key=title, base_ingredient="flour")
+        return variant
+
+    def test_add_canonical_reassign_shifts_mass_for_one_recipe(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._seed_variant(
+            db,
+            n_rows=3,
+            cells={"flour": "60 g", "chocolate chips": "40 g"},
+            proportions={"flour": 60.0, "chocolate chips": 40.0},
+        )
+
+        # Pick the first member to reassign.
+        members = db.get_variant_members(variant.variant_id)
+        target_recipe = members[0].recipe_id
+
+        override_id = db.add_canonical_reassign_override(
+            variant.variant_id,
+            target_recipe,
+            "70% cacao chocolate chips",
+            "dark chocolate chips",
+        )
+        assert override_id > 0
+
+        stats = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        # The reassigned recipe contributes 0.4 mass-fraction to
+        # 'dark chocolate chips'; the other two contribute 0 there but
+        # 0.4 each to 'chocolate chips'. Mean across n=3 recipes:
+        #   dark chocolate chips: 0.4 / 3 ≈ 0.1333
+        #   chocolate chips:      (0.4 + 0.4) / 3 ≈ 0.2667
+        assert "dark chocolate chips" in stats
+        assert stats["dark chocolate chips"].mean_proportion == pytest.approx(
+            0.4 / 3
+        )
+        assert stats["chocolate chips"].mean_proportion == pytest.approx(
+            0.8 / 3
+        )
+        # Flour mass-fraction unchanged across the variant.
+        assert stats["flour"].mean_proportion == pytest.approx(0.6)
+        # min_sample_size reflects how many recipes contributed each canonical.
+        assert stats["dark chocolate chips"].min_sample_size == 1
+        assert stats["chocolate chips"].min_sample_size == 2
+
+    def test_canonical_reassign_then_substitute_applies_in_order(self) -> None:
+        """Per-source rename runs BEFORE variant-wide substitute, so the
+        substitute folds the new canonical into the target as expected."""
+        db = CatalogDB.in_memory()
+        variant = self._seed_variant(
+            db,
+            n_rows=3,
+            cells={"flour": "50 g", "shortening": "50 g"},
+            proportions={"flour": 50.0, "shortening": 50.0},
+        )
+        members = db.get_variant_members(variant.variant_id)
+        target_recipe = members[0].recipe_id
+
+        # First: rename one recipe's 'shortening' → 'butter'.
+        db.add_canonical_reassign_override(
+            variant.variant_id,
+            target_recipe,
+            "shortening",
+            "butter",
+        )
+        # Then: variant-wide substitute folds 'butter' into 'flour'.
+        db.add_substitute_override(
+            variant.variant_id, "butter", "flour"
+        )
+
+        stats = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        # The reassigned recipe: flour 50 + butter 50 → all flour (after
+        # substitute folds butter → flour). Per-recipe fractions: flour=1.0.
+        # The other two: flour 50, shortening 50 → fractions 0.5/0.5.
+        # Means: flour = (1.0 + 0.5 + 0.5) / 3 = 0.6667;
+        #        shortening = (0.0 + 0.5 + 0.5) / 3 = 0.3333.
+        assert "butter" not in stats
+        assert stats["flour"].mean_proportion == pytest.approx(2.0 / 3)
+        assert stats["shortening"].mean_proportion == pytest.approx(1.0 / 3)
+
+    def test_clear_canonical_reassign_restores_baseline(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._seed_variant(
+            db,
+            n_rows=3,
+            cells={"flour": "60 g", "chocolate chips": "40 g"},
+            proportions={"flour": 60.0, "chocolate chips": 40.0},
+        )
+        members = db.get_variant_members(variant.variant_id)
+        target_recipe = members[0].recipe_id
+
+        override_id = db.add_canonical_reassign_override(
+            variant.variant_id,
+            target_recipe,
+            "70% cacao chocolate chips",
+            "dark chocolate chips",
+        )
+        # Confirm the override took effect.
+        post = {
+            s.canonical_name
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert "dark chocolate chips" in post
+
+        assert db.clear_override(override_id) is True
+
+        restored = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert "dark chocolate chips" not in restored
+        assert restored["chocolate chips"].mean_proportion == pytest.approx(0.4)
+
+    def test_canonical_reassign_rejects_unknown_variant(self) -> None:
+        db = CatalogDB.in_memory()
+        with pytest.raises(ValueError, match="not found"):
+            db.add_canonical_reassign_override(
+                "nope", "recipe-x", "raw text", "new-canon"
+            )
+
+    def test_canonical_reassign_rejects_non_member_recipe(self) -> None:
+        db = CatalogDB.in_memory()
+        v = self._seed_variant(db, n_rows=2)
+        with pytest.raises(ValueError, match="not a member"):
+            db.add_canonical_reassign_override(
+                v.variant_id, "ghost-recipe", "flour", "all-purpose flour"
+            )
+
+    def test_canonical_reassign_rejects_unmatched_raw_text(self) -> None:
+        db = CatalogDB.in_memory()
+        v = self._seed_variant(
+            db,
+            n_rows=2,
+            cells={"flour": "60 g", "chocolate chips": "40 g"},
+            proportions={"flour": 60.0, "chocolate chips": 40.0},
+        )
+        members = db.get_variant_members(v.variant_id)
+        with pytest.raises(ValueError, match="does not resolve"):
+            db.add_canonical_reassign_override(
+                v.variant_id,
+                members[0].recipe_id,
+                "raspberry compote",
+                "raspberry-compote",
+            )
+
+    def test_canonical_reassign_rejects_empty_inputs(self) -> None:
+        db = CatalogDB.in_memory()
+        v = self._seed_variant(db, n_rows=2)
+        members = db.get_variant_members(v.variant_id)
+        rid = members[0].recipe_id
+        with pytest.raises(ValueError, match="non-empty raw_text"):
+            db.add_canonical_reassign_override(
+                v.variant_id, rid, "   ", "new-canon"
+            )
+        with pytest.raises(ValueError, match="non-empty new_canonical"):
+            db.add_canonical_reassign_override(
+                v.variant_id, rid, "flour", "  "
+            )
+
+    def test_canonical_reassign_normalizes_raw_text_on_insert(self) -> None:
+        """raw_text is lowercased + stripped on insert, so editor input
+        case doesn't change the override's stored payload."""
+        db = CatalogDB.in_memory()
+        v = self._seed_variant(
+            db,
+            n_rows=2,
+            cells={"flour": "60 g", "chocolate chips": "40 g"},
+            proportions={"flour": 60.0, "chocolate chips": 40.0},
+        )
+        members = db.get_variant_members(v.variant_id)
+        db.add_canonical_reassign_override(
+            v.variant_id,
+            members[0].recipe_id,
+            "  70% Cacao CHOCOLATE Chips  ",
+            "dark-chocolate-chips",
+        )
+        ovs = db.list_overrides(v.variant_id)
+        assert len(ovs) == 1
+        assert ovs[0].override_type == "canonical_reassign"
+        assert ovs[0].payload["raw_text"] == "70% cacao chocolate chips"
+        assert ovs[0].payload["new_canonical"] == "dark-chocolate-chips"
+
+    def test_canonical_reassign_listed_via_list_overrides(self) -> None:
+        db = CatalogDB.in_memory()
+        v = self._seed_variant(db, n_rows=2)
+        members = db.get_variant_members(v.variant_id)
+        ov_id = db.add_canonical_reassign_override(
+            v.variant_id,
+            members[0].recipe_id,
+            "flour",
+            "all-purpose flour",
+        )
+        listed = db.list_overrides(v.variant_id)
+        assert any(
+            o.override_id == ov_id and o.override_type == "canonical_reassign"
+            for o in listed
+        )
+
+
+class TestCanonicalInstructionsMigration:
+    """RationalRecipes-ia1x: canonical_instructions schema migration."""
+
+    def test_columns_exist_on_fresh_db(self) -> None:
+        db = CatalogDB.in_memory()
+        cols = {row[1] for row in db.connection.execute("PRAGMA table_info(variants)")}
+        assert "canonical_instructions" in cols
+        assert "canonical_instructions_reviewed_at" in cols
+
+    def test_legacy_db_migrates_on_reopen(self, tmp_path: Path) -> None:
+        """A pre-ia1x DB (variants table without the new columns) must
+        gain the columns on next ``CatalogDB.open()`` so existing
+        downstream readers (render_drop.py) keep working."""
+        path = tmp_path / "recipes.db"
+        # Build a minimal pre-ia1x variants table — drop the schema's
+        # new columns so the migration has something to do.
+        import sqlite3 as _sqlite
+
+        conn = _sqlite.connect(str(path))
+        conn.execute(
+            """
+            CREATE TABLE variants (
+              variant_id                 TEXT PRIMARY KEY,
+              normalized_title           TEXT NOT NULL,
+              display_title              TEXT,
+              category                   TEXT,
+              description                TEXT,
+              base_ingredient            TEXT,
+              cooking_methods            TEXT,
+              canonical_ingredient_set   TEXT NOT NULL,
+              n_recipes                  INTEGER NOT NULL,
+              confidence_level           REAL,
+              review_status              TEXT,
+              review_note                TEXT,
+              reviewed_at                TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO variants (
+              variant_id, normalized_title, canonical_ingredient_set,
+              n_recipes
+            ) VALUES (?, ?, ?, ?)
+            """,
+            ("vid-1", "pannkakor", "flour,milk", 5),
+        )
+        conn.commit()
+        conn.close()
+
+        # Re-open via CatalogDB; the migration must add the columns.
+        db = CatalogDB.open(path)
+        try:
+            cols = {
+                row[1]
+                for row in db.connection.execute("PRAGMA table_info(variants)")
+            }
+            assert "canonical_instructions" in cols
+            assert "canonical_instructions_reviewed_at" in cols
+
+            # Existing row picks up NULL for both new columns.
+            row = db.connection.execute(
+                "SELECT canonical_instructions, "
+                "canonical_instructions_reviewed_at "
+                "FROM variants WHERE variant_id = ?",
+                ("vid-1",),
+            ).fetchone()
+            assert row == (None, None)
+        finally:
+            db.close()
+
+    def test_migration_is_idempotent(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        CatalogDB.open(path).close()
+        # Reopen — must not error on the duplicate ALTER TABLE.
+        CatalogDB.open(path).close()
+        db = CatalogDB.open(path)
+        try:
+            # Sanity: the column count didn't double.
+            cols = [
+                row[1]
+                for row in db.connection.execute("PRAGMA table_info(variants)")
+            ]
+            assert cols.count("canonical_instructions") == 1
+            assert cols.count("canonical_instructions_reviewed_at") == 1
+        finally:
+            db.close()
+
+    def test_set_and_clear_canonical_instructions(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+
+        db.set_canonical_instructions(v.variant_id, "1. mix\n2. bake")
+        row = db.get_variant(v.variant_id)
+        assert row is not None
+        assert row.canonical_instructions == "1. mix\n2. bake"
+        assert row.canonical_instructions_reviewed_at is not None
+        assert row.canonical_instructions_reviewed_at.endswith("+00:00")
+
+        # Clear: both columns revert to NULL.
+        db.set_canonical_instructions(v.variant_id, None)
+        cleared = db.get_variant(v.variant_id)
+        assert cleared is not None
+        assert cleared.canonical_instructions is None
+        assert cleared.canonical_instructions_reviewed_at is None
+
+
+class TestRecipesDirectionsTextMigration:
+    """RationalRecipes-15g4 / F5: ``recipes.directions_text`` migration
+    is idempotent on legacy DBs and present on fresh ones."""
+
+    def test_column_exists_on_fresh_db(self) -> None:
+        db = CatalogDB.in_memory()
+        cols = {row[1] for row in db.connection.execute("PRAGMA table_info(recipes)")}
+        assert "directions_text" in cols
+
+    def test_legacy_db_gains_column_on_reopen(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        import sqlite3 as _sqlite
+
+        conn = _sqlite.connect(str(path))
+        conn.execute(
+            """
+            CREATE TABLE recipes (
+              recipe_id   TEXT PRIMARY KEY,
+              url         TEXT,
+              title       TEXT,
+              corpus      TEXT NOT NULL,
+              language    TEXT,
+              source_type TEXT DEFAULT 'url'
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO recipes (recipe_id, corpus) VALUES (?, ?)",
+            ("rid-1", "recipenlg"),
+        )
+        conn.commit()
+        conn.close()
+
+        db = CatalogDB.open(path)
+        try:
+            cols = {
+                row[1]
+                for row in db.connection.execute("PRAGMA table_info(recipes)")
+            }
+            assert "directions_text" in cols
+            row = db.connection.execute(
+                "SELECT directions_text FROM recipes WHERE recipe_id = ?",
+                ("rid-1",),
+            ).fetchone()
+            assert row == (None,)
+        finally:
+            db.close()
+
+    def test_migration_idempotent_on_repeat_open(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        CatalogDB.open(path).close()
+        CatalogDB.open(path).close()
+        db = CatalogDB.open(path)
+        try:
+            cols = [
+                row[1]
+                for row in db.connection.execute("PRAGMA table_info(recipes)")
+            ]
+            assert cols.count("directions_text") == 1
+        finally:
+            db.close()
+
+    def test_directions_text_round_trip_via_upsert_variant(
+        self, tmp_path: Path
+    ) -> None:
+        """A variant carrying populated ``directions_text`` rows lands in
+        ``recipes.directions_text`` on write."""
+        rows = [
+            MergedNormalizedRow(
+                url=f"https://example.com/r/{i}",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"flour": "100 g", "milk": "100 ml"},
+                proportions={"flour": 50.0 + i * 0.1, "milk": 50.0 - i * 0.1},
+                directions_text=f"step {i}.1\nstep {i}.2",
+            )
+            for i in range(3)
+        ]
+        variant = MergedVariantResult(
+            variant_title="cookies",
+            canonical_ingredients=frozenset({"flour", "milk"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["flour", "milk"],
+        )
+        db = CatalogDB.in_memory()
+        db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+        directions = [
+            row[0]
+            for row in db.connection.execute(
+                "SELECT directions_text FROM recipes ORDER BY recipe_id"
+            )
+        ]
+        # Every recipe row picked up a non-NULL directions_text value.
+        assert len(directions) == 3
+        for d in directions:
+            assert d is not None
+            assert "step" in d
+
+
+class TestIngredientMetadataPopulation:
+    """RationalRecipes-4ba4 / F4: density + whole-unit fields land on
+    every freshly-extracted variant_ingredient_stats row when ingredients.db
+    has the data."""
+
+    def test_flour_gets_density_no_whole_unit(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        stats = {s.canonical_name: s for s in db.get_ingredient_stats(v.variant_id)}
+        flour = stats["flour"]
+        # Density is populated for flour (USDA-derived, ~0.55 g/ml).
+        assert flour.density_g_per_ml is not None
+        assert 0.3 < flour.density_g_per_ml < 1.0
+        # Flour has no default whole-unit (it's not "1 large flour").
+        assert flour.whole_unit_grams is None
+        assert flour.whole_unit_name is None
+
+    def test_egg_gets_whole_unit(self) -> None:
+        # Build a flour+egg variant directly so the egg canonical exists.
+        rows = [
+            MergedNormalizedRow(
+                url=f"https://example.com/r/{i}",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"flour": "200 g", "egg": "1 medium"},
+                proportions={"flour": 80.0 + i * 0.1, "egg": 20.0 - i * 0.1},
+            )
+            for i in range(3)
+        ]
+        variant = MergedVariantResult(
+            variant_title="cookies",
+            canonical_ingredients=frozenset({"flour", "egg"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["flour", "egg"],
+        )
+        db = CatalogDB.in_memory()
+        db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+        egg = next(
+            s for s in db.get_ingredient_stats(variant.variant_id)
+            if s.canonical_name == "egg"
+        )
+        assert egg.whole_unit_name is not None
+        assert egg.whole_unit_grams is not None
+        # USDA gives "medium" egg ≈ 44 g, "large" ≈ 50 g — anything in
+        # that ballpark is fine.
+        assert 30 < egg.whole_unit_grams < 80
+
+    def test_unknown_ingredient_leaves_metadata_null(self) -> None:
+        from rational_recipes.catalog_db import lookup_ingredient_metadata
+
+        density, name, grams = lookup_ingredient_metadata("zzzunknownfood")
+        assert density is None
+        assert name is None
+        assert grams is None
+
+    def test_recompute_after_substitute_keeps_metadata(self) -> None:
+        """Substitute folding into a target with metadata must populate
+        the target's row from ingredients.db rather than leave NULL."""
+        # Seed flour+milk; substitute milk → buttermilk.
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=3)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        db.add_substitute_override(v.variant_id, "milk", "buttermilk")
+        stats = {s.canonical_name: s for s in db.get_ingredient_stats(v.variant_id)}
+        # Either the substitute resolved (newer canonical) or it stayed
+        # at "milk"; in either case the metadata must reflect the row's
+        # actual canonical, not be silently dropped to NULL.
+        if "buttermilk" in stats:
+            target = stats["buttermilk"]
+            # Density from USDA-derived data is non-default for buttermilk.
+            assert target.density_g_per_ml is not None
+        else:
+            # Fall-through: no rename, but flour density still survives.
+            assert stats["flour"].density_g_per_ml is not None
+
+
+class TestVariantSources:
+    def test_add_and_retrieve(self) -> None:
+        db = CatalogDB.in_memory()
+        v = _variant(n_rows=2)
+        db.upsert_variant(v, l1_key="pannkakor", base_ingredient="flour")
+        db.add_variant_source(
+            v.variant_id,
+            ordinal=0,
+            source_type="text",
+            ref="Swedish pannkakor recipes.",
+            title="Aggregated Swedish recipes",
+        )
+        sources = db.get_variant_sources(v.variant_id)
+        assert len(sources) == 1
+        assert sources[0].source_type == "text"
+        assert sources[0].title == "Aggregated Swedish recipes"

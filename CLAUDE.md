@@ -2,57 +2,128 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Overview
+## Orientation
 
-RationalRecipes is a Python CLI tool for statistical analysis and comparison of recipe ratios. It reads recipe data from CSV files (with mixed weight/volume units), normalizes everything to grams, and computes mean ratios with confidence intervals.
+**Read this first, then `docs/design/recipe-drops.md` for the current direction.**
 
-The codebase targets **Python 3.12+**. Source lives in `src/rational_recipes/` (standard src layout).
+RationalRecipes averages many independent recipes for the same dish into one "central-tendency" recipe with confidence intervals. As of the **2026-05-05 pivot**, the product is a series of **researched recipe drops** — one polished, averaged recipe at a time, distributed via Bluesky/Twitter and anchored on a permanent canonical home.
 
-## Git Workflow
+The methodology (averaging quantities across many independent source recipes from RecipeNLG and WDC, with CIs) is preserved. What changed is the unit of work: per-recipe instead of whole-corpus. The human is in the loop on every drop.
 
-The `main` branch is protected — direct pushes are blocked. All changes must be merged via pull request. Always create a feature branch and open a PR.
+**Current state (2026-05-07):** Branch `recipe-drops`. Catalog-shipping pipeline retired (commits `faaf44a` + `90e55a2`); per-recipe research workbench survives. `scrape_merged.py` now writes directly to `recipes.db` so `render_drop.py` produces complete drops on fresh extractions (`RationalRecipes-v61w`, `RationalRecipes-ehe7`). Open work tracked under the recipe-drops direction — run `bd ready` to see unblocked items. Strategic decisions resolved 2026-05-06: canonical home (`z9cz`) — static site for public artifacts (default host GitHub Pages); instruction-derivation approach (`r8hx`) — full LLM synthesis with human review. Maintainer-editor decision revised 2026-05-07 (`bl4y`): the PWA-as-editor plan was abandoned after y43 retired sql.js + recipes.db shipping (commit `f3ad7ab`); the editor moved to a localhost Streamlit app (`1t8x`, `scripts/editor.py`) and the PWA itself was retired (`n1q3`). Cadence policy (`5z8w`) deferred until the workflow is stable.
+
+**Active design doc:** `docs/design/recipe-drops.md`. The earlier `full-catalog.md` is superseded but preserved as historical context.
+
+## Scope guidance
+
+- **Primary deliverable is the next drop**, not a complete catalog. Each drop is a finished artifact with central-tendency masses, CIs, and a chosen instruction set.
+- **Public canonical home is a static site** (z9cz resolved 2026-05-06). Each drop's permanent record is markdown; default host GitHub Pages. Social posts (Bluesky/Twitter) link to it.
+- **Maintainer editor is a Streamlit app on localhost** (`scripts/editor.py`, RationalRecipes-1t8x — bl4y revised after the PWA's sql.js retirement in y43). It reads + writes `recipes.db` directly via `CatalogDB`. Planned operations: drop source recipes from a cluster (filter), combine ingredients with equivalence ratios (substitute), reassign canonical mappings for source ingredients (h6q1/xekj — pending). The previous "PWA-as-editor" plan was abandoned because the PWA's sql.js + recipes.db path was retired in y43; the PWA itself was retired in `RationalRecipes-n1q3`.
+- **Maintainer review has two surfaces.** CLI track: `scripts/review_variants.py` (extended per `RationalRecipes-sj18`). Editor track: `scripts/editor.py` (Streamlit). Both call into the same `CatalogDB` helpers — `add_filter_override` / `add_substitute_override` / `clear_override` — and share `_recompute_stats_for_variant`, so an override applied via either surface produces the same `variant_ingredient_stats`.
+- **Historical design docs**: `docs/design/full-catalog.md` (Phase 5 catalog framing, superseded), `docs/design/recipe-scraping.md` (Phase 1–4 rationale), `docs/design/phase-5e-investigation.md` (closed merge-gate investigation).
+
+## Architecture
+
+```
+corpora (RecipeNLG CSV, WDC top-100 zip)
+   ↓
+scripts/scrape_merged.py  (single-dish-family, on demand)
+   ↓
+recipes.db  (SQLite — sink for finalized variants + variant_ingredient_stats)
+   ↓
+scripts/review_variants.py  +  scripts/render_drop.py  (refine, fold, render)
+   ↓
+publication artifact (markdown + threadable text)
+   ↓
+canonical home + social drop
+```
+
+The `scrape/` submodule (`src/rational_recipes/scrape/`) handles loaders (RecipeNLG, WDC), grouping (L1 title / L2 ingredient-set / L3 cookingMethod), canonicalization, merging, deduplication, outlier scoring, and LLM calls via Ollama. The catalog DB writer (`catalog_db.py`) is the sink — `scrape_merged.py` invokes it on every run (per `RationalRecipes-v61w`), so variants land in `recipes.db` with `variant_ingredient_stats` populated and are immediately renderable via `scripts/render_drop.py`. CSV+manifest output is preserved as a debugging affordance (pass `--no-csv` to skip). Pass-1-style ingredient-line caching in the `parsed_ingredient_lines` table survives as an optimization for per-recipe runs.
+
+## Key directories
+
+| Path | Purpose |
+|---|---|
+| `src/rational_recipes/scrape/` | Per-recipe research workbench — loaders, grouping, canonicalization, merging, parsing (LLM + regex), outlier detection, ingredient fold (incl. salvaged `_fold_one_variant`), per-recipe pipeline (`pipeline_merged.py`) |
+| `src/rational_recipes/catalog_db.py` | SQLite writer + reader + schema. `category` column preserved as a no-op; public category filter retired with z9cz |
+| `src/rational_recipes/ingredient.py`, `units.py` | Ingredient + unit primitives |
+| `src/rational_recipes/discover.py`, `discover_cli.py` | `rr-discover` threshold diagnostic |
+| `src/rational_recipes/corpus_title_survey.py` | Title-frequency survey (feeds the recipe queue) |
+| `src/rational_recipes/data/ingredients.db` | USDA/FAO ingredient DB |
+| `src/rational_recipes/editor/` | Maintainer-editor helper layer (`operations.py`) — testable wrappers around `CatalogDB` consumed by `scripts/editor.py` and any future editor surface |
+| `scripts/scrape_merged.py` | Per-recipe extractor (the production path under the pivot). Writes `variants` + `variant_members` + `variant_ingredient_stats` directly to `recipes.db`; `--no-csv` skips the legacy CSV+manifest output. |
+| `scripts/import_merged_artifacts.py` | One-shot importer: rebuild variants from a directory's `manifest.json` + per-variant CSVs into `recipes.db`. Built for `RationalRecipes-ehe7` to retro-fit pre-v61w extractions; not needed for fresh runs. |
+| `scripts/render_drop.py` | Render one `recipes.db` variant as a publication-ready markdown drop. |
+| `scripts/review_variants.py` | CLI review tool against `recipes.db` |
+| `scripts/editor.py` | Streamlit maintainer editor (filter / substitute / clear-override) — `streamlit run scripts/editor.py -- --db output/catalog/recipes.db`. Optional dep: `pip install -e '.[editor]'` |
+| `scripts/explore_groups.py` | Quick L1/L2 grouping exploration (no LLM) |
+| `scripts/corpus_title_survey.py` | Title-frequency diagnostic CLI |
+| `scripts/build_db.py` | Rebuild `ingredients.db` from FDC/FAO sources |
+| `dataset/` | Raw corpora (gitignored) |
+| `output/catalog/recipes.db` | Per-recipe pipeline output (gitignored) |
+| `docs/design/recipe-drops.md` | **Live design doc** |
+| `docs/design/full-catalog.md` | Superseded Phase 5 catalog design |
+| `docs/design/recipe-scraping.md` | Historical Phase 1–4 design |
+
+## Git workflow
+
+The `main` branch is protected — direct pushes are blocked. All changes merge via PR. The current feature branch is `recipe-drops`; the prior `corpus-driven-design-update` branch is preserved as the historical record of the catalog-shipping work.
+
+The pivot's "merge gate" replacement is **acceptance for the pivot** (per `docs/design/recipe-drops.md`): one hand-cycle drop produced end-to-end (`RationalRecipes-ehe7`), first drop published. Strategic decisions resolved 2026-05-06 (`z9cz`, `r8hx`); cadence (`5z8w`) deferred.
 
 ## Commands
 
 ```bash
-# Run all tests
+# Python tests + linting
 python3 -m pytest
+python3 -m ruff check .
+python3 -m mypy src
 
-# Run a single test file
-python3 -m pytest tests/test_ratio.py
+# Maintainer editor (Streamlit, localhost) — RationalRecipes-1t8x
+pip install -e '.[editor]'
+streamlit run scripts/editor.py -- --db output/catalog/recipes.db
 
-# Run a single test method
-python3 -m pytest tests/test_ratio.py::TestRatio::test_precision
+# Rebuild the ingredients DB from raw sources (rare — committed file covers most work)
+scripts/download_data.sh
+python3 scripts/build_db.py
 
-# Run the stats tool (after pip install -e .)
-rr-stats sample_input/crepes/swedish_recipe_pannkisar.csv -w 1000 -m milk+water
+# Per-recipe extraction (single dish family) — writes to recipes.db by default
+python3 scripts/scrape_merged.py <title-substring>
 
-# Run the diff tool (after pip install -e .)
-rr-diff sample_input/crepes/french_recipe_crepes.csv sample_input/crepes/english_recipe_crepes.csv
+# Render a variant as a drop (after extraction)
+python3 scripts/render_drop.py <variant_id>
+
+# Import legacy CSV+manifest artifacts into recipes.db (one-shot, for ehe7)
+python3 scripts/import_merged_artifacts.py output/merged/<dir>/
+
+# Find ready work
+bd ready
 ```
 
-Dependencies are declared in `pyproject.toml`. Runtime: `numpy`. Dev: `ruff`, `mypy`, `pytest`, `pytest-cov`, `pre-commit`.
+Default Ollama endpoints (per `ollama-tuning-report.md`, 2026-05-07):
 
-## Architecture
+- **Parsing → `http://192.168.50.189:11444`** (parse-fast, NP=4, KEEP_ALIVE=5m). Default for `scrape_merged.py` and `eval_models.py` via `parse.OLLAMA_BASE_URL`.
+- **Synthesis → `http://192.168.50.189:11446`** (synth-deep, NP=1, KEEP_ALIVE=0). Default for `synthesize_instructions.py` via `SYNTHESIS_OLLAMA_BASE_URL`.
+- **Balanced (`:11445`, NP=2)** is dominated on both throughput and ctx ceiling — not recommended; do not point production traffic at it.
+- **Legacy `:11434`** is the auto-tuned NP=8 instance — wrong for both parsing (KV cache headroom) and synthesis (no long-ctx provisioning). Fallback / debug only.
 
-Two CLI entry points (`rr-stats` and `rr-diff`, defined in `pyproject.toml`) share a common pipeline:
+parse-fast's NP=4 only beats the alternatives under concurrent dispatch — parsing clients must run with concurrency ≥4 to see the speedup (already wired in via `RationalRecipes-e6rl`, commit `cab5c32`, `--parse-concurrency` flag, default 4).
 
-1. **CSV parsing** (`read.py`) — header row defines ingredients (looked up via `ingredient.Factory`), data rows are `value unit` pairs parsed via regex
-2. **Unit normalization** (`normalize.py`) — all measurements converted to grams using the unit system (`units.py`). Units self-register with `units.Factory`; ingredients self-register with `ingredient.Factory`
-3. **Column merging** (`merge.py`) — optional combining of ingredient columns (e.g., merge water into milk) with support for partial-percentage merges
-4. **Statistics** (`statistics.py`) — normalizes to 100g proportions, computes mean/stddev/confidence intervals using numpy. Supports zero-value filtering for sparse ingredients
-5. **Ratio formatting** (`ratio.py`) — `Ratio` wraps the baker's percentage values; `RatioElement` formats individual ingredients as grams/ml/whole-units. Supports per-ingredient weight restrictions
-6. **Diff** (`difference.py`) — percentage difference and percentage change between two ratios
+Model choice (resolved 2026-05-07 via 2n09 eval; full reasoning in `docs/design/recipe-drops.md` § LLM model choice):
 
-The `utils.py` module wires the pipeline together (`get_ratio_and_stats`) and handles CLI option parsing helpers. `columns.py` translates ingredient names to column indexes. `output.py` is a simple line-buffer formatter.
+- **Parsing default: `gemma4:e2b`** (unchanged). 2n09's quality winner is `mistral-small:24b` (only model to read parenthetical-quantity edge cases correctly) but at 2.3× single-call latency. Cache reuse means the cost is paid once per fresh extraction; opt in per-cluster with `scrape_merged.py --model mistral-small:24b` when needed. Excluded for parsing: `gemma4:26b`/`:31b` (broken or too big), `qwen3.6:35b-a3b`/`nemotron-3-nano:30b` (overflow), `devstral:24b`/`qwen3.5:27b` (too slow).
+- **Synthesis default: `mistral-small:24b`** at `num_ctx=32768` against synth-deep. Per 2n09 it's the only viable synthesis candidate on this host — gemma4 family produces empty output for instruction-following on Ollama 0.21+ROCm, qwen3.5:27b doesn't exit thinking mode, and the larger candidates overflow the 24 GiB ceiling. The synthesis prompt is tightened to prefer modal consensus over numerical averaging and to keep averaged percentages out of the generated steps (per `RationalRecipes-lhmp` + `pvmd`).
 
-### Unit/Ingredient registries
+Override with `--ollama-url` / `--base-url` and `--model` as needed.
 
-`units.py` uses a module-level Factory pattern: instances register themselves at import time via class-level `_UNITS` dict. Lookup is case-insensitive with synonym support. Adding a new unit only requires defining the instance at module scope.
+## Dependencies
 
-`ingredient.py` uses a SQLite-backed lazy lookup via `Factory.get_by_name()`. The database (`src/rational_recipes/data/ingredients.db`) is built from USDA FoodData Central SR Legacy (~8K foods with portion weights) and FAO/INFOODS Density Database v2.0 (~600 density values), plus supplementary data for ingredients not in either source. To rebuild the database:
+Python 3.12+. Runtime: `numpy`, stdlib `sqlite3`. LLM extraction: Ollama (model under reconsideration — see above). Dev: `ruff`, `mypy`, `pytest`, `pytest-cov`, `pre-commit`. Maintainer editor (optional, `[editor]` extra): `streamlit`. Declared in `pyproject.toml`.
 
-```bash
-scripts/download_data.sh   # fetch raw data to data/fdc/ and data/fao/
-python3 scripts/build_db.py  # build ingredients.db (requires openpyxl)
-```
+## Conventions
+
+- **Beads for task tracking** — see `AGENTS.md`. Do not use markdown TODOs, TaskCreate, or any other tracker.
+- **Commits per item**, pushed together, single PR per feature branch (see global multi-item-sessions preference).
+- **No Python docstring padding** — short single-line docstrings only. Multi-paragraph prose belongs in `docs/design/`.
+- **Tests colocated** under `tests/`, one file per module.
+- **Deterministic LLM calls** — `temperature=0, seed=42` in `scrape/parse.py::_ollama_generate`. Never remove these; Phase 2 proved non-determinism shifts `variant_id`s between runs.

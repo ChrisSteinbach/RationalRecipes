@@ -46,4 +46,35 @@ nosetests.xml
 
 # Bulk data downloads (USDA FDC, FAO/INFOODS)
 /data/
+
+# Recipe archive datasets (RecipeNLG, WDC)
+/dataset/
+/dataset.zip
+
+# Regenerable CSV outputs from scrape_to_csv.py / explore_groups.py
+/output/
+
+# Generated SQLite artifact from migrate_curated_to_db.py / scrape_catalog.py
+/artifacts/recipes.db
+
+# Regenerable cross-corpus title-frequency survey (vwt.1)
+/artifacts/corpus_title_survey.json
+
+# Regenerable diagnostic outputs from scripts/diagnose_component_structure.py (0x1z)
+/artifacts/0x1z_diagnostic*
+
+# RationalRecipes-2n09 LLM-eval outputs (regenerable from seed=42 + temperature=0)
+/artifacts/2n09_*
+
+# Run logs from benchmark and pipeline scripts (regenerable, investigation artifacts)
+/logs/
+
 .dispatch/
+
+# JetBrains IDE files
+.idea/
+
+# Playwright MCP session artifacts (accessibility snapshots, screenshots)
+.playwright-mcp/
+/rationalrecipes-*.png
+/.claude/
