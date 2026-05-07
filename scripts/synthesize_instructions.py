@@ -27,7 +27,10 @@ from __future__ import annotations
 import argparse
 import ast
 import csv
+import json
 import sys
+import urllib.error
+import urllib.request
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +41,7 @@ from rational_recipes.catalog_db import (
     VariantMemberRow,
     VariantRow,
 )
+from rational_recipes.scrape.parse import OLLAMA_BASE_URL
 
 # Match scrape/parse.py — same determinism requirement applies once
 # the Ollama call is wired up. Kept here as named constants so the
@@ -45,6 +49,12 @@ from rational_recipes.catalog_db import (
 # module.
 SYNTHESIS_TEMPERATURE = 0.0
 SYNTHESIS_SEED = 42
+
+# Synthesis is multi-paragraph free-text, not a structured JSON
+# extraction. Give the model enough headroom to produce a full
+# instruction set and a generous timeout for the larger candidates.
+DEFAULT_SYNTHESIS_NUM_PREDICT = 1024
+DEFAULT_SYNTHESIS_TIMEOUT = 300.0
 
 DEFAULT_DB_PATH = Path("output/catalog/recipes.db")
 DEFAULT_RECIPENLG_PATH = Path("dataset/full_dataset.csv")
@@ -219,21 +229,67 @@ def collect_source_instructions(
     return out
 
 
-def _llm_synthesize(_prompt: str) -> str:
-    """Placeholder for the eventual Ollama call.
+class SynthesisError(RuntimeError):
+    """Raised when the Ollama synthesis call fails or returns empty output."""
 
-    Guarded behind ``--dry-run`` for now — the synthesis-side model
-    choice is open in ``RationalRecipes-2n09`` and the remote Ollama
-    used by the project is offline at the time ia1x landed. When 2n09
-    resolves, replace the body with a call to
-    ``rational_recipes.scrape.parse._ollama_generate`` (or the
-    project's then-current synthesis equivalent), passing
-    ``temperature=SYNTHESIS_TEMPERATURE`` and ``seed=SYNTHESIS_SEED``
-    to keep determinism in line with the rest of the project.
+
+def _llm_synthesize(
+    prompt: str,
+    *,
+    model: str,
+    base_url: str = OLLAMA_BASE_URL,
+    timeout: float = DEFAULT_SYNTHESIS_TIMEOUT,
+    num_predict: int = DEFAULT_SYNTHESIS_NUM_PREDICT,
+) -> str:
+    """Call Ollama /api/generate for free-text synthesis.
+
+    Mirrors ``rational_recipes.scrape.parse._ollama_generate`` but drops
+    the ``format=json`` constraint (synthesis output is plain numbered
+    steps, not a JSON object) and bumps ``num_predict`` for multi-step
+    instruction text. Pins ``temperature=SYNTHESIS_TEMPERATURE`` and
+    ``seed=SYNTHESIS_SEED`` so reruns on the same model + same prompt
+    return identical text — same determinism guarantee as parsing.
     """
-    raise NotImplementedError(
-        "LLM synthesis blocked on RationalRecipes-2n09 model choice. "
-        "Re-run with --dry-run to assemble + inspect the prompt."
+    payload = json.dumps(
+        {
+            "model": model,
+            "system": SYSTEM_PROMPT,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "num_predict": num_predict,
+                "temperature": SYNTHESIS_TEMPERATURE,
+                "seed": SYNTHESIS_SEED,
+            },
+        }
+    ).encode()
+
+    req = urllib.request.Request(
+        f"{base_url}/api/generate",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = json.loads(resp.read())
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+        raise SynthesisError(
+            f"Ollama synthesis call failed for model {model!r}: {e}"
+        ) from e
+
+    # Some thinking models (e.g. qwen3.5) emit reasoning into a
+    # separate "thinking" field and leave "response" empty; prefer
+    # response when non-empty, otherwise fall back to thinking so the
+    # caller still gets the model's actual answer.
+    visible = (body.get("response") or "").strip()
+    if visible:
+        return visible
+    thinking = (body.get("thinking") or "").strip()
+    if thinking:
+        return thinking
+    raise SynthesisError(
+        f"Ollama returned empty response for model {model!r}"
     )
 
 
@@ -245,6 +301,8 @@ def synthesize(
     max_sources: int,
     dry_run: bool,
     save: bool,
+    model: str | None = None,
+    base_url: str = OLLAMA_BASE_URL,
 ) -> str:
     """Top-level orchestration: build the prompt and (when wired) call the LLM.
 
@@ -271,7 +329,12 @@ def synthesize(
         prompt = build_synthesis_prompt(variant, stats, sources)
         if dry_run:
             return prompt
-        result = _llm_synthesize(prompt)
+        if model is None:
+            raise SystemExit(
+                "synthesize() requires model=... when dry_run is False; "
+                "pass --model on the CLI."
+            )
+        result = _llm_synthesize(prompt, model=model, base_url=base_url)
         if save:
             db.set_canonical_instructions(variant_id, result)
         return result
@@ -308,6 +371,23 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help=(
+            "Ollama model name to use for synthesis (e.g. gemma4:31b, "
+            "qwen3.5:27b, mistral-small:24b). Required unless --dry-run. "
+            "The synthesis-side model winner is open in RationalRecipes-2n09 "
+            "— the eval driver passes this explicitly per candidate."
+        ),
+    )
+    parser.add_argument(
+        "--ollama-url",
+        type=str,
+        default=OLLAMA_BASE_URL,
+        help=f"Ollama base URL (default: {OLLAMA_BASE_URL})",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help=(
@@ -330,6 +410,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"recipes.db not found at {args.db}", file=sys.stderr)
         return 1
 
+    if not args.dry_run and args.model is None:
+        print(
+            "--model is required unless --dry-run is set",
+            file=sys.stderr,
+        )
+        return 1
+
     output = synthesize(
         args.variant_id,
         db_path=args.db,
@@ -337,6 +424,8 @@ def main(argv: list[str] | None = None) -> int:
         max_sources=args.max_sources,
         dry_run=args.dry_run,
         save=args.save,
+        model=args.model,
+        base_url=args.ollama_url,
     )
     sys.stdout.write(output)
     if not output.endswith("\n"):

@@ -170,7 +170,7 @@ class TestSynthesizeOrchestration:
         finally:
             db.close()
 
-    def test_non_dry_run_raises_until_2n09_resolves(
+    def test_non_dry_run_raises_when_ollama_unreachable(
         self, tmp_path: Path
     ) -> None:
         db_path = tmp_path / "recipes.db"
@@ -180,7 +180,9 @@ class TestSynthesizeOrchestration:
         finally:
             db.close()
 
-        with pytest.raises(NotImplementedError, match="2n09"):
+        # Localhost on a port nothing listens on — the urlopen call
+        # fails fast and the wrapper surfaces it as SynthesisError.
+        with pytest.raises(synthesize_instructions.SynthesisError):
             synthesize_instructions.synthesize(
                 vid,
                 db_path=db_path,
@@ -188,6 +190,27 @@ class TestSynthesizeOrchestration:
                 max_sources=10,
                 dry_run=False,
                 save=False,
+                model="gemma4:e2b",
+                base_url="http://127.0.0.1:1",
+            )
+
+    def test_non_dry_run_without_model_exits(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = _seed_variant(db)
+        finally:
+            db.close()
+
+        with pytest.raises(SystemExit, match="model"):
+            synthesize_instructions.synthesize(
+                vid,
+                db_path=db_path,
+                recipenlg_path=None,
+                max_sources=10,
+                dry_run=False,
+                save=False,
+                model=None,
             )
 
     def test_unknown_variant_id_exits(self, tmp_path: Path) -> None:
