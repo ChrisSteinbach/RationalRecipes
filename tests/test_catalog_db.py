@@ -1119,6 +1119,364 @@ class TestVariantOverrides:
         assert db.list_overrides(v.variant_id) == []
 
 
+class TestCanonicalReassignOverrides:
+    """RationalRecipes-h6q1: per-source canonical reassignment override."""
+
+    def test_legacy_check_constraint_widens_on_open(
+        self, tmp_path: Path
+    ) -> None:
+        """A pre-h6q1 DB whose CHECK only allows {substitute, filter}
+        must accept ``canonical_reassign`` after re-opening through
+        ``CatalogDB.open``."""
+        path = tmp_path / "recipes.db"
+        import sqlite3 as _sqlite
+
+        conn = _sqlite.connect(str(path))
+        # Pre-h6q1 schema: shaped like the sj18 release — variants table
+        # carries the columns _SCHEMA still indexes (category) plus the
+        # other columns the writer needs, and variant_overrides has the
+        # narrow CHECK constraint we expect to widen on open.
+        conn.execute(
+            """
+            CREATE TABLE variants (
+              variant_id                          TEXT PRIMARY KEY,
+              normalized_title                    TEXT NOT NULL,
+              display_title                       TEXT,
+              category                            TEXT,
+              description                         TEXT,
+              base_ingredient                     TEXT,
+              cooking_methods                     TEXT,
+              canonical_ingredient_set            TEXT NOT NULL,
+              n_recipes                           INTEGER NOT NULL,
+              confidence_level                    REAL,
+              review_status                       TEXT,
+              review_note                         TEXT,
+              reviewed_at                         TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE variant_overrides (
+              override_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+              variant_id     TEXT NOT NULL REFERENCES variants(variant_id),
+              override_type  TEXT NOT NULL
+                             CHECK(override_type IN ('substitute', 'filter')),
+              payload        TEXT NOT NULL,
+              created_at     TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO variants (variant_id, normalized_title, "
+            "canonical_ingredient_set, n_recipes) VALUES (?, ?, ?, ?)",
+            ("vid-1", "pannkakor", "flour,milk", 0),
+        )
+        conn.execute(
+            "INSERT INTO variant_overrides "
+            "(variant_id, override_type, payload, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                "vid-1",
+                "substitute",
+                '{"from":"a","to":"b"}',
+                "2026-05-07T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        # Pre-condition: legacy CHECK rejects canonical_reassign.
+        legacy = _sqlite.connect(str(path))
+        with pytest.raises(_sqlite.IntegrityError):
+            legacy.execute(
+                "INSERT INTO variant_overrides "
+                "(variant_id, override_type, payload, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    "vid-1",
+                    "canonical_reassign",
+                    "{}",
+                    "2026-05-07T00:00:00+00:00",
+                ),
+            )
+        legacy.close()
+
+        # Open via CatalogDB; the migration widens the CHECK.
+        db = CatalogDB.open(path)
+        try:
+            # Pre-existing row survives the rebuild.
+            row = db.connection.execute(
+                "SELECT override_type, payload FROM variant_overrides "
+                "WHERE variant_id = 'vid-1'"
+            ).fetchone()
+            assert row[0] == "substitute"
+            # The new override_type now passes the CHECK.
+            db.connection.execute(
+                "INSERT INTO variant_overrides "
+                "(variant_id, override_type, payload, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    "vid-1",
+                    "canonical_reassign",
+                    '{"recipe_id":"r","raw_text":"x","new_canonical":"y"}',
+                    "2026-05-07T00:00:00+00:00",
+                ),
+            )
+        finally:
+            db.close()
+
+    def test_migration_idempotent_on_repeat_open(self, tmp_path: Path) -> None:
+        path = tmp_path / "recipes.db"
+        CatalogDB.open(path).close()
+        # Reopening must not error out, double the index, or rebuild again.
+        CatalogDB.open(path).close()
+        db = CatalogDB.open(path)
+        try:
+            indexes = [
+                row[0]
+                for row in db.connection.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='index' AND tbl_name='variant_overrides'"
+                )
+            ]
+            assert indexes.count("idx_overrides_variant") == 1
+        finally:
+            db.close()
+
+    def _seed_variant(
+        self,
+        db: CatalogDB,
+        *,
+        n_rows: int = 3,
+        cells: dict[str, str] | None = None,
+        proportions: dict[str, float] | None = None,
+        canonicals: frozenset[str] | None = None,
+        title: str = "cookies",
+    ) -> MergedVariantResult:
+        cells = cells or {"flour": "60 g", "chocolate chips": "40 g"}
+        proportions = proportions or {"flour": 60.0, "chocolate chips": 40.0}
+        canonicals = canonicals or frozenset(cells.keys())
+        rows = [
+            MergedNormalizedRow(
+                url=f"https://example.com/r/{i}",
+                title=title,
+                corpus="recipenlg",
+                cells=dict(cells),
+                proportions=dict(proportions),
+            )
+            for i in range(n_rows)
+        ]
+        variant = MergedVariantResult(
+            variant_title=title,
+            canonical_ingredients=canonicals,
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=list(cells.keys()),
+        )
+        db.upsert_variant(variant, l1_key=title, base_ingredient="flour")
+        return variant
+
+    def test_add_canonical_reassign_shifts_mass_for_one_recipe(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._seed_variant(
+            db,
+            n_rows=3,
+            cells={"flour": "60 g", "chocolate chips": "40 g"},
+            proportions={"flour": 60.0, "chocolate chips": 40.0},
+        )
+
+        # Pick the first member to reassign.
+        members = db.get_variant_members(variant.variant_id)
+        target_recipe = members[0].recipe_id
+
+        override_id = db.add_canonical_reassign_override(
+            variant.variant_id,
+            target_recipe,
+            "70% cacao chocolate chips",
+            "dark chocolate chips",
+        )
+        assert override_id > 0
+
+        stats = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        # The reassigned recipe contributes 0.4 mass-fraction to
+        # 'dark chocolate chips'; the other two contribute 0 there but
+        # 0.4 each to 'chocolate chips'. Mean across n=3 recipes:
+        #   dark chocolate chips: 0.4 / 3 ≈ 0.1333
+        #   chocolate chips:      (0.4 + 0.4) / 3 ≈ 0.2667
+        assert "dark chocolate chips" in stats
+        assert stats["dark chocolate chips"].mean_proportion == pytest.approx(
+            0.4 / 3
+        )
+        assert stats["chocolate chips"].mean_proportion == pytest.approx(
+            0.8 / 3
+        )
+        # Flour mass-fraction unchanged across the variant.
+        assert stats["flour"].mean_proportion == pytest.approx(0.6)
+        # min_sample_size reflects how many recipes contributed each canonical.
+        assert stats["dark chocolate chips"].min_sample_size == 1
+        assert stats["chocolate chips"].min_sample_size == 2
+
+    def test_canonical_reassign_then_substitute_applies_in_order(self) -> None:
+        """Per-source rename runs BEFORE variant-wide substitute, so the
+        substitute folds the new canonical into the target as expected."""
+        db = CatalogDB.in_memory()
+        variant = self._seed_variant(
+            db,
+            n_rows=3,
+            cells={"flour": "50 g", "shortening": "50 g"},
+            proportions={"flour": 50.0, "shortening": 50.0},
+        )
+        members = db.get_variant_members(variant.variant_id)
+        target_recipe = members[0].recipe_id
+
+        # First: rename one recipe's 'shortening' → 'butter'.
+        db.add_canonical_reassign_override(
+            variant.variant_id,
+            target_recipe,
+            "shortening",
+            "butter",
+        )
+        # Then: variant-wide substitute folds 'butter' into 'flour'.
+        db.add_substitute_override(
+            variant.variant_id, "butter", "flour"
+        )
+
+        stats = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        # The reassigned recipe: flour 50 + butter 50 → all flour (after
+        # substitute folds butter → flour). Per-recipe fractions: flour=1.0.
+        # The other two: flour 50, shortening 50 → fractions 0.5/0.5.
+        # Means: flour = (1.0 + 0.5 + 0.5) / 3 = 0.6667;
+        #        shortening = (0.0 + 0.5 + 0.5) / 3 = 0.3333.
+        assert "butter" not in stats
+        assert stats["flour"].mean_proportion == pytest.approx(2.0 / 3)
+        assert stats["shortening"].mean_proportion == pytest.approx(1.0 / 3)
+
+    def test_clear_canonical_reassign_restores_baseline(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._seed_variant(
+            db,
+            n_rows=3,
+            cells={"flour": "60 g", "chocolate chips": "40 g"},
+            proportions={"flour": 60.0, "chocolate chips": 40.0},
+        )
+        members = db.get_variant_members(variant.variant_id)
+        target_recipe = members[0].recipe_id
+
+        override_id = db.add_canonical_reassign_override(
+            variant.variant_id,
+            target_recipe,
+            "70% cacao chocolate chips",
+            "dark chocolate chips",
+        )
+        # Confirm the override took effect.
+        post = {
+            s.canonical_name
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert "dark chocolate chips" in post
+
+        assert db.clear_override(override_id) is True
+
+        restored = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert "dark chocolate chips" not in restored
+        assert restored["chocolate chips"].mean_proportion == pytest.approx(0.4)
+
+    def test_canonical_reassign_rejects_unknown_variant(self) -> None:
+        db = CatalogDB.in_memory()
+        with pytest.raises(ValueError, match="not found"):
+            db.add_canonical_reassign_override(
+                "nope", "recipe-x", "raw text", "new-canon"
+            )
+
+    def test_canonical_reassign_rejects_non_member_recipe(self) -> None:
+        db = CatalogDB.in_memory()
+        v = self._seed_variant(db, n_rows=2)
+        with pytest.raises(ValueError, match="not a member"):
+            db.add_canonical_reassign_override(
+                v.variant_id, "ghost-recipe", "flour", "all-purpose flour"
+            )
+
+    def test_canonical_reassign_rejects_unmatched_raw_text(self) -> None:
+        db = CatalogDB.in_memory()
+        v = self._seed_variant(
+            db,
+            n_rows=2,
+            cells={"flour": "60 g", "chocolate chips": "40 g"},
+            proportions={"flour": 60.0, "chocolate chips": 40.0},
+        )
+        members = db.get_variant_members(v.variant_id)
+        with pytest.raises(ValueError, match="does not resolve"):
+            db.add_canonical_reassign_override(
+                v.variant_id,
+                members[0].recipe_id,
+                "raspberry compote",
+                "raspberry-compote",
+            )
+
+    def test_canonical_reassign_rejects_empty_inputs(self) -> None:
+        db = CatalogDB.in_memory()
+        v = self._seed_variant(db, n_rows=2)
+        members = db.get_variant_members(v.variant_id)
+        rid = members[0].recipe_id
+        with pytest.raises(ValueError, match="non-empty raw_text"):
+            db.add_canonical_reassign_override(
+                v.variant_id, rid, "   ", "new-canon"
+            )
+        with pytest.raises(ValueError, match="non-empty new_canonical"):
+            db.add_canonical_reassign_override(
+                v.variant_id, rid, "flour", "  "
+            )
+
+    def test_canonical_reassign_normalizes_raw_text_on_insert(self) -> None:
+        """raw_text is lowercased + stripped on insert, so editor input
+        case doesn't change the override's stored payload."""
+        db = CatalogDB.in_memory()
+        v = self._seed_variant(
+            db,
+            n_rows=2,
+            cells={"flour": "60 g", "chocolate chips": "40 g"},
+            proportions={"flour": 60.0, "chocolate chips": 40.0},
+        )
+        members = db.get_variant_members(v.variant_id)
+        db.add_canonical_reassign_override(
+            v.variant_id,
+            members[0].recipe_id,
+            "  70% Cacao CHOCOLATE Chips  ",
+            "dark-chocolate-chips",
+        )
+        ovs = db.list_overrides(v.variant_id)
+        assert len(ovs) == 1
+        assert ovs[0].override_type == "canonical_reassign"
+        assert ovs[0].payload["raw_text"] == "70% cacao chocolate chips"
+        assert ovs[0].payload["new_canonical"] == "dark-chocolate-chips"
+
+    def test_canonical_reassign_listed_via_list_overrides(self) -> None:
+        db = CatalogDB.in_memory()
+        v = self._seed_variant(db, n_rows=2)
+        members = db.get_variant_members(v.variant_id)
+        ov_id = db.add_canonical_reassign_override(
+            v.variant_id,
+            members[0].recipe_id,
+            "flour",
+            "all-purpose flour",
+        )
+        listed = db.list_overrides(v.variant_id)
+        assert any(
+            o.override_id == ov_id and o.override_type == "canonical_reassign"
+            for o in listed
+        )
+
+
 class TestCanonicalInstructionsMigration:
     """RationalRecipes-ia1x: canonical_instructions schema migration."""
 

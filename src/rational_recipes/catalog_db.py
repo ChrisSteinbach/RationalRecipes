@@ -171,21 +171,24 @@ _SCHEMA: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_parsed_lines_text "
     "ON parsed_ingredient_lines(raw_line, model, seed)",
-    # sj18 sidecar: per-variant editorial overrides. Two override kinds —
-    # ``substitute`` folds canonical X into Y for the variant; ``filter``
-    # excludes one source recipe from the average. Stored as JSON payload
-    # so the schema doesn't grow per new override type. Insertion + delete
-    # both trigger a stats recompute that overwrites
-    # ``variant_ingredient_stats`` from ``variant_members`` +
-    # ``parsed_ingredients`` with the active override set applied. The
-    # underlying ``variant_members`` rows are never deleted, so any
-    # filter/substitute is reversible by clearing the override.
+    # sj18 sidecar: per-variant editorial overrides. Three override kinds —
+    # ``substitute`` folds canonical X into Y for the whole variant;
+    # ``filter`` excludes one source recipe from the average; and (h6q1)
+    # ``canonical_reassign`` rewrites the canonical for a single source's
+    # raw ingredient line. Stored as JSON payload so the schema doesn't
+    # grow per new override type. Insertion + delete both trigger a stats
+    # recompute that overwrites ``variant_ingredient_stats`` from
+    # ``variant_members`` + ``parsed_ingredients`` with the active
+    # override set applied. The underlying ``variant_members`` and
+    # ``parsed_ingredients`` rows are never mutated, so any override is
+    # reversible by clearing it.
     """
     CREATE TABLE IF NOT EXISTS variant_overrides (
       override_id    INTEGER PRIMARY KEY AUTOINCREMENT,
       variant_id     TEXT NOT NULL REFERENCES variants(variant_id),
       override_type  TEXT NOT NULL
-                     CHECK(override_type IN ('substitute', 'filter')),
+                     CHECK(override_type IN
+                           ('substitute', 'filter', 'canonical_reassign')),
       payload        TEXT NOT NULL,
       created_at     TEXT NOT NULL
     )
@@ -254,8 +257,10 @@ class VariantSourceRow:
     ref: str
 
 
-OverrideType = Literal["substitute", "filter"]
-_VALID_OVERRIDE_TYPES: frozenset[str] = frozenset({"substitute", "filter"})
+OverrideType = Literal["substitute", "filter", "canonical_reassign"]
+_VALID_OVERRIDE_TYPES: frozenset[str] = frozenset(
+    {"substitute", "filter", "canonical_reassign"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,6 +346,7 @@ class CatalogDB:
             for stmt in _SCHEMA:
                 self._conn.execute(stmt)
             self._migrate_variants_columns()
+            self._migrate_variant_overrides_check_constraint()
 
     def _migrate_variants_columns(self) -> None:
         """Add columns to ``variants`` that pre-existing DBs are missing.
@@ -367,6 +373,57 @@ class CatalogDB:
                 self._conn.execute(
                     f"ALTER TABLE variants ADD COLUMN {column} {sqltype}"
                 )
+
+    def _migrate_variant_overrides_check_constraint(self) -> None:
+        """Widen ``variant_overrides.override_type`` CHECK to allow h6q1 type.
+
+        Pre-h6q1 DBs were created with
+        ``CHECK(override_type IN ('substitute', 'filter'))``; SQLite has
+        no in-place ALTER for CHECK constraints, so we detect the old
+        constraint via ``sqlite_master.sql`` and rebuild the table when
+        ``'canonical_reassign'`` isn't in the stored DDL. Idempotent —
+        a no-op once the new constraint is in place.
+        """
+        row = self._conn.execute(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type='table' AND name='variant_overrides'"
+        ).fetchone()
+        if row is None or not row[0]:
+            return
+        if "canonical_reassign" in row[0]:
+            return
+        # Rebuild dance: copy rows into a new table with the wider CHECK,
+        # drop the old, rename. The caller's transaction wraps this so a
+        # crash mid-rebuild rolls back cleanly.
+        self._conn.execute(
+            """
+            CREATE TABLE variant_overrides_new (
+              override_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+              variant_id     TEXT NOT NULL REFERENCES variants(variant_id),
+              override_type  TEXT NOT NULL
+                             CHECK(override_type IN
+                                   ('substitute', 'filter',
+                                    'canonical_reassign')),
+              payload        TEXT NOT NULL,
+              created_at     TEXT NOT NULL
+            )
+            """
+        )
+        self._conn.execute(
+            "INSERT INTO variant_overrides_new "
+            "(override_id, variant_id, override_type, payload, created_at) "
+            "SELECT override_id, variant_id, override_type, payload, "
+            "created_at FROM variant_overrides"
+        )
+        self._conn.execute("DROP TABLE variant_overrides")
+        self._conn.execute(
+            "ALTER TABLE variant_overrides_new RENAME TO variant_overrides"
+        )
+        # DROP TABLE removed the index; recreate it.
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_overrides_variant "
+            "ON variant_overrides(variant_id)"
+        )
 
     # --- Writer ---
 
@@ -691,6 +748,75 @@ class CatalogDB:
         self._recompute_stats_for_variant(variant_id)
         return override_id
 
+    def add_canonical_reassign_override(
+        self,
+        variant_id: str,
+        recipe_id: str,
+        raw_text: str,
+        new_canonical: str,
+    ) -> int:
+        """Reassign a single source's raw line onto ``new_canonical`` (h6q1).
+
+        Per-source counterpart to ``add_substitute_override``: the rename
+        applies only when iterating ``recipe_id`` at recompute time, not
+        the whole variant. The ``raw_text`` is normalized (lowercased +
+        stripped) on insert and used at recompute time as a substring
+        handle to identify which canonical in the recipe's
+        ``parsed_ingredients`` rows owns this raw line — longest
+        whole-word match wins, mirroring the 4rgy provenance fallback.
+
+        Validation: variant exists, recipe is a member of the variant,
+        and the normalized ``raw_text`` resolves to at least one of that
+        recipe's parsed-ingredient canonicals (else the override would be
+        silently inert).
+        """
+        normalized = raw_text.strip().lower()
+        new_canonical = new_canonical.strip()
+        if not normalized:
+            raise ValueError("canonical_reassign requires non-empty raw_text")
+        if not new_canonical:
+            raise ValueError(
+                "canonical_reassign requires non-empty new_canonical"
+            )
+        if self.get_variant(variant_id) is None:
+            raise ValueError(f"variant_id {variant_id!r} not found")
+        is_member = self._conn.execute(
+            "SELECT 1 FROM variant_members "
+            "WHERE variant_id = ? AND recipe_id = ?",
+            (variant_id, recipe_id),
+        ).fetchone()
+        if is_member is None:
+            raise ValueError(
+                f"recipe_id {recipe_id!r} is not a member of "
+                f"variant {variant_id!r}"
+            )
+        canonicals = [
+            r[0]
+            for r in self._conn.execute(
+                "SELECT canonical_name FROM parsed_ingredients "
+                "WHERE recipe_id = ?",
+                (recipe_id,),
+            ).fetchall()
+        ]
+        if _resolve_reassign_target(normalized, canonicals) is None:
+            raise ValueError(
+                f"raw_text {raw_text!r} does not resolve to any canonical "
+                f"in parsed_ingredients for recipe {recipe_id!r}"
+            )
+        payload = json.dumps(
+            {
+                "recipe_id": recipe_id,
+                "raw_text": normalized,
+                "new_canonical": new_canonical,
+            },
+            ensure_ascii=False,
+        )
+        override_id = self._insert_override(
+            variant_id, "canonical_reassign", payload
+        )
+        self._recompute_stats_for_variant(variant_id)
+        return override_id
+
     def add_filter_override(
         self,
         variant_id: str,
@@ -826,11 +952,21 @@ class CatalogDB:
         overrides = self.list_overrides(variant_id)
         substitutions: dict[str, str] = {}
         excluded_recipes: set[str] = set()
+        # h6q1: per-recipe canonical reassignments. Map recipe_id → list of
+        # (normalized_raw_text, new_canonical) pairs. Resolution to the
+        # actual from-canonical happens per-recipe below, after we read
+        # that recipe's parsed_ingredients rows.
+        reassigns_by_recipe: dict[str, list[tuple[str, str]]] = {}
         for ov in overrides:
             if ov.override_type == "substitute":
                 substitutions[ov.payload["from"]] = ov.payload["to"]
             elif ov.override_type == "filter":
                 excluded_recipes.add(ov.payload["recipe_id"])
+            elif ov.override_type == "canonical_reassign":
+                rid = ov.payload["recipe_id"]
+                reassigns_by_recipe.setdefault(rid, []).append(
+                    (ov.payload["raw_text"], ov.payload["new_canonical"])
+                )
 
         def resolve(name: str) -> str:
             seen: set[str] = set()
@@ -856,11 +992,24 @@ class CatalogDB:
                 " WHERE recipe_id = ?",
                 (rid,),
             ).fetchall()
+            # Build the per-recipe rename map from canonical_reassign
+            # overrides BEFORE iterating rows. Order matters: per-source
+            # rename → variant-wide substitute → sum. A reassignment can
+            # change which canonical the substitute path then folds.
+            rename_map: dict[str, str] = {}
+            recipe_canonicals = [name for name, _ in ing_rows]
+            for raw_text, new_canon in reassigns_by_recipe.get(rid, []):
+                from_canon = _resolve_reassign_target(
+                    raw_text, recipe_canonicals
+                )
+                if from_canon is not None:
+                    rename_map[from_canon] = new_canon
             grams: dict[str, float] = {}
             for name, qty in ing_rows:
                 if qty is None or qty <= 0.0:
                     continue
-                resolved = resolve(name)
+                renamed = rename_map.get(name, name)
+                resolved = resolve(renamed)
                 grams[resolved] = grams.get(resolved, 0.0) + float(qty)
             total = sum(grams.values())
             if total <= 0.0:
@@ -1686,6 +1835,33 @@ def _compute_ingredient_stats(
         )
         for i, s in enumerate(stats)
     ]
+
+
+def _resolve_reassign_target(
+    raw_text: str, canonicals: Iterable[str]
+) -> str | None:
+    """Pick the canonical a normalized raw_text belongs to (h6q1).
+
+    Whole-word substring match against ``canonicals``; the longest
+    matching name wins so ``70% cacao chocolate chips`` lands on
+    ``chocolate chips`` rather than a single-word ``chips``. Returns
+    ``None`` when no canonical matches — caller treats that as
+    "override has nothing to do for this recipe". Mirrors
+    ``inspect_variant_provenance._substring_fallback`` so editors using
+    raw forms from the 4rgy display get matching recompute behavior.
+    """
+    if not raw_text:
+        return None
+    padded = " " + raw_text.strip().lower() + " "
+    best: tuple[int, str] | None = None
+    for name in canonicals:
+        if not name:
+            continue
+        needle = " " + name.lower() + " "
+        if needle in padded:
+            if best is None or len(name) > best[0]:
+                best = (len(name), name)
+    return best[1] if best else None
 
 
 def _recipe_id_for_row(row: MergedNormalizedRow) -> str:
