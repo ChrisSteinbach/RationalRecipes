@@ -1,4 +1,11 @@
-"""Smoke tests for the substitution-provenance spike (RationalRecipes-4rgy)."""
+"""Smoke tests for the substitution-provenance CLI (RationalRecipes-4rgy).
+
+The reusable domain logic lives in ``rational_recipes.provenance`` and is
+covered directly in ``tests/test_provenance.py``. This file is the
+narrow CLI smoke test for ``scripts/inspect_variant_provenance.py``,
+which re-exports the same names — extending xekj's refactor without
+breaking 4rgy's coverage of the script's text-rendering output.
+"""
 
 from __future__ import annotations
 
