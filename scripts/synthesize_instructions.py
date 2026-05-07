@@ -42,7 +42,14 @@ from rational_recipes.catalog_db import (
     VariantMemberRow,
     VariantRow,
 )
-from rational_recipes.scrape.parse import OLLAMA_BASE_URL
+
+# synth-deep endpoint (NP=1, KEEP_ALIVE=0) — provisioned for long-ctx
+# sequential synthesis per ollama-tuning-report.md (2026-05-07).
+# Distinct from rational_recipes.scrape.parse.OLLAMA_BASE_URL (parse-fast,
+# NP=4) because synthesis wants a single in-flight call with up to 32 k
+# context, not a batched pool. Override with `--base-url` for sweeps
+# across endpoints.
+SYNTHESIS_OLLAMA_BASE_URL = "http://192.168.50.189:11446"
 
 # Match scrape/parse.py — same determinism requirement applies once
 # the Ollama call is wired up. Kept here as named constants so the
@@ -238,7 +245,7 @@ def _llm_synthesize(
     prompt: str,
     *,
     model: str,
-    base_url: str = OLLAMA_BASE_URL,
+    base_url: str = SYNTHESIS_OLLAMA_BASE_URL,
     timeout: float = DEFAULT_SYNTHESIS_TIMEOUT,
     num_predict: int = DEFAULT_SYNTHESIS_NUM_PREDICT,
     num_ctx: int | None = None,
@@ -307,7 +314,7 @@ def synthesize(
     dry_run: bool,
     save: bool,
     model: str | None = None,
-    base_url: str = OLLAMA_BASE_URL,
+    base_url: str = SYNTHESIS_OLLAMA_BASE_URL,
     num_ctx: int | None = None,
 ) -> str:
     """Top-level orchestration: build the prompt and (when wired) call the LLM.
@@ -393,9 +400,12 @@ def main(argv: list[str] | None = None) -> int:
         "--ollama-url",
         "--base-url",
         type=str,
-        default=OLLAMA_BASE_URL,
+        default=SYNTHESIS_OLLAMA_BASE_URL,
         dest="ollama_url",
-        help=f"Ollama base URL (default: {OLLAMA_BASE_URL})",
+        help=(
+            f"Ollama base URL (default: {SYNTHESIS_OLLAMA_BASE_URL} — "
+            "synth-deep endpoint, NP=1, KEEP_ALIVE=0)"
+        ),
     )
     parser.add_argument(
         "--num-ctx",

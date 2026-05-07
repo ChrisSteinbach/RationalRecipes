@@ -15,7 +15,7 @@ exercising.
 
 Usage:
     python3 scripts/scrape_merged.py pannkak \\
-        --ollama-url http://192.168.50.189:11434 \\
+        --ollama-url http://192.168.50.189:11444 \\
         --model gemma4:e2b \\
         --l1-min=2 --l2-min=2 -v
 """
