@@ -79,9 +79,17 @@ SYSTEM_PROMPT = (
     "steps. Use the averaged ingredient quantities (mass percentages) "
     "as the authoritative quantities, not any single source's "
     "amounts. Where sources disagree on technique, prefer the most "
-    "common approach across the cluster. Do NOT invent ingredients "
-    "absent from the averaged profile. Output only the instruction "
-    "steps — no preamble, no commentary."
+    "common approach across the cluster. For non-additive cookable "
+    "parameters (oven temperature, bake time, mixing speed, doneness "
+    "cues), prefer the modal consensus — the most-frequent value "
+    "across the source recipes — rather than the numerical mean. If "
+    "two values are equally frequent, list them as alternatives "
+    "(e.g., \"Bake at 350°F or 375°F\"). Do NOT compute averages of "
+    "these values; mathematical averaging produces operationally "
+    "awkward results (e.g., \"362°F\" is no oven setting anyone "
+    "uses). Do NOT invent ingredients absent from the averaged "
+    "profile. Output only the instruction steps — no preamble, no "
+    "commentary."
 )
 
 

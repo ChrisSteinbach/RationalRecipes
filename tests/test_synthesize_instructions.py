@@ -232,6 +232,28 @@ class TestSynthesizeOrchestration:
             )
 
 
+class TestPromptShape:
+    """Lock in system-prompt invariants that downstream output depends on."""
+
+    def test_system_prompt_directs_modal_consensus_for_non_additive_params(
+        self,
+    ) -> None:
+        # Regression for RationalRecipes-lhmp: v1 mistral-small:24b output
+        # produced "362°F (average of 350 and 375)" because the prompt
+        # didn't tell the model to prefer modal consensus over the
+        # numerical mean for oven temp / bake time / etc.
+        prompt = synthesize_instructions.SYSTEM_PROMPT.lower()
+        assert (
+            "modal" in prompt
+            or "most-frequent" in prompt
+            or "most frequent" in prompt
+        )
+        # And a do-not directive against literal averaging of these
+        # parameters, so the model can't justify a mean by calling it
+        # "the consensus."
+        assert "average" in prompt or "averaging" in prompt or "mean" in prompt
+
+
 class TestDeterminismConstants:
     """Pin deterministic settings so the eventual Ollama call carries them."""
 
