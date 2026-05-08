@@ -201,6 +201,72 @@ def _render_canonical_breakdown(
     )
 
 
+def _build_reassign_options(
+    db: CatalogDB,
+    variant_id: str,
+    canonical: str,
+    canon_prov: Any,
+) -> list[tuple[str, str, str]]:
+    """One option per (contributing recipe, raw line) pair to retag.
+
+    Each option is a tuple of ``(recipe_id, raw_text_substring, label)``
+    where ``label`` is what the maintainer sees in the picker. recipe_id
+    and raw_text stay internal — the maintainer picks a source by its
+    title + corpus + literal raw line (when known), and the override
+    write uses the tuple values directly. Two source paths feed the
+    list, with corpus-line entries preferred when both are present:
+
+    - **RecipeNLG corpus pairs** from ``canon_prov.forms``: real raw
+      lines with literal text, one option per (recipe_id, raw_line).
+      These give the cleanest retag UX because the substring is the
+      literal source line.
+    - **parsed_ingredients fallback** via
+      ``list_canonical_contributors``: surfaces any contributing recipe
+      that didn't appear in the corpus join (typically non-RecipeNLG
+      sources). Substring defaults to the canonical name itself —
+      the longest-whole-word matcher in
+      ``add_canonical_reassign_override`` resolves it correctly.
+
+    Returns ``[]`` when nothing contributes — possible when an active
+    substitute has folded the canonical away.
+    """
+    contributors = ops.list_canonical_contributors(db, variant_id, canonical)
+    contributors_by_rid = {c.recipe_id: c for c in contributors}
+
+    options: list[tuple[str, str, str]] = []
+    seen_rids_with_corpus_line: set[str] = set()
+    if canon_prov is not None:
+        for form in canon_prov.forms:
+            for rid in form.recipe_ids:
+                seen_rids_with_corpus_line.add(rid)
+                contrib = contributors_by_rid.get(rid)
+                title = (contrib.title if contrib else None) or "untitled"
+                corpus = contrib.corpus if contrib else "?"
+                options.append(
+                    (
+                        rid,
+                        form.example_raw_line,
+                        f"{title} ({corpus}) — {form.example_raw_line!r}",
+                    )
+                )
+
+    for c in contributors:
+        if c.recipe_id in seen_rids_with_corpus_line:
+            continue
+        title = c.title or "untitled"
+        options.append(
+            (
+                c.recipe_id,
+                canonical,
+                (
+                    f"{title} ({c.corpus}) — substring match "
+                    f"{canonical!r}"
+                ),
+            )
+        )
+    return options
+
+
 def _render_reassign_form(
     st: Any,
     db: CatalogDB,
@@ -209,91 +275,55 @@ def _render_reassign_form(
     canon_prov: Any,
     member_recipe_ids: list[str],
 ) -> None:
-    """Per-source reassignment form scoped to one canonical."""
+    """Per-source reassignment form scoped to one canonical.
+
+    The maintainer picks a contributing source from a labeled selectbox
+    (title + corpus + raw line / canonical-substring fallback) and types
+    the new canonical name. recipe_id and raw_text stay internal — they
+    were exposed as editable text inputs in the early prototype, but the
+    only field the maintainer ever needs to set is ``new_canonical``,
+    so the database identifiers don't belong in the form.
+    """
     st.markdown("**Reassign one source's raw line → new canonical**")
-    # The override stores raw_text as a substring handle, so any contributing
-    # raw line under a given form is interchangeable; we surface one
-    # (recipe_id, raw_text) entry per recipe contribution and let the
-    # editor pick.
-    pairs: list[tuple[str, str]] = (
-        [
-            (rid, form.example_raw_line)
-            for form in canon_prov.forms
-            for rid in form.recipe_ids
-        ]
-        if canon_prov is not None
-        else []
-    )
     vid = detail.variant.variant_id
-    if pairs:
-        labels = [f"{rid}  ·  {raw!r}" for rid, raw in pairs]
-        idx = st.selectbox(
-            "Source line",
-            list(range(len(pairs))),
-            format_func=lambda i: labels[i],
-            key=f"reassign_pair::{vid}::{canonical}",
+    options = _build_reassign_options(db, vid, canonical, canon_prov)
+    if not options:
+        st.caption(
+            f"No contributing sources for **{canonical}** — the canonical "
+            "may have been folded by an active substitute override. Clear "
+            "any substitutes first if you want to reassign at the source "
+            "level."
         )
-        recipe_id_default, raw_text_default = pairs[idx]
-    else:
-        # Provenance is RecipeNLG-only; canonicals that live solely on
-        # WDC (or any other) sources have no raw-line cache to surface.
-        # Show the contributing recipes from ``parsed_ingredients`` so
-        # the maintainer at least knows where the canonical came from
-        # — they can paste a (recipe_id, raw_text) pair below by hand,
-        # or (more often) realise they wanted Substitute instead.
-        contributors = ops.list_canonical_contributors(db, vid, canonical)
-        if contributors:
-            st.caption(
-                f"No RecipeNLG raw forms for **{canonical}** — this "
-                "canonical only appears on non-RecipeNLG sources, and "
-                "we cache raw lines for RecipeNLG only. To merge two "
-                "canonicals across the WHOLE variant (the usual case), "
-                "use the **Substitute** panel above. To reassign one "
-                "source's line by hand, paste the recipe_id + a "
-                "substring of that line below; "
-                f"`{canonical}` itself usually works as the substring."
-            )
-            for c in contributors:
-                url = c.url or ""
-                st.caption(
-                    f"  · contributing source: `{c.recipe_id}` "
-                    f"({c.corpus}) — [{c.title or 'untitled'}]({url})"
-                )
-            recipe_id_default = contributors[0].recipe_id
-            raw_text_default = canonical
-        else:
-            st.caption(
-                "No raw forms available and no contributing recipes "
-                "found in parsed_ingredients — the canonical may have "
-                "been folded by an active substitute override. Clear "
-                "any substitutes first if you want to reassign at the "
-                "source level."
-            )
-            recipe_id_default, raw_text_default = "", ""
-    cols = st.columns([2, 3, 3, 1])
-    recipe_id = cols[0].text_input(
-        "recipe_id",
-        value=recipe_id_default,
-        key=f"reassign_rid::{vid}::{canonical}",
+        return
+
+    idx = st.selectbox(
+        "Contributing source recipe to retag",
+        list(range(len(options))),
+        format_func=lambda i: options[i][2],
+        key=f"reassign_pick::{vid}::{canonical}",
     )
-    raw_text = cols[1].text_input(
-        "raw_text (substring)",
-        value=raw_text_default,
-        key=f"reassign_raw::{vid}::{canonical}",
-    )
-    new_canonical = cols[2].text_input(
+    selected_rid, selected_raw_text, _ = options[idx]
+    cols = st.columns([4, 1])
+    new_canonical = cols[0].text_input(
         "new_canonical",
+        placeholder="e.g. flour",
         key=f"reassign_new::{vid}::{canonical}",
     )
-    if cols[3].button(
+    if cols[1].button(
         "Reassign",
         key=f"reassign_go::{vid}::{canonical}",
     ):
-        if recipe_id not in member_recipe_ids:
-            st.error(f"{recipe_id!r} is not a member of this variant.")
+        if not new_canonical.strip():
+            st.error("Enter a new canonical name.")
+            return
+        if selected_rid not in member_recipe_ids:
+            st.error(
+                f"Internal: selected recipe_id {selected_rid!r} is not "
+                "a member of this variant. Please report this."
+            )
             return
         result = ops.apply_canonical_reassign(
-            db, vid, recipe_id, raw_text, new_canonical
+            db, vid, selected_rid, selected_raw_text, new_canonical
         )
         if result.ok:
             st.success(result.message)
