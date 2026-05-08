@@ -129,8 +129,8 @@ _SCHEMA: tuple[str, ...] = (
       density_g_per_ml REAL,
       whole_unit_name  TEXT,
       whole_unit_grams REAL,
-      component        TEXT,
-      PRIMARY KEY (variant_id, canonical_name)
+      component        TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (variant_id, canonical_name, component)
     )
     """,
     """
@@ -466,31 +466,111 @@ class CatalogDB:
         )
 
     def _migrate_variant_ingredient_stats_columns(self) -> None:
-        """Add columns to ``variant_ingredient_stats`` missing in old DBs.
+        """Bring ``variant_ingredient_stats`` to the current schema.
 
-        kfp3: ``component`` (TEXT, nullable) for per-drop component
-        grouping (crumble/filling, layer cakes, etc.). Mirrors the
-        pattern used for ``variants`` and ``recipes`` — ``CREATE TABLE
-        IF NOT EXISTS`` is a no-op when the table exists, so columns
-        added later need explicit ``ALTER TABLE``. Nullable by design:
-        NULL means "ungrouped", which is the correct default for the
-        ~99% of variants that aren't multi-component.
+        kfp3: added ``component`` (TEXT, nullable). 1jbk: widened the PK
+        from ``(variant_id, canonical_name)`` to
+        ``(variant_id, canonical_name, component)`` and switched the
+        ``component`` column to ``NOT NULL DEFAULT ''`` so the composite
+        PK is sound (SQLite treats NULLs as distinct in PKs, which would
+        let duplicate rows sneak in).
+
+        Migration paths:
+
+        - Pre-kfp3 DB (no ``component`` column): rebuild via
+          CREATE-INSERT-DROP-RENAME with empty-string component.
+        - kfp3 DB (``component`` column exists, NULL allowed, narrow PK):
+          rebuild as above; NULLs become ``''`` on copy.
+        - Current DB: idempotent no-op once the new PK is in place.
         """
-        existing = {
-            row[1]
+        cols = {
+            row[1]: row
             for row in self._conn.execute(
                 "PRAGMA table_info(variant_ingredient_stats)"
             )
         }
-        migrations: tuple[tuple[str, str], ...] = (
-            ("component", "TEXT"),
+        component_col = cols.get("component")
+        # Inspect the stored DDL to detect the post-1jbk schema. SQLite's
+        # PRAGMA doesn't surface composite PK info reliably; reading the
+        # CREATE statement does. The narrow-PK form ends with
+        # ``PRIMARY KEY (variant_id, canonical_name)``; the wide form
+        # has ``component`` in the PK clause.
+        ddl_row = self._conn.execute(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type='table' AND name='variant_ingredient_stats'"
+        ).fetchone()
+        ddl = ddl_row[0] if ddl_row else ""
+
+        is_post_1jbk = (
+            component_col is not None
+            and component_col[3] == 1  # NOT NULL flag
+            and "canonical_name, component" in (ddl or "").replace("\n", " ")
         )
-        for column, sqltype in migrations:
-            if column not in existing:
-                self._conn.execute(
-                    "ALTER TABLE variant_ingredient_stats "
-                    f"ADD COLUMN {column} {sqltype}"
+        if is_post_1jbk:
+            return
+
+        # Rebuild dance.
+        self._conn.execute(
+            """
+            CREATE TABLE variant_ingredient_stats_new (
+              variant_id       TEXT NOT NULL REFERENCES variants(variant_id),
+              canonical_name   TEXT NOT NULL,
+              ordinal          INTEGER NOT NULL,
+              mean_proportion  REAL NOT NULL,
+              stddev           REAL,
+              ci_lower         REAL,
+              ci_upper         REAL,
+              ratio            REAL,
+              min_sample_size  INTEGER NOT NULL,
+              density_g_per_ml REAL,
+              whole_unit_name  TEXT,
+              whole_unit_grams REAL,
+              component        TEXT NOT NULL DEFAULT '',
+              PRIMARY KEY (variant_id, canonical_name, component)
+            )
+            """
+        )
+        if component_col is None:
+            # Pre-kfp3 row: no ``component`` column at all. Backfill ''.
+            self._conn.execute(
+                """
+                INSERT INTO variant_ingredient_stats_new (
+                  variant_id, canonical_name, ordinal, mean_proportion,
+                  stddev, ci_lower, ci_upper, ratio, min_sample_size,
+                  density_g_per_ml, whole_unit_name, whole_unit_grams,
+                  component
                 )
+                SELECT
+                  variant_id, canonical_name, ordinal, mean_proportion,
+                  stddev, ci_lower, ci_upper, ratio, min_sample_size,
+                  density_g_per_ml, whole_unit_name, whole_unit_grams,
+                  ''
+                FROM variant_ingredient_stats
+                """
+            )
+        else:
+            # kfp3-era row: ``component`` is nullable. Coalesce NULL → ''.
+            self._conn.execute(
+                """
+                INSERT INTO variant_ingredient_stats_new (
+                  variant_id, canonical_name, ordinal, mean_proportion,
+                  stddev, ci_lower, ci_upper, ratio, min_sample_size,
+                  density_g_per_ml, whole_unit_name, whole_unit_grams,
+                  component
+                )
+                SELECT
+                  variant_id, canonical_name, ordinal, mean_proportion,
+                  stddev, ci_lower, ci_upper, ratio, min_sample_size,
+                  density_g_per_ml, whole_unit_name, whole_unit_grams,
+                  COALESCE(component, '')
+                FROM variant_ingredient_stats
+                """
+            )
+        self._conn.execute("DROP TABLE variant_ingredient_stats")
+        self._conn.execute(
+            "ALTER TABLE variant_ingredient_stats_new "
+            "RENAME TO variant_ingredient_stats"
+        )
 
     # --- Writer ---
 
@@ -922,29 +1002,85 @@ class CatalogDB:
     ) -> int:
         """Label one canonical as belonging to ``component`` (kfp3).
 
-        Per-drop component grouping for multi-component dishes (apple
-        crumble's crumble/filling, layer cakes, pie shells). The label
-        is stored as a ``component_assign`` override; the recompute
-        carries it forward into ``variant_ingredient_stats.component``
-        without changing per-recipe mass-fraction math. Cross-component
-        proportion semantics are a presentation concern handled by the
-        renderer.
+        Convenience over :meth:`add_component_split_override` for the
+        common case where 100% of a canonical's mass goes to one
+        component. Equivalent to passing ``[(component, 1.0)]``. See
+        the split helper for the multi-component case (e.g. apple
+        crumble's flour: 90% crumble + 10% filling-roux).
+        """
+        return self.add_component_split_override(
+            variant_id, canonical_name, [(component, 1.0)]
+        )
 
-        Validation: variant exists, the canonical appears in the
-        variant's current stats (else the label would be inert), and
-        ``component`` is a non-empty string. Re-assigning the same
-        canonical to a different component requires clearing the
-        existing override first; we reject the conflicting insert here
-        so duplicate labels never silently accumulate.
+    def add_component_split_override(
+        self,
+        variant_id: str,
+        canonical_name: str,
+        splits: list[tuple[str, float]],
+    ) -> int:
+        """Split one canonical's mass across components by weight (1jbk).
+
+        Per-drop multi-component support: apple crumble's flour is
+        mostly in the topping but also acts as a roux thickener in the
+        filling. The maintainer says "0.9 crumble + 0.1 filling" and
+        the recompute generates two stat rows for ``flour`` — one per
+        component — with mass-fraction / stddev / CI scaled linearly
+        by the weight. ``min_sample_size`` is unchanged (the same
+        recipes contribute regardless of split).
+
+        Stored shape (canonical, used unconditionally so the recompute
+        only has to read one form): payload =
+        ``{canonical_name, components: [{component, weight}, ...]}``.
+        The kfp3 short form ``{canonical_name, component}`` is no
+        longer written but is still recognized by the recompute for
+        backward compatibility with legacy rows.
+
+        Validation: variant exists; canonical is in stats; weights are
+        positive, ≤ 1.0, and sum to 1.0 within 1e-6; component names
+        are non-empty and unique within the splits. Like the
+        single-component form, a duplicate component_assign for the
+        same canonical is rejected — clear the existing override first.
         """
         canonical_name = canonical_name.strip()
-        component = component.strip()
         if not canonical_name:
             raise ValueError(
                 "component_assign requires non-empty canonical_name"
             )
-        if not component:
-            raise ValueError("component_assign requires non-empty component")
+        if not splits:
+            raise ValueError(
+                "component_assign requires at least one (component, weight) split"
+            )
+        normalized: list[tuple[str, float]] = []
+        seen_components: set[str] = set()
+        for raw_component, raw_weight in splits:
+            comp = raw_component.strip() if isinstance(raw_component, str) else ""
+            if not comp:
+                raise ValueError(
+                    "component_assign requires non-empty component"
+                )
+            try:
+                weight = float(raw_weight)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"component_assign weight for {comp!r} must be numeric"
+                ) from exc
+            if not (0.0 < weight <= 1.0):
+                raise ValueError(
+                    f"component_assign weight for {comp!r} must be in (0, 1]; "
+                    f"got {weight!r}"
+                )
+            if comp in seen_components:
+                raise ValueError(
+                    f"component_assign component {comp!r} appears twice "
+                    f"in splits"
+                )
+            seen_components.add(comp)
+            normalized.append((comp, weight))
+        total_weight = sum(w for _, w in normalized)
+        if abs(total_weight - 1.0) > 1e-6:
+            raise ValueError(
+                f"component_assign weights must sum to 1.0; got {total_weight!r}"
+            )
         if self.get_variant(variant_id) is None:
             raise ValueError(f"variant_id {variant_id!r} not found")
         known = {
@@ -962,11 +1098,16 @@ class CatalogDB:
             ):
                 raise ValueError(
                     f"canonical_name {canonical_name!r} already has a "
-                    f"component_assign override (#{ov.override_id} → "
-                    f"{ov.payload.get('component')!r}); clear it first"
+                    f"component_assign override (#{ov.override_id}); "
+                    f"clear it first"
                 )
         payload = json.dumps(
-            {"canonical_name": canonical_name, "component": component},
+            {
+                "canonical_name": canonical_name,
+                "components": [
+                    {"component": c, "weight": w} for c, w in normalized
+                ],
+            },
             ensure_ascii=False,
         )
         override_id = self._insert_override(
@@ -1085,13 +1226,14 @@ class CatalogDB:
         # actual from-canonical happens per-recipe below, after we read
         # that recipe's parsed_ingredients rows.
         reassigns_by_recipe: dict[str, list[tuple[str, str]]] = {}
-        # kfp3: per-drop component labels. Map post-resolve canonical →
-        # component name. The label is purely a presentation hint; it
-        # doesn't change which canonicals get aggregated or what their
-        # mean_proportion is. Resolved-substitute keys so the labels
-        # follow folds (substitute(X→Y) means a label on X transfers to Y
-        # transparently).
-        component_by_canonical: dict[str, str] = {}
+        # kfp3 / 1jbk: per-drop component labels. Map post-resolve
+        # canonical → list of (component, weight) splits. The label is
+        # a presentation hint; weights split a canonical's mass across
+        # components without changing the per-recipe / per-canonical
+        # totals (sum of weights = 1.0). The kfp3 single-component
+        # payload shape ``{canonical_name, component}`` is normalized
+        # to ``[(component, 1.0)]`` so the recompute reads one form.
+        splits_by_canonical: dict[str, list[tuple[str, float]]] = {}
         for ov in overrides:
             if ov.override_type == "substitute":
                 substitutions[ov.payload["from"]] = ov.payload["to"]
@@ -1103,9 +1245,16 @@ class CatalogDB:
                     (ov.payload["raw_text"], ov.payload["new_canonical"])
                 )
             elif ov.override_type == "component_assign":
-                component_by_canonical[ov.payload["canonical_name"]] = (
-                    ov.payload["component"]
-                )
+                canonical = ov.payload["canonical_name"]
+                if "components" in ov.payload:
+                    splits = [
+                        (s["component"], float(s["weight"]))
+                        for s in ov.payload["components"]
+                    ]
+                else:
+                    # Legacy kfp3 shape: ``{canonical_name, component}``.
+                    splits = [(ov.payload["component"], 1.0)]
+                splits_by_canonical[canonical] = splits
 
         def resolve(name: str) -> str:
             seen: set[str] = set()
@@ -1165,22 +1314,35 @@ class CatalogDB:
         existing = {s.canonical_name: s for s in self.get_ingredient_stats(variant_id)}
         n = len(per_recipe_proportions)
 
-        # Project component labels through any active substitutions so a
-        # subsequent fold(X → Y) carries X's label onto Y. When two folded
-        # canonicals carry conflicting labels the one with the larger
-        # ordering key (lexicographic on the source canonical) wins —
-        # picked deterministically rather than first-write-wins so the
-        # recompute is order-stable across replays.
-        resolved_components: dict[str, str] = {}
-        for src in sorted(component_by_canonical):
-            resolved_components[resolve(src)] = component_by_canonical[src]
+        # Project component splits through any active substitutions so a
+        # subsequent fold(X → Y) carries X's splits onto Y. When two
+        # folded canonicals carry conflicting splits the one with the
+        # larger ordering key (lexicographic on the source canonical)
+        # wins — picked deterministically rather than first-write-wins
+        # so the recompute is order-stable across replays.
+        resolved_splits: dict[str, list[tuple[str, float]]] = {}
+        for src in sorted(splits_by_canonical):
+            resolved_splits[resolve(src)] = splits_by_canonical[src]
 
-        new_rows: list[tuple[Any, ...]] = []
         sorted_names = sorted(all_names)
-        next_ord = max(
-            (s.ordinal for s in existing.values()),
-            default=-1,
-        ) + 1
+
+        # Per-canonical aggregates computed once. 1jbk's multi-component
+        # splits are applied as a second pass below — we want per-canonical
+        # ratio anchored on the unsplit base mean so "for every 1 unit of
+        # flour, X units of butter" reads naturally even when flour is
+        # split across components.
+        @dataclass(slots=True)
+        class _CanonicalAgg:
+            mean: float
+            stddev: float | None
+            ci_lower: float | None
+            ci_upper: float | None
+            min_sample: int
+            density: float | None
+            whole_unit_name: str | None
+            whole_unit_grams: float | None
+
+        per_canonical: dict[str, _CanonicalAgg] = {}
         for name in sorted_names:
             values = [p.get(name, 0.0) for p in per_recipe_proportions]
             mean = sum(values) / n if n > 0 else 0.0
@@ -1200,13 +1362,10 @@ class CatalogDB:
             min_sample = sum(1 for v in values if v > 0.0)
             prior = existing.get(name)
             if prior is not None:
-                ordinal = prior.ordinal
                 density = prior.density_g_per_ml
                 whole_unit_name = prior.whole_unit_name
                 whole_unit_grams = prior.whole_unit_grams
             else:
-                ordinal = next_ord
-                next_ord += 1
                 # New canonical introduced by an override (h6q1 reassign or
                 # substitute folding into an unseen target). Resolve density
                 # / whole-unit fresh against ingredients.db so the rebuilt
@@ -1215,26 +1374,19 @@ class CatalogDB:
                 density, whole_unit_name, whole_unit_grams = (
                     lookup_ingredient_metadata(name)
                 )
-            new_rows.append(
-                (
-                    variant_id,
-                    name,
-                    ordinal,
-                    mean,
-                    stddev,
-                    ci_lower,
-                    ci_upper,
-                    None,  # ratio: recomputed below once base mean is known
-                    min_sample,
-                    density,
-                    whole_unit_name,
-                    whole_unit_grams,
-                    resolved_components.get(name),  # component (kfp3)
-                )
+            per_canonical[name] = _CanonicalAgg(
+                mean=mean,
+                stddev=stddev,
+                ci_lower=ci_lower,
+                ci_upper=ci_upper,
+                min_sample=min_sample,
+                density=density,
+                whole_unit_name=whole_unit_name,
+                whole_unit_grams=whole_unit_grams,
             )
 
-        # Rebuild ratio column relative to the base ingredient (per
-        # _compute_ingredient_stats: base = canonical[0] when not set).
+        # Pick the base for the ratio column from per-canonical aggregates
+        # (unsplit), so a split base ingredient still reads naturally.
         variant = self.get_variant(variant_id)
         base_ingredient = (
             variant.base_ingredient if variant is not None else None
@@ -1242,24 +1394,72 @@ class CatalogDB:
         if base_ingredient is None and sorted_names:
             base_ingredient = sorted_names[0]
         base_mean = 0.0
-        if base_ingredient is not None:
-            for row in new_rows:
-                if row[1] == base_ingredient:
-                    base_mean = row[3]
-                    break
-        if base_mean > 0.0:
-            new_rows = [
-                (
-                    *row[:7],
-                    row[3] / base_mean,
-                    *row[8:],
-                )
-                for row in new_rows
-            ]
+        if base_ingredient is not None and base_ingredient in per_canonical:
+            base_mean = per_canonical[base_ingredient].mean
 
-        # Sort by (ordinal, name) and reassign dense ordinals so consumers
-        # that ORDER BY ordinal see a contiguous sequence.
-        new_rows.sort(key=lambda r: (r[2], r[1]))
+        # Expand each canonical into one row per split component. Mass /
+        # stddev / CI bounds scale linearly with weight; the ratio column
+        # also scales by weight so the row's stated ratio matches the row's
+        # stated mean. min_sample_size is unchanged — the same recipes
+        # contribute regardless of split. Prior ordinals are preserved
+        # at the canonical level so render_drop's row order stays stable
+        # across recomputes; the (canonical, component) sub-order is
+        # alphabetic on component name.
+        next_ord = max(
+            (s.ordinal for s in existing.values()),
+            default=-1,
+        ) + 1
+        new_rows: list[tuple[Any, ...]] = []
+        for name in sorted_names:
+            agg = per_canonical[name]
+            prior = existing.get(name)
+            if prior is not None:
+                base_ord = prior.ordinal
+            else:
+                base_ord = next_ord
+                next_ord += 1
+            splits = resolved_splits.get(name, [("", 1.0)])
+            for component, weight in splits:
+                scaled_mean = agg.mean * weight
+                scaled_stddev = (
+                    agg.stddev * weight if agg.stddev is not None else None
+                )
+                scaled_ci_lower = (
+                    agg.ci_lower * weight
+                    if agg.ci_lower is not None
+                    else None
+                )
+                scaled_ci_upper = (
+                    agg.ci_upper * weight
+                    if agg.ci_upper is not None
+                    else None
+                )
+                ratio = (
+                    scaled_mean / base_mean if base_mean > 0.0 else None
+                )
+                new_rows.append(
+                    (
+                        variant_id,
+                        name,
+                        base_ord,  # primary sort key; reassigned densely below
+                        scaled_mean,
+                        scaled_stddev,
+                        scaled_ci_lower,
+                        scaled_ci_upper,
+                        ratio,
+                        agg.min_sample,
+                        agg.density,
+                        agg.whole_unit_name,
+                        agg.whole_unit_grams,
+                        component,
+                    )
+                )
+
+        # Sort by (prior_ordinal, canonical_name, component) and reassign
+        # dense ordinals so consumers that ORDER BY ordinal see a
+        # contiguous sequence. Component is the tertiary key — within a
+        # split canonical, rows are alphabetic on component name.
+        new_rows.sort(key=lambda r: (r[2], r[1], r[12]))
         new_rows = [
             (row[0], row[1], i, *row[3:]) for i, row in enumerate(new_rows)
         ]
@@ -1700,6 +1900,11 @@ class CatalogDB:
             """,
             (variant_id,),
         ).fetchall()
+        # 1jbk: storage uses '' as the ungrouped sentinel (NOT NULL PK
+        # column), but the public dataclass keeps the kfp3 contract of
+        # ``component is None`` for ungrouped rows. Convert at the
+        # boundary so renderer / editor / test code don't have to learn
+        # the storage detail.
         return [
             IngredientStatsRow(
                 canonical_name=r[0],
@@ -1713,7 +1918,7 @@ class CatalogDB:
                 density_g_per_ml=r[8],
                 whole_unit_name=r[9],
                 whole_unit_grams=r[10],
-                component=r[11],
+                component=r[11] if r[11] else None,
             )
             for r in rows
         ]

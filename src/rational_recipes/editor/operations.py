@@ -247,8 +247,17 @@ def describe_override(override: VariantOverrideRow) -> str:
             f"{p.get('raw_text', '?')!r} → {p.get('new_canonical', '?')}"
         )
     if override.override_type == "component_assign":
-        return (
-            f"component_assign: {p.get('canonical_name', '?')} "
-            f"→ {p.get('component', '?')}"
-        )
+        canonical = p.get("canonical_name", "?")
+        if "components" in p:
+            # 1jbk multi-component shape:
+            # ``{canonical_name, components: [{component, weight}, ...]}``.
+            parts = [
+                f"{s.get('component', '?')}@{s.get('weight', '?')}"
+                for s in p["components"]
+            ]
+            return (
+                f"component_assign: {canonical} → " + " + ".join(parts)
+            )
+        # Legacy kfp3 shape: ``{canonical_name, component}``.
+        return f"component_assign: {canonical} → {p.get('component', '?')}"
     return f"{override.override_type}: {p}"

@@ -188,7 +188,12 @@ def _render_grouped_stats(
     """
     by_component: dict[str | None, list[Any]] = {}
     for s in stats:
-        by_component.setdefault(s["component"], []).append(s)
+        # 1jbk: storage uses '' as the ungrouped sentinel (the column
+        # is NOT NULL with the new composite PK). Normalize to None
+        # here so the rest of this function can keep the kfp3 contract
+        # of "None = ungrouped".
+        comp = s["component"] or None
+        by_component.setdefault(comp, []).append(s)
 
     # Component-mass-fraction = sum of member mean_proportions. For
     # ungrouped (None) we still compute it so the display can include

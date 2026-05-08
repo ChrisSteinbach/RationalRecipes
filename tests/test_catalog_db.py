@@ -1979,8 +1979,9 @@ class TestComponentAssignOverrides:
         self, tmp_path: Path
     ) -> None:
         """A pre-kfp3 DB (variant_ingredient_stats without ``component``)
-        gains the column on next ``CatalogDB.open()`` so existing
-        downstream readers keep working."""
+        gains the column AND the new composite PK on next
+        ``CatalogDB.open()`` so existing downstream readers keep working
+        and the 1jbk multi-row-per-canonical writer is unblocked."""
         path = tmp_path / "recipes.db"
         import sqlite3 as _sqlite
 
@@ -2016,8 +2017,285 @@ class TestComponentAssignOverrides:
                 )
             }
             assert "component" in cols
+            ddl = db.connection.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type='table' AND name='variant_ingredient_stats'"
+            ).fetchone()[0]
+            assert "canonical_name, component" in ddl.replace("\n", " ")
         finally:
             db.close()
+
+    def test_kfp3_legacy_db_migrates_pk_widening(
+        self, tmp_path: Path
+    ) -> None:
+        """A kfp3-era DB (component column exists, narrow PK, NULLs in
+        component) must rebuild to the new PK on open without losing
+        data — pre-existing NULLs become ''."""
+        path = tmp_path / "recipes.db"
+        import sqlite3 as _sqlite
+
+        conn = _sqlite.connect(str(path))
+        # Seed a minimal kfp3-shaped variants + variant_ingredient_stats
+        # so we can verify the migration preserves data.
+        conn.execute(
+            """
+            CREATE TABLE variants (
+              variant_id                 TEXT PRIMARY KEY,
+              normalized_title           TEXT NOT NULL,
+              display_title              TEXT,
+              category                   TEXT,
+              description                TEXT,
+              base_ingredient            TEXT,
+              cooking_methods            TEXT,
+              canonical_ingredient_set   TEXT NOT NULL,
+              n_recipes                  INTEGER NOT NULL,
+              confidence_level           REAL,
+              review_status              TEXT,
+              review_note                TEXT,
+              reviewed_at                TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO variants (
+              variant_id, normalized_title, canonical_ingredient_set, n_recipes
+            ) VALUES ('vid-1', 't', 'flour,milk', 5)
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE variant_ingredient_stats (
+              variant_id       TEXT NOT NULL REFERENCES variants(variant_id),
+              canonical_name   TEXT NOT NULL,
+              ordinal          INTEGER NOT NULL,
+              mean_proportion  REAL NOT NULL,
+              stddev           REAL,
+              ci_lower         REAL,
+              ci_upper         REAL,
+              ratio            REAL,
+              min_sample_size  INTEGER NOT NULL,
+              density_g_per_ml REAL,
+              whole_unit_name  TEXT,
+              whole_unit_grams REAL,
+              component        TEXT,
+              PRIMARY KEY (variant_id, canonical_name)
+            )
+            """
+        )
+        # One row with NULL component, one with a label, so we can
+        # verify both paths in the COALESCE migration.
+        conn.execute(
+            "INSERT INTO variant_ingredient_stats VALUES "
+            "(?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL)",
+            ("vid-1", "flour", 0, 0.4, 5),
+        )
+        conn.execute(
+            "INSERT INTO variant_ingredient_stats VALUES "
+            "(?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, ?)",
+            ("vid-1", "milk", 1, 0.6, 5, "dough"),
+        )
+        conn.commit()
+        conn.close()
+
+        db = CatalogDB.open(path)
+        try:
+            ddl = db.connection.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type='table' AND name='variant_ingredient_stats'"
+            ).fetchone()[0]
+            ddl_one_line = ddl.replace("\n", " ")
+            assert "canonical_name, component" in ddl_one_line
+            # NULL → '' on the unlabeled row; preserved on the labeled one.
+            rows = db.connection.execute(
+                "SELECT canonical_name, component FROM variant_ingredient_stats "
+                "WHERE variant_id = 'vid-1' ORDER BY canonical_name"
+            ).fetchall()
+            by_name = dict(rows)
+            assert by_name["flour"] == ""
+            assert by_name["milk"] == "dough"
+        finally:
+            db.close()
+
+    def test_split_generates_one_row_per_component(self) -> None:
+        """1jbk: a 0.9/0.1 split on flour produces two stat rows."""
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+
+        ov_id = db.add_component_split_override(
+            variant.variant_id,
+            "flour",
+            [("crumble", 0.9), ("filling", 0.1)],
+        )
+        assert ov_id > 0
+
+        stats = db.get_ingredient_stats(variant.variant_id)
+        flour_rows = [s for s in stats if s.canonical_name == "flour"]
+        assert len(flour_rows) == 2
+        components = {s.component for s in flour_rows}
+        assert components == {"crumble", "filling"}
+
+    def test_split_scales_mean_stddev_ci_linearly(self) -> None:
+        """Mass / stddev / CI bounds scale with the per-component weight."""
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+
+        # Capture the unsplit aggregate first.
+        unsplit = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        flour_unsplit = unsplit["flour"]
+
+        db.add_component_split_override(
+            variant.variant_id,
+            "flour",
+            [("crumble", 0.75), ("filling", 0.25)],
+        )
+
+        stats = db.get_ingredient_stats(variant.variant_id)
+        flour_rows = {
+            s.component: s for s in stats if s.canonical_name == "flour"
+        }
+        # 0.75 × unsplit mean and stddev / CI.
+        assert flour_rows["crumble"].mean_proportion == pytest.approx(
+            flour_unsplit.mean_proportion * 0.75
+        )
+        if flour_unsplit.stddev is not None:
+            assert flour_rows["crumble"].stddev == pytest.approx(
+                flour_unsplit.stddev * 0.75
+            )
+        # 0.25 × unsplit on the filling side. min_sample_size unchanged
+        # (same recipes contribute regardless of split).
+        assert flour_rows["filling"].mean_proportion == pytest.approx(
+            flour_unsplit.mean_proportion * 0.25
+        )
+        assert (
+            flour_rows["crumble"].min_sample_size
+            == flour_unsplit.min_sample_size
+        )
+        assert (
+            flour_rows["filling"].min_sample_size
+            == flour_unsplit.min_sample_size
+        )
+
+    def test_split_preserves_total_mass(self) -> None:
+        """Sum of per-component means equals the unsplit canonical mean."""
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        unsplit = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        unsplit_butter = unsplit["butter"].mean_proportion
+
+        db.add_component_split_override(
+            variant.variant_id,
+            "butter",
+            [("crumble", 0.7), ("filling", 0.3)],
+        )
+
+        stats = db.get_ingredient_stats(variant.variant_id)
+        butter_rows = [s for s in stats if s.canonical_name == "butter"]
+        total = sum(s.mean_proportion for s in butter_rows)
+        assert total == pytest.approx(unsplit_butter)
+
+    def test_weights_must_sum_to_one(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        with pytest.raises(ValueError, match="must sum to 1.0"):
+            db.add_component_split_override(
+                variant.variant_id,
+                "flour",
+                [("crumble", 0.5), ("filling", 0.4)],
+            )
+
+    def test_weights_must_be_positive(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        with pytest.raises(ValueError, match=r"must be in \(0, 1\]"):
+            db.add_component_split_override(
+                variant.variant_id,
+                "flour",
+                [("crumble", 1.0), ("filling", 0.0)],
+            )
+        with pytest.raises(ValueError, match=r"must be in \(0, 1\]"):
+            db.add_component_split_override(
+                variant.variant_id,
+                "flour",
+                [("crumble", 1.5), ("filling", -0.5)],
+            )
+
+    def test_duplicate_components_in_splits_rejected(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        with pytest.raises(ValueError, match="appears twice"):
+            db.add_component_split_override(
+                variant.variant_id,
+                "flour",
+                [("crumble", 0.6), ("crumble", 0.4)],
+            )
+
+    def test_empty_splits_rejected(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        with pytest.raises(ValueError, match="at least one"):
+            db.add_component_split_override(variant.variant_id, "flour", [])
+
+    def test_assign_helper_writes_split_payload_shape(self) -> None:
+        """add_component_assign_override now writes the components list."""
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        db.add_component_assign_override(variant.variant_id, "butter", "crumble")
+        ov = db.list_overrides(variant.variant_id)[0]
+        assert "components" in ov.payload
+        assert ov.payload["components"] == [
+            {"component": "crumble", "weight": 1.0}
+        ]
+
+    def test_recompute_reads_legacy_kfp3_payload(self) -> None:
+        """A pre-1jbk row with payload ``{canonical_name, component}``
+        must still be honored by the recompute (backward compat)."""
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        # Hand-insert a kfp3-shaped payload bypassing the helper.
+        import json as _json  # noqa: PLC0415
+        from datetime import UTC  # noqa: PLC0415
+        from datetime import datetime as _datetime  # noqa: PLC0415
+
+        with db.connection:
+            db.connection.execute(
+                """
+                INSERT INTO variant_overrides (
+                  variant_id, override_type, payload, created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    variant.variant_id,
+                    "component_assign",
+                    _json.dumps(
+                        {"canonical_name": "butter", "component": "crumble"}
+                    ),
+                    _datetime.now(UTC).isoformat(),
+                ),
+            )
+        # Trigger a recompute the same way the live writers do.
+        db.add_filter_override(
+            variant.variant_id,
+            db.get_variant_members(variant.variant_id)[0].recipe_id,
+            reason="probe",
+        )
+        # Clear the filter so it doesn't perturb the assertion.
+        last_ov = db.list_overrides(variant.variant_id)[-1]
+        db.clear_override(last_ov.override_id)
+
+        stats = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        # butter should land in the 'crumble' component despite the
+        # legacy payload shape.
+        assert stats["butter"].component == "crumble"
 
     def test_overrides_check_constraint_widens_for_legacy_db(
         self, tmp_path: Path
