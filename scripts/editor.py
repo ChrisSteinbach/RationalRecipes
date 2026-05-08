@@ -85,9 +85,12 @@ def _render_stats(st: Any, detail: ops.VariantDetail) -> None:
     if not detail.stats:
         st.info("No ingredient stats yet — recompute may be pending.")
         return
+    # 1jbk: split canonicals produce one row per (canonical, component);
+    # surface the component column so the editor can tell them apart.
     rows = [
         {
             "ingredient": s.canonical_name,
+            "component": s.component or "",
             "mean": round(s.mean_proportion, 4),
             "stddev": None if s.stddev is None else round(s.stddev, 4),
             "ratio": None if s.ratio is None else round(s.ratio, 3),
@@ -132,12 +135,23 @@ def _render_provenance_panel(
     )
     by_canonical = {c.canonical: c for c in prov.canonicals}
     member_recipe_ids = [m.recipe_id for m in detail.members]
+    # 1jbk: with multi-component splits a single canonical produces
+    # multiple ``detail.stats`` rows. Provenance is per-canonical
+    # (the raw forms in the source corpus don't know about our
+    # editorial splits), so iterate over unique canonicals — sum the
+    # split rows' means to surface the canonical's total mass — and
+    # keep the Streamlit keys unambiguous.
+    unique_means: dict[str, float] = {}
     for stat in detail.stats:
-        canon = stat.canonical_name
+        unique_means[stat.canonical_name] = (
+            unique_means.get(stat.canonical_name, 0.0)
+            + stat.mean_proportion
+        )
+    for canon, total_mean in unique_means.items():
         canon_prov = by_canonical.get(canon)
         n_obs = canon_prov.total_observations if canon_prov else 0
         with st.expander(
-            f"{canon}  ·  mean {round(stat.mean_proportion, 4)}  ·  "
+            f"{canon}  ·  mean {round(total_mean, 4)}  ·  "
             f"{n_obs} raw observations"
         ):
             _render_canonical_breakdown(st, canon_prov)
@@ -300,7 +314,9 @@ def _render_substitute_panel(
     st: Any, db: CatalogDB, detail: ops.VariantDetail
 ) -> None:
     st.subheader("Substitute (fold X into Y)")
-    canonicals = [s.canonical_name for s in detail.stats]
+    # 1jbk: split canonicals produce multiple stat rows; substitute is a
+    # canonical-level operation, so dedupe to keep the selectbox clean.
+    canonicals = list(dict.fromkeys(s.canonical_name for s in detail.stats))
     if len(canonicals) < 2:
         st.info("Need at least two canonical ingredients to substitute.")
         return
@@ -352,22 +368,33 @@ def _render_components_panel(
         "as a single flat ingredient list. Re-label by clearing the "
         "existing override below first."
     )
-    canonicals = [s.canonical_name for s in detail.stats]
+    # 1jbk: split canonicals produce multiple stat rows; the labeling
+    # form operates at the canonical level, so dedupe.
+    canonicals = list(dict.fromkeys(s.canonical_name for s in detail.stats))
     if not canonicals:
         st.info("No canonical ingredients to label yet.")
         return
 
     # Pull the live label per canonical from the recomputed stats so the
-    # form reflects post-clear state without a manual rerun.
-    label_by_canonical: dict[str, str | None] = {
-        s.canonical_name: s.component for s in detail.stats
-    }
+    # form reflects post-clear state without a manual rerun. With splits,
+    # multiple stat rows share a canonical — any non-null component is a
+    # signal that the canonical "has a label."
+    label_by_canonical: dict[str, str | None] = {}
+    for s in detail.stats:
+        if s.component:
+            label_by_canonical[s.canonical_name] = s.component
+        else:
+            label_by_canonical.setdefault(s.canonical_name, None)
 
-    # Suggest existing component names (from already-applied labels) so
-    # the second canonical in a pair lands on the same string without
-    # the editor having to retype it.
+    # Existing component names sourced from the live stat rows (which
+    # correctly enumerate every component a canonical participates in,
+    # including both sides of a split). Surfaced as a caption beside
+    # the input so the maintainer can copy-paste rather than retype,
+    # but NOT pre-filled into the input — pre-filling under Streamlit
+    # caused a "wrong default sticks" hazard where the textbox would
+    # commit the suggestion if the maintainer didn't blur after typing.
     existing_components = sorted(
-        {c for c in label_by_canonical.values() if c}
+        {s.component for s in detail.stats if s.component}
     )
 
     # The component label is now per (canonical, component); a split
@@ -399,13 +426,14 @@ def _render_components_panel(
         ),
         key=f"comp_canonical::{vid}",
     )
-    suggestion = ""
-    if existing_components and not label_by_canonical.get(selected_canonical):
-        suggestion = existing_components[0]
+    placeholder = (
+        ", ".join(existing_components)
+        if existing_components
+        else "crumble, filling, ..."
+    )
     component_name = cols[1].text_input(
         "Component",
-        value=suggestion,
-        placeholder="crumble, filling, ...",
+        placeholder=placeholder,
         key=f"comp_name::{vid}::{selected_canonical}",
     )
     current_label = label_by_canonical_summary.get(selected_canonical)
@@ -435,9 +463,12 @@ def _render_components_panel(
             "thickener in the filling. Weights must sum to 1.0."
         )
         split_cols = st.columns([2, 1, 2, 1, 1])
+        split_a_placeholder = (
+            existing_components[0] if existing_components else "crumble"
+        )
         split_a_name = split_cols[0].text_input(
             "Component A",
-            value=existing_components[0] if existing_components else "",
+            placeholder=split_a_placeholder,
             key=f"split_a_name::{vid}::{selected_canonical}",
         )
         split_a_weight = split_cols[1].number_input(
@@ -448,13 +479,14 @@ def _render_components_panel(
             step=0.05,
             key=f"split_a_weight::{vid}::{selected_canonical}",
         )
+        split_b_placeholder = (
+            existing_components[1]
+            if len(existing_components) >= 2
+            else "filling"
+        )
         split_b_name = split_cols[2].text_input(
             "Component B",
-            value=(
-                existing_components[1]
-                if len(existing_components) >= 2
-                else ""
-            ),
+            placeholder=split_b_placeholder,
             key=f"split_b_name::{vid}::{selected_canonical}",
         )
         split_b_weight = split_cols[3].number_input(
