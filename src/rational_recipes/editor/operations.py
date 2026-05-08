@@ -280,15 +280,30 @@ class CanonicalContributor:
 
 @dataclass(frozen=True, slots=True)
 class MemberIngredient:
-    """One row of a source recipe's per-canonical mass for the editor."""
+    """One row of a source recipe's per-canonical mass for the editor.
+
+    ``variant_mean`` is the variant's recomputed mean_proportion for
+    this canonical (post-override view from
+    ``variant_ingredient_stats``). ``None`` when the source's canonical
+    has been folded by an active substitute (so the canonical is no
+    longer in the variant's stats) — in that case the ``Δ`` column
+    has no meaningful comparator.
+
+    ``delta_pp`` is ``(fraction - variant_mean) * 100``, in percentage
+    points. Negative = source under-uses this canonical relative to
+    the variant average; positive = over-uses. ``None`` when either
+    side is missing.
+    """
 
     canonical_name: str
     grams: float | None
     fraction: float | None  # share of the recipe's total mass
+    variant_mean: float | None = None
+    delta_pp: float | None = None
 
 
 def list_member_ingredients(
-    db: CatalogDB, recipe_id: str
+    db: CatalogDB, recipe_id: str, *, variant_id: str | None = None
 ) -> list[MemberIngredient]:
     """Per-canonical (grams, share-of-recipe) for one source recipe.
 
@@ -303,6 +318,13 @@ def list_member_ingredients(
     Sorted by mass-share descending; rows with NULL quantity surface
     last (the LLM extracted a canonical but no usable mass; the row
     is informational rather than averageable).
+
+    When ``variant_id`` is supplied, each row carries the variant's
+    post-override ``mean_proportion`` for that canonical and a
+    ``delta_pp`` in percentage points (source share − variant mean,
+    × 100). The editor uses this to colour-code the per-source
+    breakdown so the maintainer can see at a glance which ingredients
+    diverge from the cluster average.
     """
     rows = db.connection.execute(
         """
@@ -312,15 +334,43 @@ def list_member_ingredients(
         (recipe_id,),
     ).fetchall()
     total = sum(r[1] for r in rows if r[1] is not None) or 0.0
-    out = [
-        MemberIngredient(
-            canonical_name=r[0],
-            grams=r[1],
-            fraction=(r[1] / total) if (r[1] is not None and total > 0) else None,
+    variant_means: dict[str, float] = {}
+    if variant_id is not None:
+        # Sum across split rows (kfp3 / 1jbk): a canonical may produce
+        # multiple variant_ingredient_stats rows when split across
+        # components; the source's share is unsplit, so the comparator
+        # is the canonical's TOTAL mean across components.
+        for canon, mean in db.connection.execute(
+            """
+            SELECT canonical_name, mean_proportion FROM variant_ingredient_stats
+            WHERE variant_id = ?
+            """,
+            (variant_id,),
+        ).fetchall():
+            variant_means[canon] = variant_means.get(canon, 0.0) + mean
+    out: list[MemberIngredient] = []
+    for canon_name, quantity in rows:
+        fraction = (
+            (quantity / total)
+            if (quantity is not None and total > 0)
+            else None
         )
-        for r in rows
-    ]
-    out.sort(key=lambda m: (m.fraction is None, -(m.fraction or 0.0), m.canonical_name))
+        variant_mean = variant_means.get(canon_name)
+        delta_pp: float | None = None
+        if fraction is not None and variant_mean is not None:
+            delta_pp = (fraction - variant_mean) * 100.0
+        out.append(
+            MemberIngredient(
+                canonical_name=canon_name,
+                grams=quantity,
+                fraction=fraction,
+                variant_mean=variant_mean,
+                delta_pp=delta_pp,
+            )
+        )
+    out.sort(
+        key=lambda m: (m.fraction is None, -(m.fraction or 0.0), m.canonical_name)
+    )
     return out
 
 

@@ -17,6 +17,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import pytest
+
 from rational_recipes.catalog_db import CatalogDB
 from rational_recipes.editor import operations as ops
 from rational_recipes.scrape.pipeline_merged import (
@@ -572,6 +574,58 @@ class TestListCanonicalContributors:
     def test_member_ingredients_unknown_recipe_empty(self) -> None:
         db = CatalogDB.in_memory()
         assert ops.list_member_ingredients(db, "no-such-recipe") == []
+
+    def test_member_ingredients_compares_to_variant_mean(self) -> None:
+        """When ``variant_id`` is supplied each row carries the
+        variant's post-override mean and a delta in percentage
+        points. Used by the editor's per-source breakdown to colour
+        deltas by magnitude."""
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        member = db.get_variant_members(vid)[0]
+        ingredients = ops.list_member_ingredients(db, member.recipe_id, variant_id=vid)
+        # Every row populated.
+        for ing in ingredients:
+            assert ing.variant_mean is not None
+            assert ing.delta_pp is not None
+            # Delta in percentage points = (fraction - mean) * 100.
+            assert ing.delta_pp == pytest.approx(
+                (ing.fraction - ing.variant_mean) * 100.0
+            )
+
+    def test_member_ingredients_no_variant_id_skips_comparison(self) -> None:
+        """Default (no variant_id) path keeps the historical contract:
+        variant_mean / delta_pp are None."""
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        member = db.get_variant_members(vid)[0]
+        ingredients = ops.list_member_ingredients(db, member.recipe_id)
+        for ing in ingredients:
+            assert ing.variant_mean is None
+            assert ing.delta_pp is None
+
+    def test_member_ingredients_substitute_folded_canonical(self) -> None:
+        """A canonical folded by an active substitute is no longer in
+        ``variant_ingredient_stats``; its variant_mean is None and
+        delta is None — the maintainer sees the source still has the
+        ingredient even though the variant doesn't."""
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        # Fold milk → buttermilk (introducing buttermilk as a target);
+        # 'milk' disappears from variant_ingredient_stats but each
+        # source still has 'milk' rows in parsed_ingredients.
+        db.add_substitute_override(vid, "milk", "buttermilk")
+        member = db.get_variant_members(vid)[0]
+        ingredients = ops.list_member_ingredients(
+            db, member.recipe_id, variant_id=vid
+        )
+        milk_row = next(i for i in ingredients if i.canonical_name == "milk")
+        assert milk_row.fraction is not None
+        assert milk_row.variant_mean is None
+        assert milk_row.delta_pp is None
 
     def test_directions_text_carried_through_when_cached(self) -> None:
         """cw2u: ``directions_text`` is surfaced when cached on the

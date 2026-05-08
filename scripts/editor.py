@@ -476,40 +476,100 @@ def _render_filter_panel(
                     else:
                         st.error(result.message)
         # Per-source canonical breakdown: shows what the recipe
-        # actually contributed before any overrides applied. Useful
-        # for diagnosing extraction problems flagged by a high
-        # outlier score (e.g. all-1.0g extraction failure, or one
-        # ingredient at 300g while everything else is in tablespoons).
+        # actually contributed compared to the variant's recomputed
+        # mean_proportion. Useful for diagnosing extraction problems
+        # flagged by a high outlier score (e.g. all-1.0g extraction
+        # failure, or one ingredient at 300g while everything else is
+        # in tablespoons), and for spotting which ingredients diverge
+        # from the cluster average. The Δ column is colour-graded by
+        # absolute deviation (sequential white → amber gradient — see
+        # ``_style_delta_amber``).
         with st.expander(
             f"  Show {member.title or 'this source'}'s ingredients",
             expanded=False,
         ):
-            ingredients = ops.list_member_ingredients(db, member.recipe_id)
+            ingredients = ops.list_member_ingredients(
+                db, member.recipe_id, variant_id=detail.variant.variant_id
+            )
             if not ingredients:
                 st.caption(
                     "No parsed ingredients for this recipe — "
                     "extraction may have failed."
                 )
             else:
-                rows = [
-                    {
-                        "canonical": ing.canonical_name,
-                        "grams": (
-                            None
-                            if ing.grams is None
-                            else round(ing.grams, 2)
-                        ),
-                        "share": (
-                            None
-                            if ing.fraction is None
-                            else f"{ing.fraction * 100:.1f}%"
-                        ),
-                    }
-                    for ing in ingredients
-                ]
-                st.dataframe(
-                    rows, use_container_width=True, hide_index=True
-                )
+                _render_member_ingredients_table(st, ingredients)
+
+
+def _render_member_ingredients_table(
+    st: Any, ingredients: list[ops.MemberIngredient]
+) -> None:
+    """Per-source ingredient breakdown with variant-mean comparison.
+
+    Built as a pandas DataFrame so the cell-level Styler can apply
+    the amber-magnitude gradient on the ``Δ pp`` column. Numbers stay
+    numeric (rather than pre-formatted strings) so Streamlit's
+    dataframe formatter renders sensible alignment + sortability;
+    cell formatters give the human-readable display.
+    """
+    import pandas as pd  # noqa: PLC0415  (pandas ships with streamlit)
+
+    df = pd.DataFrame(
+        {
+            "canonical": [i.canonical_name for i in ingredients],
+            "grams": [i.grams for i in ingredients],
+            "share": [
+                None if i.fraction is None else i.fraction * 100.0
+                for i in ingredients
+            ],
+            "avg": [
+                None if i.variant_mean is None else i.variant_mean * 100.0
+                for i in ingredients
+            ],
+            "Δ pp": [i.delta_pp for i in ingredients],
+        }
+    )
+    styled = (
+        df.style.format(
+            {
+                "grams": lambda v: "—" if pd.isna(v) else f"{v:.2f}",
+                "share": lambda v: "—" if pd.isna(v) else f"{v:.1f}%",
+                "avg": lambda v: "—" if pd.isna(v) else f"{v:.1f}%",
+                "Δ pp": lambda v: "—" if pd.isna(v) else f"{v:+.1f}",
+            }
+        ).map(_style_delta_amber, subset=["Δ pp"])
+    )
+    st.dataframe(styled, use_container_width=True, hide_index=True)
+
+
+def _style_delta_amber(value: float | None) -> str:
+    """Sequential white → amber gradient on absolute Δ magnitude.
+
+    Sequential rather than diverging (red↔green or blue↔orange) for
+    two reasons: red↔green is colourblind-unfriendly, and the
+    direction of deviation (over- vs under-shoot) is already visible
+    in the signed number — colour adds magnitude information without
+    competing with it. Buckets:
+
+    - |Δ| < 2 pp:  no colour    — close to average
+    - 2-5 pp:     ``#fff3e0``  — pale amber
+    - 5-15 pp:    ``#ffd180``  — medium amber
+    - > 15 pp:    ``#ff9800``  — deep amber
+
+    Returns a CSS background-color declaration suitable for pandas
+    Styler.map.
+    """
+    import pandas as pd  # noqa: PLC0415
+
+    if value is None or pd.isna(value):
+        return ""
+    abs_v = abs(value)
+    if abs_v < 2.0:
+        return ""
+    if abs_v < 5.0:
+        return "background-color: #fff3e0"
+    if abs_v < 15.0:
+        return "background-color: #ffd180"
+    return "background-color: #ff9800"
 
 
 def _render_substitute_panel(
