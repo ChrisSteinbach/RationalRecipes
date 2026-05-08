@@ -27,6 +27,7 @@ so the core logic doesn't depend on the Streamlit runtime.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -476,6 +477,70 @@ def _render_substitute_panel(
             st.error(result.message)
 
 
+def _highlight_canonical(directions: str, canonical: str) -> str:
+    """Wrap case-insensitive occurrences of ``canonical`` in markdown bold.
+
+    Used by the split-expander's source-context panel
+    (RationalRecipes-cw2u) so the maintainer can spot every mention of
+    the ingredient being split in the source's directions text. Match
+    is plain-substring case-insensitive — adequate for short canonical
+    names typical in recipe extraction (``flour``, ``rolled oats``,
+    ``brown sugar``). Whole-word boundaries aren't enforced; it's a
+    visual aid, not a correctness signal.
+    """
+    if not canonical:
+        return directions
+    pattern = re.compile(re.escape(canonical), re.IGNORECASE)
+    return pattern.sub(lambda m: f"**{m.group(0)}**", directions)
+
+
+def _render_split_source_context(
+    st: Any,
+    db: CatalogDB,
+    variant_id: str,
+    canonical: str,
+) -> None:
+    """Show source-recipe directions inside the split-across expander.
+
+    For each variant member that contributes ``canonical`` (per
+    ``list_canonical_contributors``), render the title + clickable URL
+    + corpus tag. RecipeNLG members typically have cached
+    ``directions_text``; render it with the canonical name bolded so
+    the maintainer can spot the relevant lines (the apple-crumble
+    cookbooks.com source's "Combine 1/2 cup of sugar and 1 ounce of
+    flour … Mix butter, remaining flour and cinnamon" is exactly the
+    kind of explicit split this surfaces). Non-RecipeNLG sources have
+    no cached directions; show a "(directions not cached — open the
+    URL to read)" caption with the link so the maintainer has a
+    one-click path.
+    """
+    contributors = ops.list_canonical_contributors(db, variant_id, canonical)
+    if not contributors:
+        return
+    st.markdown(
+        "**Source recipes** (read these to estimate the split — the "
+        f"canonical `{canonical}` is bolded in each recipe's directions "
+        "where cached):"
+    )
+    for c in contributors:
+        title = c.title or "(no title)"
+        url = c.url or ""
+        if url:
+            st.markdown(f"- [{title}]({url}) · _{c.corpus}_")
+        else:
+            st.markdown(f"- {title} · _{c.corpus}_")
+        if c.directions_text:
+            st.markdown(
+                "  > " + _highlight_canonical(
+                    c.directions_text.replace("\n", " "), canonical
+                )
+            )
+        else:
+            st.caption(
+                "    (directions not cached — open the URL to read)"
+            )
+
+
 def _render_components_panel(
     st: Any, db: CatalogDB, detail: ops.VariantDetail
 ) -> None:
@@ -592,6 +657,11 @@ def _render_components_panel(
             "apple crumble's flour: most in the crumble, some as a roux "
             "thickener in the filling. Weights must sum to 1.0."
         )
+        # cw2u: surface source-recipe directions so the maintainer can
+        # read the split off the actual recipes instead of guessing.
+        # Directions are cached only for RecipeNLG members (per F5 /
+        # 15g4); WDC and other corpora show a URL fallback.
+        _render_split_source_context(st, db, vid, selected_canonical)
         split_cols = st.columns([2, 1, 2, 1, 1])
         split_a_placeholder = (
             existing_components[0] if existing_components else "crumble"

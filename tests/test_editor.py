@@ -530,6 +530,34 @@ class TestListCanonicalContributors:
         vid = ids["pannkakor"]
         assert ops.list_canonical_contributors(db, vid, "ghost") == []
 
+    def test_directions_text_carried_through_when_cached(self) -> None:
+        """cw2u: ``directions_text`` is surfaced when cached on the
+        recipe row so the editor's split form can render it with the
+        canonical name highlighted."""
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        # The seed seeded a 3-recipe variant with placeholder titles
+        # but no directions_text (recipes table column is nullable
+        # and _seed doesn't populate it). Backfill one row's
+        # directions to assert the helper carries it through.
+        members = db.get_variant_members(vid)
+        with db.connection:
+            db.connection.execute(
+                "UPDATE recipes SET directions_text = ? WHERE recipe_id = ?",
+                (
+                    "Mix the flour with milk to form a batter.",
+                    members[0].recipe_id,
+                ),
+            )
+        contribs = ops.list_canonical_contributors(db, vid, "flour")
+        directed = [c for c in contribs if c.directions_text]
+        # Exactly one of the three contributors has directions; the
+        # other two return None.
+        assert len(directed) == 1
+        assert "flour" in directed[0].directions_text.lower()
+        assert sum(1 for c in contribs if c.directions_text is None) == 2
+
     def test_only_returns_variant_members(self) -> None:
         """Two variants share a canonical name; the helper returns only
         the recipes that are members of the requested variant."""

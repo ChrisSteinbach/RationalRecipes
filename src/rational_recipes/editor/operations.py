@@ -261,13 +261,21 @@ def clear_one_override(db: CatalogDB, override_id: int) -> OperationResult:
 
 @dataclass(frozen=True, slots=True)
 class CanonicalContributor:
-    """One source recipe that contributes a canonical to a variant."""
+    """One source recipe that contributes a canonical to a variant.
+
+    ``directions_text`` is the cached source recipe directions
+    (RationalRecipes-15g4 / F5 — populated for RecipeNLG sources during
+    extraction; ``None`` for WDC and other corpora). Surfacing it lets
+    the maintainer read a recipe's split decisions instead of guessing
+    them (RationalRecipes-cw2u).
+    """
 
     recipe_id: str
     title: str | None
     url: str | None
     corpus: str
     quantity: float | None
+    directions_text: str | None = None
 
 
 def list_canonical_contributors(
@@ -275,17 +283,24 @@ def list_canonical_contributors(
 ) -> list[CanonicalContributor]:
     """Source recipes whose parsed_ingredients contribute ``canonical``.
 
-    Surfaces the (recipe_id, title, url, corpus) for every variant
-    member whose ``parsed_ingredients`` has a row with this canonical
-    — independent of corpus. Used by the editor's per-source reassign
-    form to surface contributing recipes when the RecipeNLG-only
-    provenance join comes up empty (e.g. the canonical lives only on
-    a WDC source). The maintainer can then plug a (recipe_id, raw_text)
-    pair in by hand.
+    Surfaces the (recipe_id, title, url, corpus, directions_text) for
+    every variant member whose ``parsed_ingredients`` has a row with
+    this canonical — independent of corpus. Used by the editor's
+    per-source reassign form to surface contributing recipes when the
+    RecipeNLG-only provenance join comes up empty (e.g. the canonical
+    lives only on a WDC source). The maintainer can then plug a
+    (recipe_id, raw_text) pair in by hand.
+
+    ``directions_text`` is sourced from ``recipes.directions_text``
+    (cached for RecipeNLG members per F5; ``NULL`` for non-RecipeNLG
+    sources). Used by the components-panel split expander
+    (RationalRecipes-cw2u) to surface the recipe's own directions so
+    the maintainer can read off split decisions instead of guessing.
     """
     rows = db.connection.execute(
         """
-        SELECT pi.recipe_id, r.title, r.url, r.corpus, pi.quantity
+        SELECT pi.recipe_id, r.title, r.url, r.corpus, pi.quantity,
+               r.directions_text
         FROM parsed_ingredients pi
         JOIN recipes r ON r.recipe_id = pi.recipe_id
         JOIN variant_members vm ON vm.recipe_id = pi.recipe_id
@@ -301,6 +316,7 @@ def list_canonical_contributors(
             url=r[2],
             corpus=r[3],
             quantity=r[4],
+            directions_text=r[5],
         )
         for r in rows
     ]
