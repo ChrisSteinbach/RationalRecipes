@@ -369,3 +369,74 @@ class TestLoadProvenance:
         assert prov is not None
         assert prov.n_recipenlg_hit == 0
         assert all(c.total_observations == 0 for c in prov.canonicals)
+
+
+class TestApplyComponentAssign:
+    """Per-drop component grouping via the editor operations layer (kfp3)."""
+
+    def test_labels_canonical_and_recomputes_stats(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+
+        result = ops.apply_component_assign(db, vid, "flour", "dough")
+        assert result.ok is True
+        assert "flour" in result.message
+        assert "dough" in result.message
+        assert result.override_id is not None
+
+        stats = {s.canonical_name: s for s in db.get_ingredient_stats(vid)}
+        assert stats["flour"].component == "dough"
+        # The other canonical stays unlabeled — partial grouping is the
+        # natural intermediate state during editor work.
+        assert stats["milk"].component is None
+
+    def test_unknown_canonical_returns_error_no_override(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+
+        result = ops.apply_component_assign(db, vid, "ghost-ingredient", "x")
+        assert result.ok is False
+        assert "not in stats" in result.message
+        # No override was recorded.
+        assert db.list_overrides(vid) == []
+
+    def test_duplicate_label_returns_error(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        first = ops.apply_component_assign(db, vid, "flour", "dough")
+        assert first.ok is True
+
+        # Re-labels must go through clear+add — we don't silently overwrite.
+        second = ops.apply_component_assign(db, vid, "flour", "topping")
+        assert second.ok is False
+        assert "already" in second.message
+
+    def test_empty_component_returns_error(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        result = ops.apply_component_assign(db, vid, "flour", "")
+        assert result.ok is False
+        assert "component" in result.message
+
+    def test_unknown_variant_returns_error(self) -> None:
+        db = CatalogDB.in_memory()
+        result = ops.apply_component_assign(db, "ghost-vid", "flour", "dough")
+        assert result.ok is False
+        assert "variant_id" in result.message
+
+
+class TestDescribeComponentAssign:
+    def test_describes_component_assign(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        db.add_component_assign_override(vid, "flour", "dough")
+        ov = db.list_overrides(vid)[0]
+        s = ops.describe_override(ov)
+        assert "component_assign" in s
+        assert "flour" in s
+        assert "dough" in s

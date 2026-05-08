@@ -192,6 +192,32 @@ def apply_substitute(
     )
 
 
+def apply_component_assign(
+    db: CatalogDB,
+    variant_id: str,
+    canonical_name: str,
+    component: str,
+) -> OperationResult:
+    """Label one canonical as belonging to ``component`` (kfp3).
+
+    Per-drop component grouping for multi-component dishes — wraps
+    ``CatalogDB.add_component_assign_override``. Re-labels go through
+    clear+add (the helper rejects a duplicate label), so the editor UI
+    surfaces a clear-then-reassign flow rather than silent overwrites.
+    """
+    try:
+        override_id = db.add_component_assign_override(
+            variant_id, canonical_name, component
+        )
+    except ValueError as exc:
+        return OperationResult(ok=False, message=str(exc))
+    return OperationResult(
+        ok=True,
+        message=f"Labeled {canonical_name} → {component}.",
+        override_id=override_id,
+    )
+
+
 def clear_one_override(db: CatalogDB, override_id: int) -> OperationResult:
     """Remove a single override row + recompute the affected variant."""
     if db.clear_override(override_id):
@@ -219,5 +245,10 @@ def describe_override(override: VariantOverrideRow) -> str:
         return (
             f"canonical_reassign: recipe={p.get('recipe_id', '?')} "
             f"{p.get('raw_text', '?')!r} → {p.get('new_canonical', '?')}"
+        )
+    if override.override_type == "component_assign":
+        return (
+            f"component_assign: {p.get('canonical_name', '?')} "
+            f"→ {p.get('component', '?')}"
         )
     return f"{override.override_type}: {p}"
