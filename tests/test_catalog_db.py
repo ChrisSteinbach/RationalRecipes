@@ -1320,6 +1320,45 @@ class TestCanonicalReassignOverrides:
         assert stats["dark chocolate chips"].min_sample_size == 1
         assert stats["chocolate chips"].min_sample_size == 2
 
+    def test_duplicate_canonical_reassign_rejected(self) -> None:
+        """A second reassignment with the same (recipe_id, raw_text,
+        new_canonical) tuple is rejected — the editor used to accumulate
+        identical inert overrides which cluttered the active-overrides
+        panel and confused cleanup."""
+        db = CatalogDB.in_memory()
+        variant = self._seed_variant(
+            db,
+            n_rows=3,
+            cells={"flour": "60 g", "chocolate chips": "40 g"},
+            proportions={"flour": 60.0, "chocolate chips": 40.0},
+        )
+        target = db.get_variant_members(variant.variant_id)[0].recipe_id
+        ov_id = db.add_canonical_reassign_override(
+            variant.variant_id,
+            target,
+            "70% cacao chocolate chips",
+            "dark chocolate chips",
+        )
+        # Second identical insert — rejected.
+        with pytest.raises(ValueError, match="already exists"):
+            db.add_canonical_reassign_override(
+                variant.variant_id,
+                target,
+                "70% cacao chocolate chips",
+                "dark chocolate chips",
+            )
+        # Different new_canonical for same raw_text is still allowed
+        # (the maintainer might be iterating; clearing the first is
+        # the explicit intent — verify by clearing then retrying).
+        db.clear_override(ov_id)
+        new_ov = db.add_canonical_reassign_override(
+            variant.variant_id,
+            target,
+            "70% cacao chocolate chips",
+            "premium chocolate",
+        )
+        assert new_ov > 0
+
     def test_canonical_reassign_then_substitute_applies_in_order(self) -> None:
         """Per-source rename runs BEFORE variant-wide substitute, so the
         substitute folds the new canonical into the target as expected."""

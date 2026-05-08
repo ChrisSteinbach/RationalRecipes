@@ -950,6 +950,25 @@ class CatalogDB:
                 f"raw_text {raw_text!r} does not resolve to any canonical "
                 f"in parsed_ingredients for recipe {recipe_id!r}"
             )
+        # Reject an exact-duplicate reassignment for the same
+        # (variant, recipe, raw_text) tuple. Without this the editor
+        # could silently accumulate identical inert overrides — the
+        # recompute is a set-of-renames operation so the second copy is
+        # a no-op for the math, but it clutters the active-overrides
+        # panel and confuses cleanup.
+        for ov in self.list_overrides(variant_id):
+            if (
+                ov.override_type == "canonical_reassign"
+                and ov.payload.get("recipe_id") == recipe_id
+                and ov.payload.get("raw_text") == normalized
+                and ov.payload.get("new_canonical") == new_canonical
+            ):
+                raise ValueError(
+                    f"canonical_reassign for recipe {recipe_id!r} "
+                    f"raw_text {raw_text!r} → {new_canonical!r} already "
+                    f"exists (#{ov.override_id}); clear it first to "
+                    f"replace, or pick a different new_canonical"
+                )
         payload = json.dumps(
             {
                 "recipe_id": recipe_id,

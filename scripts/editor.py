@@ -116,6 +116,16 @@ def _render_provenance_panel(
     if not detail.stats:
         return
     st.subheader("Provenance & per-source reassignment")
+    st.caption(
+        "**Per-source** retag: corrects ONE source recipe's raw-line → "
+        "canonical mapping. Use this when a single source's line was "
+        "miscategorized (e.g. \"5 oz. all-purpose flour\" got mapped to "
+        "\"plain flour\" when it should be \"flour\"). "
+        "**To merge two canonicals across the WHOLE variant** "
+        "(e.g. fold every \"plain flour\" entry into \"flour\"), use the "
+        "**Substitute** panel above — that's a one-shot fold across all "
+        "members; per-source retags here only touch the recipe you pick."
+    )
     if not recipenlg_path.exists():
         st.caption(
             f"RecipeNLG corpus not found at `{recipenlg_path}` — "
