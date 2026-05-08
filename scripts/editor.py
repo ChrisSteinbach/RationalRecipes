@@ -330,6 +330,82 @@ def _render_substitute_panel(
             st.error(result.message)
 
 
+def _render_components_panel(
+    st: Any, db: CatalogDB, detail: ops.VariantDetail
+) -> None:
+    """Per-drop component grouping panel (kfp3).
+
+    For multi-component dishes (apple crumble, layer cakes, pie shells)
+    the maintainer labels each canonical with the component it belongs
+    to ("crumble", "filling", etc.). The label is stored as a
+    ``component_assign`` override; the recompute carries it onto
+    ``variant_ingredient_stats.component`` without changing the per-
+    recipe mass-fraction math. Re-labels go through clear+add (the
+    helper rejects a duplicate label) — this UI surfaces the existing
+    label per canonical so the editor sees what's set before adding.
+    """
+    st.subheader("Components (per-drop grouping)")
+    st.caption(
+        "Label each canonical with the component it belongs to "
+        "(e.g. 'crumble', 'filling'). Renderer groups stats by "
+        "component when any label is set; otherwise the drop renders "
+        "as a single flat ingredient list. Re-label by clearing the "
+        "existing override below first."
+    )
+    canonicals = [s.canonical_name for s in detail.stats]
+    if not canonicals:
+        st.info("No canonical ingredients to label yet.")
+        return
+
+    # Pull the live label per canonical from the recomputed stats so the
+    # form reflects post-clear state without a manual rerun.
+    label_by_canonical: dict[str, str | None] = {
+        s.canonical_name: s.component for s in detail.stats
+    }
+
+    # Suggest existing component names (from already-applied labels) so
+    # the second canonical in a pair lands on the same string without
+    # the editor having to retype it.
+    existing_components = sorted(
+        {c for c in label_by_canonical.values() if c}
+    )
+
+    vid = detail.variant.variant_id
+    cols = st.columns([3, 3, 2])
+    selected_canonical = cols[0].selectbox(
+        "Canonical",
+        canonicals,
+        format_func=lambda c: (
+            f"{c}  ·  {label_by_canonical[c]}"
+            if label_by_canonical.get(c)
+            else c
+        ),
+        key=f"comp_canonical::{vid}",
+    )
+    suggestion = ""
+    if existing_components and not label_by_canonical.get(selected_canonical):
+        suggestion = existing_components[0]
+    component_name = cols[1].text_input(
+        "Component",
+        value=suggestion,
+        placeholder="crumble, filling, ...",
+        key=f"comp_name::{vid}::{selected_canonical}",
+    )
+    current_label = label_by_canonical.get(selected_canonical)
+    if current_label:
+        cols[2].caption(f"current: {current_label}")
+        cols[2].caption("clear it below to relabel")
+    if cols[2].button("Label", key=f"comp_apply::{vid}"):
+        result = ops.apply_component_assign(
+            db, vid, selected_canonical, component_name
+        )
+        if result.ok:
+            st.success(result.message)
+            st.rerun()
+        else:
+            st.error(result.message)
+
+
 def _render_overrides_panel(
     st: Any, db: CatalogDB, detail: ops.VariantDetail
 ) -> None:
@@ -370,6 +446,7 @@ def _render_detail(
 
     _render_provenance_panel(st, db, detail, recipenlg_path)
     _render_substitute_panel(st, db, detail)
+    _render_components_panel(st, db, detail)
     _render_overrides_panel(st, db, detail)
     _render_filter_panel(st, db, detail)
 
@@ -416,7 +493,8 @@ def main() -> None:
             st.write(
                 "Pick a variant on the left to start. Operations available "
                 "in the detail view: drop a source recipe (filter), fold "
-                "canonical X into Y (substitute), and clear active "
+                "canonical X into Y (substitute), label canonicals with a "
+                "component (per-drop grouping), and clear active "
                 "overrides. All writes go through `CatalogDB` so the CLI "
                 "review tool sees them immediately."
             )
