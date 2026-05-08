@@ -440,3 +440,65 @@ class TestDescribeComponentAssign:
         assert "component_assign" in s
         assert "flour" in s
         assert "dough" in s
+
+    def test_describes_component_split(self) -> None:
+        """1jbk: multi-component shape renders each component with its weight."""
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        db.add_component_split_override(
+            vid, "flour", [("crumble", 0.7), ("filling", 0.3)]
+        )
+        ov = db.list_overrides(vid)[0]
+        s = ops.describe_override(ov)
+        assert "component_assign" in s
+        assert "flour" in s
+        assert "crumble" in s
+        assert "filling" in s
+        # Both weights surface so the maintainer sees the proportion at
+        # a glance in the active-overrides panel.
+        assert "0.7" in s
+        assert "0.3" in s
+
+
+class TestApplyComponentSplit:
+    """1jbk: split one canonical's mass across multiple components."""
+
+    def test_split_recomputes_with_two_rows(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+
+        result = ops.apply_component_split(
+            db, vid, "flour", [("crumble", 0.6), ("filling", 0.4)]
+        )
+        assert result.ok is True
+        assert "flour" in result.message
+        assert "crumble" in result.message
+        assert "filling" in result.message
+
+        stats = db.get_ingredient_stats(vid)
+        flour_rows = [s for s in stats if s.canonical_name == "flour"]
+        assert len(flour_rows) == 2
+        assert {s.component for s in flour_rows} == {"crumble", "filling"}
+
+    def test_bad_weights_return_error_no_override(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        result = ops.apply_component_split(
+            db, vid, "flour", [("crumble", 0.5), ("filling", 0.6)]
+        )
+        assert result.ok is False
+        assert "sum to 1.0" in result.message
+        assert db.list_overrides(vid) == []
+
+    def test_unknown_canonical_returns_error(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        result = ops.apply_component_split(
+            db, vid, "ghost", [("a", 0.5), ("b", 0.5)]
+        )
+        assert result.ok is False
+        assert "not in stats" in result.message

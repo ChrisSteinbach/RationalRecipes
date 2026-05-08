@@ -218,6 +218,33 @@ def apply_component_assign(
     )
 
 
+def apply_component_split(
+    db: CatalogDB,
+    variant_id: str,
+    canonical_name: str,
+    splits: list[tuple[str, float]],
+) -> OperationResult:
+    """Split one canonical's mass across components by weight (1jbk).
+
+    Per-drop multi-component support: e.g. apple crumble's flour is
+    mostly in the crumble but also acts as a roux thickener in the
+    filling. Wraps ``CatalogDB.add_component_split_override``; the
+    helper validates weights and rejects duplicate labels.
+    """
+    try:
+        override_id = db.add_component_split_override(
+            variant_id, canonical_name, splits
+        )
+    except ValueError as exc:
+        return OperationResult(ok=False, message=str(exc))
+    parts = ", ".join(f"{c} {w:.2f}" for c, w in splits)
+    return OperationResult(
+        ok=True,
+        message=f"Split {canonical_name} → {parts}.",
+        override_id=override_id,
+    )
+
+
 def clear_one_override(db: CatalogDB, override_id: int) -> OperationResult:
     """Remove a single override row + recompute the affected variant."""
     if db.clear_override(override_id):
