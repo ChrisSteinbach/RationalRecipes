@@ -129,6 +129,7 @@ _SCHEMA: tuple[str, ...] = (
       density_g_per_ml REAL,
       whole_unit_name  TEXT,
       whole_unit_grams REAL,
+      component        TEXT,
       PRIMARY KEY (variant_id, canonical_name)
     )
     """,
@@ -190,7 +191,8 @@ _SCHEMA: tuple[str, ...] = (
       variant_id     TEXT NOT NULL REFERENCES variants(variant_id),
       override_type  TEXT NOT NULL
                      CHECK(override_type IN
-                           ('substitute', 'filter', 'canonical_reassign')),
+                           ('substitute', 'filter',
+                            'canonical_reassign', 'component_assign')),
       payload        TEXT NOT NULL,
       created_at     TEXT NOT NULL
     )
@@ -236,6 +238,11 @@ class IngredientStatsRow:
     density_g_per_ml: float | None
     whole_unit_name: str | None
     whole_unit_grams: float | None
+    # kfp3: per-drop component label (e.g. "crumble" / "filling"). NULL for
+    # the ~99% of variants that aren't multi-component. Set via the
+    # ``component_assign`` override; the recompute carries it forward into
+    # ``variant_ingredient_stats`` without changing the per-recipe math.
+    component: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,9 +266,11 @@ class VariantSourceRow:
     ref: str
 
 
-OverrideType = Literal["substitute", "filter", "canonical_reassign"]
+OverrideType = Literal[
+    "substitute", "filter", "canonical_reassign", "component_assign"
+]
 _VALID_OVERRIDE_TYPES: frozenset[str] = frozenset(
-    {"substitute", "filter", "canonical_reassign"}
+    {"substitute", "filter", "canonical_reassign", "component_assign"}
 )
 
 
@@ -350,6 +359,7 @@ class CatalogDB:
             self._migrate_variants_columns()
             self._migrate_recipes_columns()
             self._migrate_variant_overrides_check_constraint()
+            self._migrate_variant_ingredient_stats_columns()
 
     def _migrate_recipes_columns(self) -> None:
         """Add columns to ``recipes`` that pre-existing DBs are missing.
@@ -403,14 +413,15 @@ class CatalogDB:
                 )
 
     def _migrate_variant_overrides_check_constraint(self) -> None:
-        """Widen ``variant_overrides.override_type`` CHECK to allow h6q1 type.
+        """Widen ``variant_overrides.override_type`` CHECK for new types.
 
         Pre-h6q1 DBs were created with
-        ``CHECK(override_type IN ('substitute', 'filter'))``; SQLite has
-        no in-place ALTER for CHECK constraints, so we detect the old
-        constraint via ``sqlite_master.sql`` and rebuild the table when
-        ``'canonical_reassign'`` isn't in the stored DDL. Idempotent —
-        a no-op once the new constraint is in place.
+        ``CHECK(override_type IN ('substitute', 'filter'))``; pre-kfp3 DBs
+        widened that to include ``'canonical_reassign'``. SQLite has no
+        in-place ALTER for CHECK constraints, so we detect the current
+        DDL via ``sqlite_master.sql`` and rebuild the table when the
+        latest type (``'component_assign'`` for kfp3) isn't in it.
+        Idempotent — a no-op once the latest constraint is in place.
         """
         row = self._conn.execute(
             "SELECT sql FROM sqlite_master "
@@ -418,7 +429,7 @@ class CatalogDB:
         ).fetchone()
         if row is None or not row[0]:
             return
-        if "canonical_reassign" in row[0]:
+        if "component_assign" in row[0]:
             return
         # Rebuild dance: copy rows into a new table with the wider CHECK,
         # drop the old, rename. The caller's transaction wraps this so a
@@ -431,7 +442,8 @@ class CatalogDB:
               override_type  TEXT NOT NULL
                              CHECK(override_type IN
                                    ('substitute', 'filter',
-                                    'canonical_reassign')),
+                                    'canonical_reassign',
+                                    'component_assign')),
               payload        TEXT NOT NULL,
               created_at     TEXT NOT NULL
             )
@@ -452,6 +464,33 @@ class CatalogDB:
             "CREATE INDEX IF NOT EXISTS idx_overrides_variant "
             "ON variant_overrides(variant_id)"
         )
+
+    def _migrate_variant_ingredient_stats_columns(self) -> None:
+        """Add columns to ``variant_ingredient_stats`` missing in old DBs.
+
+        kfp3: ``component`` (TEXT, nullable) for per-drop component
+        grouping (crumble/filling, layer cakes, etc.). Mirrors the
+        pattern used for ``variants`` and ``recipes`` — ``CREATE TABLE
+        IF NOT EXISTS`` is a no-op when the table exists, so columns
+        added later need explicit ``ALTER TABLE``. Nullable by design:
+        NULL means "ungrouped", which is the correct default for the
+        ~99% of variants that aren't multi-component.
+        """
+        existing = {
+            row[1]
+            for row in self._conn.execute(
+                "PRAGMA table_info(variant_ingredient_stats)"
+            )
+        }
+        migrations: tuple[tuple[str, str], ...] = (
+            ("component", "TEXT"),
+        )
+        for column, sqltype in migrations:
+            if column not in existing:
+                self._conn.execute(
+                    "ALTER TABLE variant_ingredient_stats "
+                    f"ADD COLUMN {column} {sqltype}"
+                )
 
     # --- Writer ---
 
@@ -875,6 +914,67 @@ class CatalogDB:
         self._recompute_stats_for_variant(variant_id)
         return override_id
 
+    def add_component_assign_override(
+        self,
+        variant_id: str,
+        canonical_name: str,
+        component: str,
+    ) -> int:
+        """Label one canonical as belonging to ``component`` (kfp3).
+
+        Per-drop component grouping for multi-component dishes (apple
+        crumble's crumble/filling, layer cakes, pie shells). The label
+        is stored as a ``component_assign`` override; the recompute
+        carries it forward into ``variant_ingredient_stats.component``
+        without changing per-recipe mass-fraction math. Cross-component
+        proportion semantics are a presentation concern handled by the
+        renderer.
+
+        Validation: variant exists, the canonical appears in the
+        variant's current stats (else the label would be inert), and
+        ``component`` is a non-empty string. Re-assigning the same
+        canonical to a different component requires clearing the
+        existing override first; we reject the conflicting insert here
+        so duplicate labels never silently accumulate.
+        """
+        canonical_name = canonical_name.strip()
+        component = component.strip()
+        if not canonical_name:
+            raise ValueError(
+                "component_assign requires non-empty canonical_name"
+            )
+        if not component:
+            raise ValueError("component_assign requires non-empty component")
+        if self.get_variant(variant_id) is None:
+            raise ValueError(f"variant_id {variant_id!r} not found")
+        known = {
+            s.canonical_name for s in self.get_ingredient_stats(variant_id)
+        }
+        if canonical_name not in known:
+            raise ValueError(
+                f"canonical_name {canonical_name!r} not in stats for "
+                f"variant {variant_id!r}"
+            )
+        for ov in self.list_overrides(variant_id):
+            if (
+                ov.override_type == "component_assign"
+                and ov.payload.get("canonical_name") == canonical_name
+            ):
+                raise ValueError(
+                    f"canonical_name {canonical_name!r} already has a "
+                    f"component_assign override (#{ov.override_id} → "
+                    f"{ov.payload.get('component')!r}); clear it first"
+                )
+        payload = json.dumps(
+            {"canonical_name": canonical_name, "component": component},
+            ensure_ascii=False,
+        )
+        override_id = self._insert_override(
+            variant_id, "component_assign", payload
+        )
+        self._recompute_stats_for_variant(variant_id)
+        return override_id
+
     def list_overrides(self, variant_id: str) -> list[VariantOverrideRow]:
         """Active overrides for ``variant_id`` ordered by creation time."""
         rows = self._conn.execute(
@@ -985,6 +1085,13 @@ class CatalogDB:
         # actual from-canonical happens per-recipe below, after we read
         # that recipe's parsed_ingredients rows.
         reassigns_by_recipe: dict[str, list[tuple[str, str]]] = {}
+        # kfp3: per-drop component labels. Map post-resolve canonical →
+        # component name. The label is purely a presentation hint; it
+        # doesn't change which canonicals get aggregated or what their
+        # mean_proportion is. Resolved-substitute keys so the labels
+        # follow folds (substitute(X→Y) means a label on X transfers to Y
+        # transparently).
+        component_by_canonical: dict[str, str] = {}
         for ov in overrides:
             if ov.override_type == "substitute":
                 substitutions[ov.payload["from"]] = ov.payload["to"]
@@ -994,6 +1101,10 @@ class CatalogDB:
                 rid = ov.payload["recipe_id"]
                 reassigns_by_recipe.setdefault(rid, []).append(
                     (ov.payload["raw_text"], ov.payload["new_canonical"])
+                )
+            elif ov.override_type == "component_assign":
+                component_by_canonical[ov.payload["canonical_name"]] = (
+                    ov.payload["component"]
                 )
 
         def resolve(name: str) -> str:
@@ -1054,6 +1165,16 @@ class CatalogDB:
         existing = {s.canonical_name: s for s in self.get_ingredient_stats(variant_id)}
         n = len(per_recipe_proportions)
 
+        # Project component labels through any active substitutions so a
+        # subsequent fold(X → Y) carries X's label onto Y. When two folded
+        # canonicals carry conflicting labels the one with the larger
+        # ordering key (lexicographic on the source canonical) wins —
+        # picked deterministically rather than first-write-wins so the
+        # recompute is order-stable across replays.
+        resolved_components: dict[str, str] = {}
+        for src in sorted(component_by_canonical):
+            resolved_components[resolve(src)] = component_by_canonical[src]
+
         new_rows: list[tuple[Any, ...]] = []
         sorted_names = sorted(all_names)
         next_ord = max(
@@ -1108,6 +1229,7 @@ class CatalogDB:
                     density,
                     whole_unit_name,
                     whole_unit_grams,
+                    resolved_components.get(name),  # component (kfp3)
                 )
             )
 
@@ -1152,8 +1274,9 @@ class CatalogDB:
                 INSERT INTO variant_ingredient_stats (
                   variant_id, canonical_name, ordinal, mean_proportion,
                   stddev, ci_lower, ci_upper, ratio, min_sample_size,
-                  density_g_per_ml, whole_unit_name, whole_unit_grams
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  density_g_per_ml, whole_unit_name, whole_unit_grams,
+                  component
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 new_rows,
             )
@@ -1569,7 +1692,8 @@ class CatalogDB:
             """
             SELECT canonical_name, ordinal, mean_proportion, stddev,
                    ci_lower, ci_upper, ratio, min_sample_size,
-                   density_g_per_ml, whole_unit_name, whole_unit_grams
+                   density_g_per_ml, whole_unit_name, whole_unit_grams,
+                   component
             FROM variant_ingredient_stats
             WHERE variant_id = ?
             ORDER BY ordinal ASC
@@ -1589,6 +1713,7 @@ class CatalogDB:
                 density_g_per_ml=r[8],
                 whole_unit_name=r[9],
                 whole_unit_grams=r[10],
+                component=r[11],
             )
             for r in rows
         ]

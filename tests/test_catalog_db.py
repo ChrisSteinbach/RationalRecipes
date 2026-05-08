@@ -1779,3 +1779,279 @@ class TestVariantSources:
         assert len(sources) == 1
         assert sources[0].source_type == "text"
         assert sources[0].title == "Aggregated Swedish recipes"
+
+
+class TestComponentAssignOverrides:
+    """RationalRecipes-kfp3: per-drop component grouping.
+
+    Component_assign is a presentation label — it stamps
+    ``variant_ingredient_stats.component`` without changing per-recipe
+    mass-fraction math. The recompute must keep mean_proportion / stddev /
+    ratio invariant when component_assign is the only override applied.
+    """
+
+    @staticmethod
+    def _crumble_variant(db: CatalogDB) -> MergedVariantResult:
+        # Two-component-style cluster: butter + flour read as topping;
+        # apple reads as filling. Three identical recipes so the means
+        # are deterministic regardless of n_recipes.
+        rows = [
+            MergedNormalizedRow(
+                url=f"https://example.com/r/{i}",
+                title="apple crumble",
+                corpus="recipenlg",
+                cells={"butter": "60 g", "flour": "40 g", "apple": "100 g"},
+                proportions={"butter": 30.0, "flour": 20.0, "apple": 50.0},
+            )
+            for i in range(3)
+        ]
+        variant = MergedVariantResult(
+            variant_title="apple crumble",
+            canonical_ingredients=frozenset({"butter", "flour", "apple"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["apple", "butter", "flour"],
+        )
+        db.upsert_variant(
+            variant, l1_key="apple-crumble", base_ingredient="apple"
+        )
+        return variant
+
+    def test_component_column_default_null(self) -> None:
+        """Variants with no component_assigns leave component NULL."""
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        stats = db.get_ingredient_stats(variant.variant_id)
+        assert stats, "expected at least one stat row"
+        for s in stats:
+            assert s.component is None
+
+    def test_assign_stamps_component_label(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+
+        ov_butter = db.add_component_assign_override(
+            variant.variant_id, "butter", "crumble"
+        )
+        ov_flour = db.add_component_assign_override(
+            variant.variant_id, "flour", "crumble"
+        )
+        ov_apple = db.add_component_assign_override(
+            variant.variant_id, "apple", "filling"
+        )
+        assert ov_butter > 0 and ov_flour > 0 and ov_apple > 0
+
+        stats = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert stats["butter"].component == "crumble"
+        assert stats["flour"].component == "crumble"
+        assert stats["apple"].component == "filling"
+
+    def test_assign_does_not_change_proportions(self) -> None:
+        """Per-recipe mass-fraction math is invariant under component_assign."""
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        before = {
+            s.canonical_name: (s.mean_proportion, s.stddev, s.ratio)
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+
+        db.add_component_assign_override(
+            variant.variant_id, "butter", "crumble"
+        )
+        db.add_component_assign_override(
+            variant.variant_id, "apple", "filling"
+        )
+
+        after = {
+            s.canonical_name: (s.mean_proportion, s.stddev, s.ratio)
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        # Exact equality: the recompute path must not perturb the
+        # numbers when only labels change.
+        assert before == after
+
+    def test_clear_override_drops_component_label(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        ov_id = db.add_component_assign_override(
+            variant.variant_id, "butter", "crumble"
+        )
+
+        cleared = db.clear_override(ov_id)
+        assert cleared is True
+
+        stats = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert stats["butter"].component is None
+
+    def test_reassign_requires_explicit_clear(self) -> None:
+        """Re-labeling the same canonical without clearing is a hard error."""
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        ov_id = db.add_component_assign_override(
+            variant.variant_id, "butter", "crumble"
+        )
+
+        with pytest.raises(ValueError, match="already has a component_assign"):
+            db.add_component_assign_override(
+                variant.variant_id, "butter", "filling"
+            )
+
+        # Clearing first lets the new label land.
+        db.clear_override(ov_id)
+        db.add_component_assign_override(
+            variant.variant_id, "butter", "filling"
+        )
+        stats = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert stats["butter"].component == "filling"
+
+    def test_unknown_canonical_rejected(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        with pytest.raises(ValueError, match="not in stats"):
+            db.add_component_assign_override(
+                variant.variant_id, "ghost-ingredient", "crumble"
+            )
+
+    def test_empty_inputs_rejected(self) -> None:
+        db = CatalogDB.in_memory()
+        variant = self._crumble_variant(db)
+        with pytest.raises(ValueError, match="canonical_name"):
+            db.add_component_assign_override(variant.variant_id, "", "crumble")
+        with pytest.raises(ValueError, match="component"):
+            db.add_component_assign_override(variant.variant_id, "butter", "")
+
+    def test_unknown_variant_rejected(self) -> None:
+        db = CatalogDB.in_memory()
+        with pytest.raises(ValueError, match="variant_id"):
+            db.add_component_assign_override("ghost-vid", "butter", "crumble")
+
+    def test_label_follows_substitute_fold(self) -> None:
+        """A component_assign on X transfers to Y after substitute(X→Y)."""
+        db = CatalogDB.in_memory()
+        rows = [
+            MergedNormalizedRow(
+                url=f"https://example.com/r/{i}",
+                title="cookies",
+                corpus="recipenlg",
+                cells={"butter": "30 g", "shortening": "20 g", "flour": "50 g"},
+                proportions={"butter": 30.0, "shortening": 20.0, "flour": 50.0},
+            )
+            for i in range(3)
+        ]
+        variant = MergedVariantResult(
+            variant_title="cookies",
+            canonical_ingredients=frozenset(
+                {"butter", "shortening", "flour"}
+            ),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["butter", "shortening", "flour"],
+        )
+        db.upsert_variant(variant, l1_key="cookies", base_ingredient="flour")
+
+        # Label shortening before folding it into butter.
+        db.add_component_assign_override(
+            variant.variant_id, "shortening", "fat"
+        )
+        db.add_substitute_override(
+            variant.variant_id, "shortening", "butter"
+        )
+
+        stats = {
+            s.canonical_name: s
+            for s in db.get_ingredient_stats(variant.variant_id)
+        }
+        assert "shortening" not in stats
+        # The label moved with the fold — butter now carries the "fat"
+        # component label that was originally placed on shortening.
+        assert stats["butter"].component == "fat"
+
+    def test_component_column_migrates_on_legacy_db(
+        self, tmp_path: Path
+    ) -> None:
+        """A pre-kfp3 DB (variant_ingredient_stats without ``component``)
+        gains the column on next ``CatalogDB.open()`` so existing
+        downstream readers keep working."""
+        path = tmp_path / "recipes.db"
+        import sqlite3 as _sqlite
+
+        conn = _sqlite.connect(str(path))
+        conn.execute(
+            """
+            CREATE TABLE variant_ingredient_stats (
+              variant_id       TEXT NOT NULL,
+              canonical_name   TEXT NOT NULL,
+              ordinal          INTEGER NOT NULL,
+              mean_proportion  REAL NOT NULL,
+              stddev           REAL,
+              ci_lower         REAL,
+              ci_upper         REAL,
+              ratio            REAL,
+              min_sample_size  INTEGER NOT NULL,
+              density_g_per_ml REAL,
+              whole_unit_name  TEXT,
+              whole_unit_grams REAL,
+              PRIMARY KEY (variant_id, canonical_name)
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        db = CatalogDB.open(path)
+        try:
+            cols = {
+                row[1]
+                for row in db.connection.execute(
+                    "PRAGMA table_info(variant_ingredient_stats)"
+                )
+            }
+            assert "component" in cols
+        finally:
+            db.close()
+
+    def test_overrides_check_constraint_widens_for_legacy_db(
+        self, tmp_path: Path
+    ) -> None:
+        """Pre-kfp3 ``variant_overrides`` (CHECK without component_assign)
+        must be rebuilt on open so component_assign inserts succeed."""
+        path = tmp_path / "recipes.db"
+        # Simulate the post-h6q1 / pre-kfp3 CHECK constraint.
+        import sqlite3 as _sqlite
+
+        conn = _sqlite.connect(str(path))
+        conn.execute(
+            """
+            CREATE TABLE variant_overrides (
+              override_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+              variant_id     TEXT NOT NULL,
+              override_type  TEXT NOT NULL
+                             CHECK(override_type IN
+                                   ('substitute', 'filter',
+                                    'canonical_reassign')),
+              payload        TEXT NOT NULL,
+              created_at     TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        db = CatalogDB.open(path)
+        try:
+            ddl = db.connection.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type='table' AND name='variant_overrides'"
+            ).fetchone()[0]
+            assert "component_assign" in ddl
+        finally:
+            db.close()
