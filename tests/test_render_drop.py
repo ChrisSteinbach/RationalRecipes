@@ -826,6 +826,34 @@ class TestRenderHonorsComponentGrouping:
         crumble_section = md.split("### Crumble", 1)[1].split("###", 1)[0]
         assert "butter" in crumble_section
 
+    def test_split_canonical_appears_in_both_components(
+        self, tmp_path: Path
+    ) -> None:
+        """1jbk: a canonical split across components renders in each.
+
+        Apple crumble's flour: 0.9 → crumble, 0.1 → filling. The flour
+        row appears in both sub-tables, with within-component %
+        rescaled per its component's total mass.
+        """
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = self._seed_crumble(db)
+            db.add_component_assign_override(vid, "butter", "crumble")
+            db.add_component_assign_override(vid, "apple", "filling")
+            db.add_component_split_override(
+                vid, "flour", [("crumble", 0.9), ("filling", 0.1)]
+            )
+        finally:
+            db.close()
+
+        md = render_drop.render(db_path, vid)
+        crumble_section = md.split("### Crumble", 1)[1].split("###", 1)[0]
+        filling_section = md.split("### Filling", 1)[1].split("###", 1)[0]
+        # flour appears in both sub-tables.
+        assert "flour" in crumble_section
+        assert "flour" in filling_section
+
     def test_single_component_skips_cross_ratio_header(
         self, tmp_path: Path
     ) -> None:
