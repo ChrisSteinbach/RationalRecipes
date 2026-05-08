@@ -45,10 +45,11 @@ US_TSP_ML = 4.929
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS food (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL,
-    source      TEXT NOT NULL,  -- 'fdc', 'fao', 'supplementary'
-    fdc_id      INTEGER,        -- USDA FDC ID (NULL for non-FDC foods)
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    canonical_name  TEXT,            -- short English form; NULL = fall back to name
+    source          TEXT NOT NULL,   -- 'fdc', 'fao', 'supplementary'
+    fdc_id          INTEGER,         -- USDA FDC ID (NULL for non-FDC foods)
     UNIQUE(name, source)
 );
 
@@ -289,8 +290,8 @@ def load_fao_densities(conn: sqlite3.Connection) -> int:
             food_id = existing[0]
         else:
             cur = conn.execute(
-                "INSERT INTO food (name, source) VALUES (?, 'fao')",
-                (name,),
+                "INSERT INTO food (name, canonical_name, source) VALUES (?, ?, 'fao')",
+                (name, name.lower()),
             )
             food_id = cur.lastrowid
             assert food_id is not None
@@ -358,7 +359,15 @@ SUPPLEMENTARY: list[dict[str, str | float | list[str]]] = [
     },
     {
         "name": "Potato starch",
-        "synonyms": ["potato starch"],
+        "synonyms": [
+            "potato starch",
+            # Swedish: "potatismjöl" literally translates to "potato flour" but
+            # in Swedish baking it denotes the starch (thickening agent, used
+            # like cornstarch), not the flour sense in the FDC "Potato flour"
+            # entry. Route to starch, not flour.
+            "potatismjöl",
+            "potatismjol",
+        ],
         "density": 0.72,
         "source_note": "bulk density of potato starch powder",
     },
@@ -367,6 +376,50 @@ SUPPLEMENTARY: list[dict[str, str | float | list[str]]] = [
         "synonyms": ["cardamom seed", "cardamom seeds"],
         "density": 0.65,
         "source_note": "whole cardamom seed bulk density",
+    },
+    {
+        "name": "Vanilla sugar",
+        "synonyms": ["vanilla sugar", "vaniljsocker"],
+        "density": 0.85,
+        "source_note": (
+            "Swedish vaniljsocker: ~95% granulated sugar + ~5% vanillin; "
+            "bulk density close to granulated sugar"
+        ),
+    },
+    {
+        "name": "Lingonberries",
+        "synonyms": ["lingonberry", "lingonberries", "lingon"],
+        "density": 0.60,
+        "source_note": "raw lingonberries, similar to other small red berries",
+    },
+    {
+        "name": "Almond flour",
+        "synonyms": [
+            "almond flour",
+            "almond meal",
+            "ground almond meal",
+            "mandelmjöl",
+            "mandelmjol",
+        ],
+        "density": 0.45,
+        "source_note": "ground blanched almonds bulk density",
+    },
+    {
+        "name": "Swedish syrup",
+        "synonyms": ["sirap", "ljus sirap", "mörk sirap", "mork sirap"],
+        "density": 1.40,
+        "source_note": (
+            "Swedish sirap: inverted-sugar syrup between US corn syrup and "
+            "molasses in character; density typical for heavy food syrups"
+        ),
+    },
+    # 37,512 mentions in the RecipeNLG corpus (bead b7t.1) — not in FDC
+    # SR Legacy. Density is loose crumbs packed into a measuring cup.
+    {
+        "name": "Bread crumbs",
+        "synonyms": ["bread crumbs", "breadcrumbs", "dry bread crumbs"],
+        "density": 0.32,
+        "source_note": "dry bread crumbs, loosely packed bulk density",
     },
 ]
 
@@ -381,13 +434,15 @@ FDC_SYNONYM_ALIASES: list[tuple[str, str]] = [
     ("egg yolk", "Egg, yolk, raw, fresh"),
     ("yolk", "Egg, yolk, raw, fresh"),
     ("egg white", "Egg, white, raw, fresh"),
+    # The first synonym listed per food sets its canonical name — put the
+    # preferred English short form first, longer/variant names after.
+    ("flour", "Wheat flour, white, all-purpose, enriched, bleached"),
     ("all purpose flour", "Wheat flour, white, all-purpose, enriched, bleached"),
     ("plain flour", "Wheat flour, white, all-purpose, enriched, bleached"),
-    ("flour", "Wheat flour, white, all-purpose, enriched, bleached"),
     ("salt", "Salt, table"),
     ("butter", "Butter, without salt"),
-    ("granulated sugar", "Sugars, granulated"),
     ("sugar", "Sugars, granulated"),
+    ("granulated sugar", "Sugars, granulated"),
     ("brown sugar", "Sugars, brown"),
     ("icing sugar", "Sugars, powdered"),
     ("powder sugar", "Sugars, powdered"),
@@ -418,12 +473,12 @@ FDC_SYNONYM_ALIASES: list[tuple[str, str]] = [
     ("fresh yeast", "Leavening agents, yeast, baker's, compressed"),
     ("molasses", "Molasses"),
     ("black treacle", "Molasses"),
-    ("ground cinnamon", "Spices, cinnamon, ground"),
     ("cinnamon", "Spices, cinnamon, ground"),
-    ("ground nutmeg", "Spices, nutmeg, ground"),
+    ("ground cinnamon", "Spices, cinnamon, ground"),
     ("nutmeg", "Spices, nutmeg, ground"),
-    ("ground cardamom", "Spices, cardamom"),
+    ("ground nutmeg", "Spices, nutmeg, ground"),
     ("cardamom", "Spices, cardamom"),
+    ("ground cardamom", "Spices, cardamom"),
     ("ground ginger", "Spices, ginger, ground"),
     ("ground cloves", "Spices, cloves, ground"),
     ("cloves", "Spices, cloves, ground"),
@@ -438,6 +493,863 @@ FDC_SYNONYM_ALIASES: list[tuple[str, str]] = [
     ("crisco", "Shortening, vegetable, household, composite"),
     ("malt extract", "Syrups, malt"),
     ("malt syrup", "Syrups, malt"),
+    # English names for FDC foods not registered under a short name yet,
+    # including longer variants observed in the RecipeNLG NER column.
+    ("saffron", "Spices, saffron"),
+    ("saffron threads", "Spices, saffron"),
+    ("bacon", "Pork, cured, bacon, unprepared"),
+    ("salt pork", "Pork, cured, bacon, unprepared"),
+    # Margarine is a distinct fat (plant oils, not dairy) — kept separate
+    # from butter rather than aliased to it. Parallel to 'butter' ->
+    # 'Butter, without salt': point at the 'stick' variant for a
+    # representative density.
+    (
+        "margarine",
+        (
+            "Margarine, 80% fat, stick, includes regular and hydrogenated"
+            " corn and soybean oils"
+        ),
+    ),
+    ("white flour", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("plain wheat flour", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("whipping cream", "Cream, fluid, heavy whipping"),
+    ("heavy cream", "Cream, fluid, heavy whipping"),
+    ("powdered sugar", "Sugars, powdered"),
+    ("confectioners", "Sugars, powdered"),
+    ("confectioners sugar", "Sugars, powdered"),
+    # Short-grain rice is a common pannkakor / rice-pudding ingredient in
+    # the RecipeNLG NER — map to the FDC rice entry.
+    ("short-grain rice", "Rice, white, long-grain, regular, raw, enriched"),
+    ("short grain rice", "Rice, white, long-grain, regular, raw, enriched"),
+    # --- Swedish aliases (pannkakor dish family) ---
+    # Pure language/orthographic variants of FDC foods. Each pair covers
+    # both the accented form (as produced by the LLM on ica.se / tasteline.com
+    # text) and the ASCII-folded form (in case OCR/normalization strips
+    # diacritics upstream).
+    ("vetemjöl", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("vetemjol", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("mjöl", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("mjol", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("mjölk", "Milk, whole, 3.25% milkfat, with added vitamin D"),
+    ("mjolk", "Milk, whole, 3.25% milkfat, with added vitamin D"),
+    ("ägg", "Egg, whole, raw, fresh"),
+    ("agg", "Egg, whole, raw, fresh"),
+    ("socker", "Sugars, granulated"),
+    ("strösocker", "Sugars, granulated"),
+    ("strosocker", "Sugars, granulated"),
+    ("farin", "Sugars, brown"),
+    ("farinsocker", "Sugars, brown"),
+    ("smör", "Butter, without salt"),
+    ("smor", "Butter, without salt"),
+    ("grädde", "Cream, fluid, heavy whipping"),
+    ("gradde", "Cream, fluid, heavy whipping"),
+    ("vispgrädde", "Cream, fluid, heavy whipping"),
+    ("vispgradde", "Cream, fluid, heavy whipping"),
+    ("kardemumma", "Spices, cardamom"),
+    ("kanel", "Spices, cinnamon, ground"),
+    (
+        "bakpulver",
+        "Leavening agents, baking powder, double-acting, sodium aluminum sulfate",
+    ),
+    ("jäst", "Leavening agents, yeast, baker's, compressed"),
+    ("jast", "Leavening agents, yeast, baker's, compressed"),
+    ("havregryn", "Oats"),
+    ("blåbär", "Blueberries, raw"),
+    ("blabar", "Blueberries, raw"),
+    ("vatten", "Beverages, water, tap, drinking"),
+    ("saffran", "Spices, saffron"),
+    ("ris", "Rice, white, long-grain, regular, raw, enriched"),
+    # grötris = Swedish short-grain rice used for rice porridge and
+    # saffranspannkaka; approximated by the FDC rice entry.
+    ("grötris", "Rice, white, long-grain, regular, raw, enriched"),
+    ("mandel", "Almonds"),
+    ("mandlar", "Almonds"),
+    ("sötmandel", "Almonds"),
+    ("honung", "Honey"),
+    # risgrynsgröt = cooked rice porridge used as a base in saffranspannkaka;
+    # map to rice so it merges with RecipeNLG recipes that list rice as the
+    # corresponding raw ingredient.
+    ("risgrynsgröt", "Rice, white, long-grain, regular, raw, enriched"),
+    ("fläsk", "Pork, cured, bacon, unprepared"),
+    ("flask", "Pork, cured, bacon, unprepared"),
+    ("sidfläsk", "Pork, cured, bacon, unprepared"),
+    ("sidflask", "Pork, cured, bacon, unprepared"),
+    # --- Swedish frequency-ranked additions from WDC pilot (b7t.20) ---
+    # Measured via scripts/tally_wdc_misses.py --label swedish against
+    # WDC ica.se + tasteline.com (~11k recipes available). Coverage
+    # targets the top ~40 misses by frequency; each entry is either a
+    # pure language variant of an FDC/FAO food already in the DB or a
+    # Swedish cooking-vocabulary item with a clear English analog in
+    # SR Legacy.
+    #
+    # Ambiguity conventions carry over from the English round: 'olja'
+    # alone → vegetable (soybean) oil; 'ost' alone → cheddar (most
+    # common unqualified-cheese usage); 'peppar' → black pepper.
+    #
+    # Oils
+    ("olja", "Oil, vegetable, soybean, refined"),
+    ("olivolja", "Oil, olive, salad or cooking"),
+    ("sesamolja", "Oil, sesame, salad or cooking"),
+    ("rapsolja", "Oil, vegetable, soybean, refined"),
+    # Pepper variants (distinct from English 'pepper' = bell pepper ambiguity —
+    # in Swedish 'peppar' unambiguously means black pepper; paprika is bell).
+    ("peppar", "Spices, pepper, black"),
+    ("svartpeppar", "Spices, pepper, black"),
+    ("svartpepparkorn", "Spices, pepper, black"),
+    ("vitpeppar", "Spices, pepper, white"),
+    ("cayennepeppar", "Spices, pepper, red or cayenne"),
+    # Garlic
+    ("vitlök", "Garlic, raw"),
+    ("vitlöksklyfta", "Garlic, raw"),
+    ("vitlöksklyftor", "Garlic, raw"),
+    ("hackad vitlök", "Garlic, raw"),
+    # Onions — FDC only has generic 'Onions, raw' for non-spring varieties,
+    # so colour variants all alias to the same entry.
+    ("lök", "Onions, raw"),
+    ("gul lök", "Onions, raw"),
+    ("gullök", "Onions, raw"),
+    ("rödlök", "Onions, raw"),
+    ("röd lök", "Onions, raw"),
+    ("salladslök", "Onions, spring or scallions (includes tops and bulb), raw"),
+    # Roots / vegetables
+    ("potatis", "Potatoes, flesh and skin, raw"),
+    ("färskpotatis", "Potatoes, flesh and skin, raw"),
+    ("morot", "Carrots, raw"),
+    ("morötter", "Carrots, raw"),
+    ("ingefära", "Ginger root, raw"),
+    ("gurka", "Cucumber, peeled, raw"),
+    ("snackgurka", "Cucumber, peeled, raw"),
+    ("champinjoner", "Mushrooms, white, raw"),
+    ("kantareller", "Mushrooms, white, raw"),
+    ("svamp", "Mushrooms, white, raw"),
+    ("avokado", "Avocados, raw, all commercial varieties"),
+    ("mangold", "Chard, swiss, raw"),
+    ("röd mangold", "Chard, swiss, raw"),
+    ("spenat", "Spinach, raw"),
+    ("babyspenat", "Spinach, raw"),
+    ("broccoli", "Broccoli, raw"),  # same word in Swedish
+    ("blomkål", "Cauliflower, raw"),
+    ("zucchini", "Squash, summer, zucchini, includes skin, raw"),
+    ("squash", "Squash, summer, zucchini, includes skin, raw"),
+    # Tomato family
+    ("tomat", "Tomatoes, red, ripe, raw, year round average"),
+    ("tomater", "Tomatoes, red, ripe, raw, year round average"),
+    ("krossade tomater", "Tomatoes, red, ripe, raw, year round average"),
+    ("körsbärstomater", "Tomatoes, red, ripe, raw, year round average"),
+    ("soltorkade tomater", "Tomatoes, red, ripe, raw, year round average"),
+    (
+        "tomatpuré",
+        (
+            "Tomato products, canned, paste, without salt added"
+            " (Includes foods for USDA's Food Distribution Program)"
+        ),
+    ),
+    # Citrus
+    ("citron", "Lemons, raw, without peel"),
+    ("citronsaft", "Lemon juice, raw"),
+    ("pressad citron", "Lemon juice, raw"),
+    ("citronskal", "Lemon peel, raw"),
+    ("apelsin", "Oranges, raw, with peel"),
+    ("apelsinjuice", "Orange juice, chilled, includes from concentrate"),
+    # Dairy
+    # crème fraîche is a FAO-sourced food; alias to the 18%-fat variant
+    # (the common Swedish cooking version — 'lätt crème fraiche' stays
+    # outside the compound-cheese rule Chris called out in 46c900c).
+    ("crème fraiche", "Cream, sour (crème fraiche about 18% fat)"),
+    ("crème fraîche", "Cream, sour (crème fraiche about 18% fat)"),
+    ("creme fraiche", "Cream, sour (crème fraiche about 18% fat)"),
+    ("gräddfil", "Cream, sour, cultured"),
+    ("ricottaost", "Cheese, ricotta, whole milk"),
+    ("ost", "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)"),
+    (
+        "riven ost",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),  # noqa: E501
+    (
+        "cheddarost",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),  # noqa: E501
+    ("parmesanost", "Cheese, parmesan, hard"),
+    ("mozzarellaost", "Cheese, mozzarella, whole milk"),
+    ("fetaost", "Cheese, feta"),
+    # keso = Swedish cottage cheese; FDC has only lowfat / with-vegetables
+    # variants, use the 2% variant as the closest "plain" anchor (matches
+    # the convention applied to bare 'cottage cheese').
+    ("keso", "Cheese, cottage, lowfat, 2% milkfat"),
+    # Herbs / spices
+    ("persilja", "Parsley, fresh"),
+    ("färsk persilja", "Parsley, fresh"),
+    ("koriander", "Coriander (cilantro) leaves, raw"),
+    ("färsk koriander", "Coriander (cilantro) leaves, raw"),
+    ("basilika", "Basil, fresh"),
+    ("färsk basilika", "Basil, fresh"),
+    ("timjan", "Thyme, fresh"),
+    ("färsk timjan", "Thyme, fresh"),
+    ("rosmarin", "Rosemary, fresh"),
+    ("färsk rosmarin", "Rosemary, fresh"),
+    ("dragon", "Spices, tarragon, dried"),
+    ("gräslök", "Chives, raw"),
+    ("mynta", "Spearmint, fresh"),
+    ("färsk mynta", "Spearmint, fresh"),
+    ("kryddpeppar", "Spices, allspice, ground"),
+    ("paprikapulver", "Spices, paprika"),
+    ("curry", "Spices, curry powder"),
+    ("currypulver", "Spices, curry powder"),
+    ("chiliflingor", "Spices, pepper, red or cayenne"),
+    # Meat / fish
+    (
+        "kyckling",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "kycklingfilé",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "kycklingfiléer",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    ("nötkött", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("köttfärs", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("nötfärs", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("skinka", "Ham, sliced, regular (approximately 11% fat)"),
+    # 'Korv' + 'falukorv' — Swedish sausage generics/specialty; FDC has
+    # no plain 'Sausage' entry so use the Italian sweet-link variant as
+    # a density/weight stand-in (same approach as the English 'sausage'
+    # alias earlier in this table).
+    ("korv", "Sausage, Italian, sweet, links"),
+    ("falukorv", "Sausage, Italian, sweet, links"),
+    ("prinskorv", "Sausage, Italian, sweet, links"),
+    # Seafood
+    ("lax", "Fish, salmon, chum, raw"),
+    ("rökt lax", "Fish, salmon, chum, raw"),
+    ("räkor", "Crustaceans, shrimp, raw"),
+    # Beans
+    ("bönor", "Beans, kidney, red, mature seeds, raw"),
+    ("kidneybönor", "Beans, kidney, red, mature seeds, raw"),
+    ("vita bönor", "Beans, navy, mature seeds, raw"),
+    ("svarta bönor", "Beans, black, mature seeds, raw"),
+    ("kikärtor", "Chickpeas (garbanzo beans, bengal gram), mature seeds, raw"),
+    ("kikärter", "Chickpeas (garbanzo beans, bengal gram), mature seeds, raw"),
+    # 'haricots verts' is a French loanword in common Swedish recipe use.
+    ("haricots verts", "Beans, snap, green, raw"),
+    ("gröna bönor", "Beans, snap, green, raw"),
+    # Fruit
+    ("banan", "Bananas, raw"),
+    ("bananer", "Bananas, raw"),
+    ("äpple", "Apples, raw, without skin"),
+    ("äpplen", "Apples, raw, without skin"),
+    ("päron", "Pears, raw"),
+    ("jordgubbar", "Strawberries, raw"),
+    ("hallon", "Raspberries, raw"),
+    ("ananas", "Pineapple, raw, all varieties"),
+    (
+        "vindruvor",
+        "Grapes, red or green (European type, such as Thompson seedless), raw",
+    ),
+    (
+        "röda vindruvor",
+        "Grapes, red or green (European type, such as Thompson seedless), raw",
+    ),  # noqa: E501
+    # Sweeteners
+    ("lönnsirap", "Syrups, maple"),
+    ("agavesirap", "Syrups, maple"),
+    ("kokossocker", "Sugars, brown"),
+    # Nuts / seeds
+    ("cashewnötter", "Nuts, cashew nuts, raw"),
+    ("pinjenötter", "Nuts, pine nuts, dried"),
+    ("valnötter", "Nuts, walnuts, english"),
+    ("pekannötter", "Nuts, pecans"),
+    ("hasselnötter", "Nuts, hazelnuts or filberts"),
+    ("vallmofrön", "Spices, poppy seed"),
+    ("sesamfrön", "Seeds, sesame seeds, whole, dried"),
+    ("solrosfrön", "Seeds, sunflower seed kernels, dried"),
+    # Other staples
+    ("vaniljpulver", "Vanilla extract"),
+    ("vaniljstång", "Vanilla extract"),
+    ("hummus", "Hummus, commercial"),
+    ("couscous", "Couscous, dry"),
+    ("quinoa", "Quinoa, uncooked"),
+    ("sojasås", "Soy sauce made from soy (tamari)"),
+    ("ättika", "Vinegar, distilled"),
+    ("vinäger", "Vinegar, cider"),
+    ("rödvinsvinäger", "Vinegar, red wine"),
+    ("balsamvinäger", "Vinegar, balsamic"),
+    ("majs", "Corn, sweet, yellow, raw"),
+    ("majskorn", "Corn, sweet, yellow, raw"),
+    ("majonnäs", "Salad dressing, mayonnaise, soybean oil, without salt"),
+    ("senap", "Mustard, prepared, yellow"),
+    ("dijonsenap", "Mustard, prepared, yellow"),
+    (
+        "kokosmjölk",
+        "Nuts, coconut milk, canned (liquid expressed from grated meat and water)",
+    ),
+    # Buljong / bouillon
+    (
+        "kycklingbuljong",
+        "Soup, chicken broth, canned, prepared with equal volume water",
+    ),
+    (
+        "nötbuljong",
+        "Soup, beef broth or bouillon canned, ready-to-serve",
+    ),
+    (
+        "grönsaksbuljong",
+        "Soup, chicken broth, canned, prepared with equal volume water",
+    ),
+    # Greens / salads
+    ("sallad", "Lettuce, green leaf, raw"),
+    ("grön sallad", "Lettuce, green leaf, raw"),
+    ("isbergssallad", "Lettuce, iceberg (includes crisphead types), raw"),
+    ("ruccola", "Lettuce, green leaf, raw"),
+    ("sallat", "Lettuce, green leaf, raw"),
+    # Baking add-ons
+    ("chokladhackor", "Candies, semisweet chocolate"),
+    ("choklad", "Baking chocolate, unsweetened, squares"),
+    ("mörk choklad", "Chocolate, dark, 70-85% cacao solids"),
+    ("kakao", "Cocoa, dry powder, unsweetened"),
+    ("rivna nötter", "Nuts, almonds"),
+    # Round 2 additions from 30-recipe pilot retally
+    ("majsstärkelse", "Cornstarch"),
+    ("färskost", "Cheese, cream"),
+    ("smetana", "Cream, sour, cultured"),
+    ("matlagningsgrädde", "Cream, fluid, heavy whipping"),
+    ("avokador", "Avocados, raw, all commercial varieties"),
+    ("salladslökar", "Onions, spring or scallions (includes tops and bulb), raw"),
+    ("ströbröd", "Bread crumbs"),
+    ("nejlikor", "Spices, cloves, ground"),
+    ("nejlika", "Spices, cloves, ground"),
+    ("ärtor", "Peas, green, raw"),
+    ("gröna ärtor", "Peas, green, raw"),
+    ("ärter", "Peas, green, raw"),
+    ("sockerärtor", "Peas, green, raw"),
+    ("linser", "Lentils, raw"),
+    ("torkade linser", "Lentils, raw"),
+    ("röda linser", "Lentils, pink or red, raw"),
+    ("torkade röda linser", "Lentils, pink or red, raw"),
+    ("bröd", "Bread, white, commercially prepared (includes soft bread crumbs)"),
+    ("tomatsås", "Tomato sauce, canned, no salt added"),
+    # Sugar variants — map to granulated white sugar in Swedish usage,
+    # except brown sugar (råsocker = unrefined cane).
+    ("råsocker", "Sugars, brown"),
+    ("rörsocker", "Sugars, granulated"),
+    ("pärlsocker", "Sugars, granulated"),
+    ("florsocker", "Sugars, powdered"),
+    # Fish — FDC has chum salmon as shortest-match; use as stand-in for
+    # general 'whitefish' density since SR Legacy has no generic cod entry.
+    ("torskfilé", "Fish, salmon, chum, raw"),
+    ("torsk", "Fish, salmon, chum, raw"),
+    # 'kinesisk soja' = Chinese soy variant, same as regular soy for ratio math
+    ("kinesisk soja", "Soy sauce made from soy (tamari)"),
+    ("soja", "Soy sauce made from soy (tamari)"),
+    # Mushroom mix / cauliflower variants
+    ("svampmix", "Mushrooms, white, raw"),
+    ("blomkålshuvud", "Cauliflower, raw"),
+    (
+        "kycklingklubbor",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "kycklinglår",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    # Round 3: egg-white/yolk Swedish forms + lime variants + common misspellings
+    ("äggvita", "Egg, white, raw, fresh"),
+    ("äggvitor", "Egg, white, raw, fresh"),
+    ("äggula", "Egg, yolk, raw, fresh"),
+    ("äggulor", "Egg, yolk, raw, fresh"),
+    ("limesaft", "Lime juice, raw"),
+    ("kajennpeppar", "Spices, pepper, red or cayenne"),
+    ("mâchesallad", "Lettuce, green leaf, raw"),
+    ("kummin", "Spices, cumin seed"),
+    ("malen koriander", "Spices, coriander seed"),
+    ("korianderfrön", "Spices, coriander seed"),
+    # Swedish root vegetable commonly grown — FDC has no Jerusalem artichoke
+    # entry; alias to potato as closest density/starch proxy.
+    ("jordärtskockor", "Potatoes, flesh and skin, raw"),
+    ("fisksås", "Soy sauce made from soy (tamari)"),  # fish sauce - salt+umami proxy
+    # Round 4: last misses from the 50-recipe pilot tail
+    ("spiskummin", "Spices, cumin seed"),
+    ("vitvinsvinäger", "Vinegar, distilled"),  # no white-wine variant in FDC
+    ("köttbuljongtärning", "Soup, beef broth or bouillon canned, ready-to-serve"),
+    ("sötpotatis", "Sweet potato, raw"),
+    ("purjolök", "Leeks, (bulb and lower leaf-portion), raw"),
+    ("purjo", "Leeks, (bulb and lower leaf-portion), raw"),
+    ("citronjuice", "Lemon juice, raw"),
+    ("citron juice", "Lemon juice, raw"),
+    # --- English staple aliases from RecipeNLG frequency ranking (b7t.1) ---
+    # Measured on the full 2.2M-row RecipeNLG corpus: the entries below
+    # cover ~60 of the top 60 missing ingredient mentions by frequency,
+    # each concentrated around clear FDC SR Legacy targets. See
+    # scripts/tally_recipenlg_misses.py for the reproducible measurement.
+    #
+    # Ambiguity resolution conventions:
+    #   - 'pepper' alone → black pepper (US/UK recipe convention; "bell
+    #     pepper" is always qualified in cooking prose).
+    #   - 'cheese' alone → cheddar (most common unqualified use in
+    #     recipes.com-style data).
+    #   - 'oil' alone → vegetable (soybean) oil (most common neutral
+    #     cooking oil in the corpus).
+    #   - 'vanilla' alone → vanilla extract (recipe context, not the
+    #     sweetener 'vanilla sugar' already aliased via vaniljsocker).
+    ("garlic", "Garlic, raw"),
+    ("clove garlic", "Garlic, raw"),
+    ("cloves garlic", "Garlic, raw"),
+    ("garlic clove", "Garlic, raw"),
+    ("garlic cloves", "Garlic, raw"),
+    ("vanilla", "Vanilla extract"),
+    ("pure vanilla extract", "Vanilla extract"),
+    ("olive oil", "Oil, olive, salad or cooking"),
+    ("extra virgin olive oil", "Oil, olive, salad or cooking"),
+    ("virgin olive oil", "Oil, olive, salad or cooking"),
+    ("pepper", "Spices, pepper, black"),
+    ("black pepper", "Spices, pepper, black"),
+    ("ground black pepper", "Spices, pepper, black"),
+    ("freshly ground black pepper", "Spices, pepper, black"),
+    ("cayenne pepper", "Spices, pepper, red or cayenne"),
+    ("cayenne", "Spices, pepper, red or cayenne"),
+    ("tomato", "Tomatoes, red, ripe, raw, year round average"),
+    ("tomatoes", "Tomatoes, red, ripe, raw, year round average"),
+    ("ripe tomatoes", "Tomatoes, red, ripe, raw, year round average"),
+    ("lemon juice", "Lemon juice, raw"),
+    ("fresh lemon juice", "Lemon juice, raw"),
+    ("cream cheese", "Cheese, cream"),
+    ("celery", "Celery, raw"),
+    ("celery stalks", "Celery, raw"),
+    ("celery stalk", "Celery, raw"),
+    # Chicken entries map to the boneless/skinless breast variant — the
+    # most common form in recipes. The bare 'chicken' alias defaults to
+    # the same since full-chicken roasting recipes are a minority of
+    # mentions.
+    (
+        "chicken",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "chicken breast",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "chicken breasts",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "boneless chicken breast",
+        "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    ),
+    (
+        "cheddar cheese",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),
+    (
+        "cheddar",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),
+    (
+        "sharp cheddar",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),
+    (
+        "grated cheddar",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),
+    (
+        "cheese",
+        "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    ),
+    ("parsley", "Parsley, fresh"),
+    ("fresh parsley", "Parsley, fresh"),
+    ("chopped parsley", "Parsley, fresh"),
+    ("vegetable oil", "Oil, vegetable, soybean, refined"),
+    ("oil", "Oil, vegetable, soybean, refined"),
+    ("canola oil", "Oil, vegetable, soybean, refined"),
+    (
+        "mayonnaise",
+        "Salad dressing, mayonnaise, soybean oil, without salt",
+    ),
+    ("mayo", "Salad dressing, mayonnaise, soybean oil, without salt"),
+    ("parmesan cheese", "Cheese, parmesan, hard"),
+    ("parmesan", "Cheese, parmesan, hard"),
+    ("pecans", "Nuts, pecans"),
+    ("chopped pecans", "Nuts, pecans"),
+    ("kosher salt", "Salt, table"),
+    ("sea salt", "Salt, table"),
+    ("carrot", "Carrots, raw"),
+    ("carrots", "Carrots, raw"),
+    ("shredded carrots", "Carrots, raw"),
+    ("soy sauce", "Soy sauce made from soy (tamari)"),
+    ("pineapple", "Pineapple, raw, all varieties"),
+    ("crushed pineapple", "Pineapple, raw, all varieties"),
+    ("thyme", "Thyme, fresh"),
+    ("fresh thyme", "Thyme, fresh"),
+    ("dried thyme", "Spices, thyme, dried"),
+    (
+        "chicken broth",
+        "Soup, chicken broth, canned, prepared with equal volume water",
+    ),
+    (
+        "chicken stock",
+        "Soup, chicken broth, canned, prepared with equal volume water",
+    ),
+    ("oregano", "Spices, oregano, dried"),
+    ("dried oregano", "Spices, oregano, dried"),
+    ("ground beef", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("lean ground beef", "Beef, ground, 90% lean meat / 10% fat, raw"),
+    ("mustard", "Mustard, prepared, yellow"),
+    ("yellow mustard", "Mustard, prepared, yellow"),
+    ("dijon mustard", "Mustard, prepared, yellow"),
+    ("prepared mustard", "Mustard, prepared, yellow"),
+    ("dry mustard", "Spices, mustard seed, ground"),
+    ("mustard powder", "Spices, mustard seed, ground"),
+    ("unsalted butter", "Butter, without salt"),
+    ("sweet butter", "Butter, without salt"),
+    ("worcestershire sauce", "Sauce, worcestershire"),
+    ("mushrooms", "Mushrooms, white, raw"),
+    ("white mushrooms", "Mushrooms, white, raw"),
+    ("paprika", "Spices, paprika"),
+    ("smoked paprika", "Spices, paprika"),
+    ("green pepper", "Peppers, sweet, green, raw"),
+    ("green bell pepper", "Peppers, sweet, green, raw"),
+    ("bell pepper", "Peppers, sweet, green, raw"),
+    ("red pepper", "Peppers, sweet, red, raw"),
+    ("red bell pepper", "Peppers, sweet, red, raw"),
+    ("vinegar", "Vinegar, cider"),
+    ("apple cider vinegar", "Vinegar, cider"),
+    ("cider vinegar", "Vinegar, cider"),
+    ("white vinegar", "Vinegar, distilled"),
+    ("distilled vinegar", "Vinegar, distilled"),
+    ("scallion", "Onions, spring or scallions (includes tops and bulb), raw"),
+    ("scallions", "Onions, spring or scallions (includes tops and bulb), raw"),
+    (
+        "green onion",
+        "Onions, spring or scallions (includes tops and bulb), raw",
+    ),
+    (
+        "green onions",
+        "Onions, spring or scallions (includes tops and bulb), raw",
+    ),
+    # 'spring onions' collides with British/Australian usage for the same
+    # plant — alias identically.
+    (
+        "spring onion",
+        "Onions, spring or scallions (includes tops and bulb), raw",
+    ),
+    (
+        "spring onions",
+        "Onions, spring or scallions (includes tops and bulb), raw",
+    ),
+    ("lemon", "Lemons, raw, without peel"),
+    ("lemons", "Lemons, raw, without peel"),
+    ("shortening", "Shortening, vegetable, household, composite"),
+    ("walnuts", "Nuts, walnuts, english"),
+    ("chopped walnuts", "Nuts, walnuts, english"),
+    ("basil", "Basil, fresh"),
+    ("fresh basil", "Basil, fresh"),
+    ("dried basil", "Spices, basil, dried"),
+    ("chili powder", "Spices, chili powder"),
+    # Red onion is not in FDC SR Legacy as a separate entry — alias to
+    # generic onion. Accept that density/portion for red/yellow/white
+    # varieties is indistinguishable at recipe precision.
+    ("red onion", "Onions, raw"),
+    ("red onions", "Onions, raw"),
+    ("yellow onion", "Onions, raw"),
+    ("yellow onions", "Onions, raw"),
+    ("white onion", "Onions, raw"),
+    ("white onions", "Onions, raw"),
+    ("sweet onion", "Onions, raw"),
+    ("chopped onion", "Onions, raw"),
+    ("diced onion", "Onions, raw"),
+    ("ginger", "Ginger root, raw"),
+    ("fresh ginger", "Ginger root, raw"),
+    ("ginger root", "Ginger root, raw"),
+    ("white sugar", "Sugars, granulated"),
+    ("tomato sauce", "Tomato sauce, canned, no salt added"),
+    ("white wine", "Alcoholic beverage, wine, table, white"),
+    ("red wine", "Alcoholic beverage, wine, table, red"),
+    ("cooking wine", "Alcoholic beverage, wine, table, white"),
+    ("dry white wine", "Alcoholic beverage, wine, table, white"),
+    ("dry red wine", "Alcoholic beverage, wine, table, red"),
+    ("mozzarella cheese", "Cheese, mozzarella, whole milk"),
+    ("mozzarella", "Cheese, mozzarella, whole milk"),
+    ("shredded mozzarella", "Cheese, mozzarella, whole milk"),
+    ("coconut", "Nuts, coconut meat, raw"),
+    ("shredded coconut", "Nuts, coconut meat, raw"),
+    ("flaked coconut", "Nuts, coconut meat, raw"),
+    ("chocolate chips", "Candies, semisweet chocolate"),
+    ("chocolate morsels", "Candies, semisweet chocolate"),
+    ("semisweet chocolate chips", "Candies, semisweet chocolate"),
+    ("zucchini", "Squash, summer, zucchini, includes skin, raw"),
+    ("lime juice", "Lime juice, raw"),
+    ("fresh lime juice", "Lime juice, raw"),
+    ("peanut butter", "Peanut butter, smooth style, without salt"),
+    ("smooth peanut butter", "Peanut butter, smooth style, without salt"),
+    ("shrimp", "Crustaceans, shrimp, raw"),
+    # --- Round 2 (b7t.1): next 20 high-frequency misses after the first
+    # pass, measured on the full corpus with round-1 aliases live.
+    ("all-purpose", "Wheat flour, white, all-purpose, enriched, bleached"),
+    ("soda", "Leavening agents, baking soda"),
+    ("cilantro", "Coriander (cilantro) leaves, raw"),
+    ("fresh cilantro", "Coriander (cilantro) leaves, raw"),
+    ("chopped cilantro", "Coriander (cilantro) leaves, raw"),
+    ("coriander leaves", "Coriander (cilantro) leaves, raw"),
+    ("cumin", "Spices, cumin seed"),
+    ("ground cumin", "Spices, cumin seed"),
+    ("cumin seed", "Spices, cumin seed"),
+    ("boiling water", "Beverages, water, tap, drinking"),
+    ("cold water", "Beverages, water, tap, drinking"),
+    ("warm water", "Beverages, water, tap, drinking"),
+    ("hot water", "Beverages, water, tap, drinking"),
+    # Egg plurals (singulars already aliased above — these are the
+    # common NER form).
+    ("egg yolks", "Egg, yolk, raw, fresh"),
+    ("yolks", "Egg, yolk, raw, fresh"),
+    ("egg whites", "Egg, white, raw, fresh"),
+    ("whites", "Egg, white, raw, fresh"),
+    # Hyphenated form is separate from "extra virgin olive oil".
+    ("extra-virgin olive oil", "Oil, olive, salad or cooking"),
+    ("banana", "Bananas, raw"),
+    ("bananas", "Bananas, raw"),
+    ("ripe banana", "Bananas, raw"),
+    ("ripe bananas", "Bananas, raw"),
+    (
+        "tomato paste",
+        (
+            "Tomato products, canned, paste, without salt added"
+            " (Includes foods for USDA's Food Distribution Program)"
+        ),
+    ),
+    ("chocolate", "Baking chocolate, unsweetened, squares"),
+    ("unsweetened chocolate", "Baking chocolate, unsweetened, squares"),
+    ("corn", "Corn, sweet, yellow, raw"),
+    ("frozen corn", "Corn, sweet, yellow, raw"),
+    ("ketchup", "Catsup"),
+    ("tomato ketchup", "Catsup"),
+    # 'oleo' is an older American name for margarine; common in the
+    # RecipeNLG corpus which skews toward older regional cookbook sources.
+    (
+        "oleo",
+        (
+            "Margarine, 80% fat, stick, includes regular and hydrogenated"
+            " corn and soybean oils"
+        ),
+    ),
+    ("rosemary", "Rosemary, fresh"),
+    ("fresh rosemary", "Rosemary, fresh"),
+    ("dried rosemary", "Spices, rosemary, dried"),
+    ("bay leaf", "Spices, bay leaf"),
+    ("bay leaves", "Spices, bay leaf"),
+    ("sesame oil", "Oil, sesame, salad or cooking"),
+    ("toasted sesame oil", "Oil, sesame, salad or cooking"),
+    ("red wine vinegar", "Vinegar, red wine"),
+    ("cabbage", "Cabbage, raw"),
+    ("shredded cabbage", "Cabbage, raw"),
+    ("garlic powder", "Spices, garlic powder"),
+    ("marshmallows", "Candies, marshmallows"),
+    ("mini marshmallows", "Candies, marshmallows"),
+    (
+        "cream of mushroom soup",
+        "Soup, cream of mushroom, canned, condensed",
+    ),
+    (
+        "cream of chicken soup",
+        "Soup, cream of chicken, canned, condensed",
+    ),
+    ("oats", "Oats (Includes foods for USDA's Food Distribution Program)"),
+    (
+        "rolled oats",
+        "Oats (Includes foods for USDA's Food Distribution Program)",
+    ),
+    ("oatmeal", "Oats (Includes foods for USDA's Food Distribution Program)"),
+    (
+        "old-fashioned oats",
+        "Oats (Includes foods for USDA's Food Distribution Program)",
+    ),
+    ("sesame seeds", "Seeds, sesame seeds, whole, dried"),
+    ("sesame seed", "Seeds, sesame seeds, whole, dried"),
+    ("salmon", "Fish, salmon, chum, raw"),
+    ("dill", "Dill weed, fresh"),
+    ("fresh dill", "Dill weed, fresh"),
+    ("dried dill", "Spices, dill weed, dried"),
+    ("dill weed", "Dill weed, fresh"),
+    # --- Round 3 (b7t.1): long-tail staples, each 0.3-0.4% of corpus
+    # mentions; diminishing returns from here.
+    ("broccoli", "Broccoli, raw"),
+    ("broccoli florets", "Broccoli, raw"),
+    ("beans", "Beans, kidney, red, mature seeds, raw"),
+    ("kidney beans", "Beans, kidney, red, mature seeds, raw"),
+    ("red kidney beans", "Beans, kidney, red, mature seeds, raw"),
+    ("navy beans", "Beans, navy, mature seeds, raw"),
+    ("black beans", "Beans, black, mature seeds, raw"),
+    ("pinto beans", "Beans, pinto, mature seeds, raw"),
+    ("green beans", "Beans, snap, green, raw"),
+    ("shallot", "Shallots, raw"),
+    ("shallots", "Shallots, raw"),
+    ("italian sausage", "Sausage, Italian, sweet, links"),
+    ("sausage", "Sausage, Italian, sweet, links"),
+    ("balsamic vinegar", "Vinegar, balsamic"),
+    ("cucumber", "Cucumber, peeled, raw"),
+    ("cucumbers", "Cucumber, peeled, raw"),
+    (
+        "ham",
+        "Ham, sliced, regular (approximately 11% fat)",
+    ),
+    ("diced ham", "Ham, sliced, regular (approximately 11% fat)"),
+    ("condensed milk", "Milk, canned, condensed, sweetened"),
+    ("sweetened condensed milk", "Milk, canned, condensed, sweetened"),
+    # Garlic salt is predominantly salt (~75-80%) plus garlic powder —
+    # alias to table salt preserves density/weight accurately for the
+    # bulk component; the small garlic fraction is noise at recipe scale.
+    ("garlic salt", "Salt, table"),
+    ("lime", "Limes, raw"),
+    ("limes", "Limes, raw"),
+    ("maple syrup", "Syrups, maple"),
+    ("pure maple syrup", "Syrups, maple"),
+    ("hamburger", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("hamburger meat", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("lemon zest", "Lemon peel, raw"),
+    ("lemon peel", "Lemon peel, raw"),
+    ("grated lemon peel", "Lemon peel, raw"),
+    ("curry powder", "Spices, curry powder"),
+    # Bare 'beef' defaults to ground 80/20 since that's the recipe
+    # context — FDC's 'Beef, cured, dried' shortest-match is jerky,
+    # the wrong semantic.
+    ("beef", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    (
+        "crackers",
+        "Crackers, saltines (includes oyster, soda, soup)",
+    ),
+    ("saltines", "Crackers, saltines (includes oyster, soda, soup)"),
+    ("strawberries", "Strawberries, raw"),
+    ("strawberry", "Strawberries, raw"),
+    ("cornmeal", "Cornmeal, whole-grain, yellow"),
+    ("yellow cornmeal", "Cornmeal, whole-grain, yellow"),
+    ("jalapeno", "Peppers, hot chili, green, raw"),
+    ("jalapeno pepper", "Peppers, hot chili, green, raw"),
+    ("jalapenos", "Peppers, hot chili, green, raw"),
+    ("spinach", "Spinach, raw"),
+    ("fresh spinach", "Spinach, raw"),
+    ("frozen spinach", "Spinach, raw"),
+    ("raisins", "Raisins, seeded"),
+    ("almonds", "Nuts, almonds"),
+    ("sliced almonds", "Nuts, almonds"),
+    ("slivered almonds", "Nuts, almonds"),
+    ("blueberries", "Blueberries, raw"),
+    ("yeast", "Leavening agents, yeast, baker's, active dry"),
+    ("active dry yeast", "Leavening agents, yeast, baker's, active dry"),
+    ("instant yeast", "Leavening agents, yeast, baker's, active dry"),
+    ("dry yeast", "Leavening agents, yeast, baker's, active dry"),
+    ("beef broth", "Soup, beef broth or bouillon canned, ready-to-serve"),
+    ("beef stock", "Soup, beef broth or bouillon canned, ready-to-serve"),
+    ("crumbled bacon", "Pork, cured, bacon, unprepared"),
+    ("bacon strips", "Pork, cured, bacon, unprepared"),
+    ("chives", "Chives, raw"),
+    ("fresh chives", "Chives, raw"),
+    # Celery stalks (plural, with 'stalks') shows up as a frequent
+    # compound form — singularize to celery.
+    ("stalks celery", "Celery, raw"),
+    # --- Round 4 (b7t.1): last meaningful round; each item ~0.3% of
+    # mentions, after which the long tail drops below 0.3%.
+    ("whole wheat flour", "Wheat flour, whole-grain, soft wheat"),
+    ("whole-wheat flour", "Wheat flour, whole-grain, soft wheat"),
+    ("wheat flour", "Wheat flour, whole-grain, soft wheat"),
+    ("onion powder", "Spices, onion powder"),
+    ("swiss cheese", "Cheese, swiss"),
+    ("black olives", "Olives, ripe, canned (small-extra large)"),
+    ("olives", "Olives, ripe, canned (small-extra large)"),
+    ("ripe olives", "Olives, ripe, canned (small-extra large)"),
+    ("light brown sugar", "Sugars, brown"),
+    ("dark brown sugar", "Sugars, brown"),
+    ("packed brown sugar", "Sugars, brown"),
+    ("cranberries", "Cranberries, raw"),
+    ("fresh cranberries", "Cranberries, raw"),
+    ("dried cranberries", "Cranberries, raw"),
+    (
+        "pineapple juice",
+        "Pineapple juice, canned or bottled, unsweetened, with added ascorbic acid",
+    ),
+    ("orange", "Oranges, raw, with peel"),
+    ("oranges", "Oranges, raw, with peel"),
+    ("orange juice", "Orange juice, chilled, includes from concentrate"),
+    ("fresh orange juice", "Orange juice, chilled, includes from concentrate"),
+    # Cottage cheese — the closest 'plain' FDC entry is the low-fat
+    # variant; the full-fat basic form isn't separately in SR Legacy.
+    # Pick 2% as the typical "what a recipe means" anchor.
+    ("cottage cheese", "Cheese, cottage, lowfat, 2% milkfat"),
+    ("mint", "Spearmint, fresh"),
+    ("fresh mint", "Spearmint, fresh"),
+    ("peppermint", "Spearmint, fresh"),
+    ("pasta", "Pasta, dry, enriched"),
+    ("spaghetti", "Pasta, dry, enriched"),
+    ("penne", "Pasta, dry, enriched"),
+    ("noodles", "Pasta, dry, enriched"),
+    ("avocado", "Avocados, raw, all commercial varieties"),
+    ("avocados", "Avocados, raw, all commercial varieties"),
+    ("pumpkin", "Pumpkin, raw"),
+    ("pumpkin puree", "Pumpkin, raw"),
+    ("canned pumpkin", "Pumpkin, raw"),
+    ("chickpeas", "Chickpeas (garbanzo beans, bengal gram), mature seeds, raw"),
+    (
+        "garbanzo beans",
+        "Chickpeas (garbanzo beans, bengal gram), mature seeds, raw",
+    ),
+    ("apples", "Apples, raw, without skin"),
+    ("apple slices", "Apples, raw, without skin"),
+    ("diced apples", "Apples, raw, without skin"),
+    ("feta cheese", "Cheese, feta"),
+    ("feta", "Cheese, feta"),
+    ("crumbled feta", "Cheese, feta"),
+    # --- Round 5 (30c): r6w regex-shadow misses, 2026-05-03 ---
+    # Names surfaced by scripts/benchmark_data/shadow_cache_final.json as
+    # frequent regex-decline rows that the LLM hot path resolved trivially.
+    # Each cost one LLM call per cached row; "lettuce" alone covers ~568
+    # mentions of "1 head [of] lettuce" in the current cache.
+    #
+    # Lettuce — bare "lettuce" defaults to green-leaf (matches the existing
+    # Swedish 'sallad' convention); 'leaf lettuce' likewise. Iceberg /
+    # romaine variants stay distinct so density-relevant differences survive.
+    ("lettuce", "Lettuce, green leaf, raw"),
+    ("leaf lettuce", "Lettuce, green leaf, raw"),
+    ("shredded lettuce", "Lettuce, green leaf, raw"),
+    ("iceberg lettuce", "Lettuce, iceberg (includes crisphead types), raw"),
+    ("romaine", "Lettuce, cos or romaine, raw"),
+    ("romaine lettuce", "Lettuce, cos or romaine, raw"),
+    ("kale", "Kale, raw"),
+    ("fresh kale", "Kale, raw"),
+    ("chopped kale", "Kale, raw"),
+    ("arugula", "Arugula, raw"),
+    # Marjoram — FDC has only the dried form; common recipe context.
+    ("marjoram", "Spices, marjoram, dried"),
+    ("dried marjoram", "Spices, marjoram, dried"),
+    # Leek — singular missing alongside the existing Swedish 'purjolök'.
+    ("leek", "Leeks, (bulb and lower leaf-portion), raw"),
+    ("leeks", "Leeks, (bulb and lower leaf-portion), raw"),
+    # Gingerroot — single-word form of "ginger root" frequent in older
+    # American recipe sources.
+    ("gingerroot", "Ginger root, raw"),
+    # Mandarin oranges — recipe context is almost always canned in juice;
+    # FDC's "Tangerines, (mandarin oranges)" entry is the canonical anchor.
+    ("mandarin oranges", "Tangerines, (mandarin oranges), canned, juice pack"),
+    ("mandarin orange", "Tangerines, (mandarin oranges), canned, juice pack"),
+    ("mandarin orange segments", "Tangerines, (mandarin oranges), canned, juice pack"),
+    # Thousand Island dressing — FDC has the regular (non-reduced-fat) entry.
+    (
+        "thousand island dressing",
+        "Salad dressing, thousand island, commercial, regular",
+    ),
+    ("thousand island", "Salad dressing, thousand island, commercial, regular"),
+    # Seasoning salt / seasoned salt — predominantly salt + spice mix; alias
+    # to table salt preserves density/weight at recipe precision (parallel
+    # to the existing 'garlic salt' rationale).
+    ("seasoning salt", "Salt, table"),
+    ("seasoned salt", "Salt, table"),
+    # Cool Whip — FDC's "Whipped topping, frozen, low fat" is the closest
+    # generic anchor for the frozen non-dairy topping category.
+    ("cool whip", "Whipped topping, frozen, low fat"),
+    ("whipped topping", "Whipped topping, frozen, low fat"),
+    ("frozen whipped topping", "Whipped topping, frozen, low fat"),
+    # Cheez Whiz / cheese whiz — FDC carries the KRAFT entry directly.
+    ("cheese whiz", "KRAFT CHEEZ WHIZ Pasteurized Process Cheese Sauce"),
+    ("cheez whiz", "KRAFT CHEEZ WHIZ Pasteurized Process Cheese Sauce"),
 ]
 
 # Supplementary portion data (whole-unit weights not in FDC)
@@ -457,22 +1369,36 @@ SUPPLEMENTARY_PORTIONS: list[tuple[str, str, float, str]] = [
     ("Potatoes, flesh and skin, raw", "large baking", 340, "US baking potato"),
     ("Potatoes, flesh and skin, raw", "medium baking", 283, "US baking potato"),
     ("Potatoes, flesh and skin, raw", "small baking", 226, "US baking potato"),
+    # Generic potato size sentinels (for lakates.csv sample_input — b7t.20).
+    # Same weights as the baking sizes; the CSV convention uses plain
+    # "1large" / "1medium" without qualifier.
+    ("Potatoes, flesh and skin, raw", "LARGE", 300, "generic large potato"),
+    ("Potatoes, flesh and skin, raw", "MEDIUM", 170, "generic medium potato"),
+    ("Potatoes, flesh and skin, raw", "SMALL", 85, "generic small potato"),
+    # Onion size sentinels (b7t.20 sample_input/lakates.csv).
+    ("Onions, raw", "LARGE", 150, "typical large onion"),
+    ("Onions, raw", "MEDIUM", 110, "typical medium onion"),
+    ("Onions, raw", "SMALL", 70, "typical small onion"),
 ]
 
 
-def load_supplementary(conn: sqlite3.Connection) -> None:
-    """Load supplementary ingredients and extra synonyms/portions."""
+def load_supplementary_foods(conn: sqlite3.Connection) -> None:
+    """Insert the SUPPLEMENTARY foods, their synonyms, and their densities.
 
-    # 1. Supplementary ingredients
+    Canonical name for supplementary entries is the first synonym
+    (by convention, put the English form first).
+    """
     for entry in SUPPLEMENTARY:
         name = str(entry["name"])
         synonyms = list(entry["synonyms"])  # type: ignore[arg-type]
         density = float(entry["density"])  # type: ignore[arg-type]
         source_note = str(entry.get("source_note", ""))
+        canonical = synonyms[0].lower() if synonyms else name.lower()
 
         cur = conn.execute(
-            "INSERT INTO food (name, source) VALUES (?, 'supplementary')",
-            (name,),
+            "INSERT INTO food (name, canonical_name, source) "
+            "VALUES (?, ?, 'supplementary')",
+            (name, canonical),
         )
         food_id = cur.lastrowid
         assert food_id is not None
@@ -492,20 +1418,28 @@ def load_supplementary(conn: sqlite3.Connection) -> None:
             (food_id, density, source_note),
         )
 
-    # 2. Synonym aliases (map short names to FDC foods)
+
+def load_synonym_aliases(conn: sqlite3.Connection) -> None:
+    """Process FDC_SYNONYM_ALIASES: register short names as synonyms.
+
+    Idempotent — safe to call multiple times. Run once before FAO loading
+    (so FDC-target aliases like 'butter' claim their canonical synonym
+    before FAO's auto-synonym 'Butter' does), and once after FAO loading
+    (to resolve aliases whose target only exists in FAO, e.g.
+    'havregryn' -> 'Oats'). The first alias defined for a food also sets
+    the food's canonical short form — so order matters here.
+    """
     for synonym, fdc_name in FDC_SYNONYM_ALIASES:
         row = conn.execute(
-            "SELECT id FROM food WHERE name = ? AND source = 'fdc'",
+            "SELECT id, canonical_name FROM food WHERE name = ? COLLATE NOCASE "
+            "ORDER BY CASE source WHEN 'fdc' THEN 1 WHEN 'fao' THEN 2 ELSE 3 END "
+            "LIMIT 1",
             (fdc_name,),
         ).fetchone()
         if row is None:
-            print(
-                f"  Warning: FDC food not found for synonym '{synonym}': '{fdc_name}'",
-                file=sys.stderr,
-            )
-            continue
+            continue  # target not loaded yet; will retry in second pass
 
-        food_id = row[0]
+        food_id, canonical_name = row
         try:
             conn.execute(
                 "INSERT INTO synonym (food_id, name) VALUES (?, ?)",
@@ -513,8 +1447,15 @@ def load_supplementary(conn: sqlite3.Connection) -> None:
             )
         except sqlite3.IntegrityError:
             pass  # synonym already exists
+        if canonical_name is None:
+            conn.execute(
+                "UPDATE food SET canonical_name = ? WHERE id = ?",
+                (synonym.lower(), food_id),
+            )
 
-    # 3. Supplementary portion data
+
+def load_supplementary_portions(conn: sqlite3.Connection) -> None:
+    """Load the SUPPLEMENTARY_PORTIONS table of whole-unit weights."""
     for fdc_name, unit_name, gram_weight, notes in SUPPLEMENTARY_PORTIONS:
         row = conn.execute(
             "SELECT id FROM food WHERE name = ? AND source = 'fdc'",
@@ -532,6 +1473,20 @@ def load_supplementary(conn: sqlite3.Connection) -> None:
             "VALUES (?, ?, ?, 'supplementary', ?)",
             (row[0], unit_name, gram_weight, notes),
         )
+
+
+def report_missing_aliases(conn: sqlite3.Connection) -> None:
+    """After all loading phases, warn about aliases that never resolved."""
+    for synonym, fdc_name in FDC_SYNONYM_ALIASES:
+        row = conn.execute(
+            "SELECT 1 FROM food WHERE name = ? COLLATE NOCASE LIMIT 1",
+            (fdc_name,),
+        ).fetchone()
+        if row is None:
+            print(
+                f"  Warning: food not found for synonym '{synonym}': '{fdc_name}'",
+                file=sys.stderr,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -573,12 +1528,29 @@ def main() -> None:
     fdc_density_count = derive_fdc_densities(conn)
     print(f"  {fdc_density_count} densities derived")
 
-    print("Loading supplementary data...")
-    load_supplementary(conn)
+    # Load supplementary foods first, then process aliases once so FDC-target
+    # aliases (e.g. 'butter' -> 'Butter, without salt') claim their canonical
+    # synonym before FAO's auto-synonym insertion shadows them.
+    print("Loading supplementary foods...")
+    load_supplementary_foods(conn)
 
+    print("Registering synonym aliases (FDC/supplementary pass)...")
+    load_synonym_aliases(conn)
+
+    # FAO loading may create new foods (e.g. 'Oats') that aren't in FDC.
     print("Loading FAO/INFOODS density data...")
     fao_count = load_fao_densities(conn)
     print(f"  {fao_count} densities loaded")
+
+    # Second pass picks up aliases pointing at FAO-only foods
+    # (e.g. 'havregryn' -> 'Oats').
+    print("Registering synonym aliases (FAO pass)...")
+    load_synonym_aliases(conn)
+
+    print("Loading supplementary portions...")
+    load_supplementary_portions(conn)
+
+    report_missing_aliases(conn)
 
     conn.commit()
 

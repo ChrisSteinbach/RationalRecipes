@@ -11,6 +11,7 @@ See scripts/build_db.py for the database build pipeline.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 _DB_PATH = Path(__file__).parent / "data" / "ingredients.db"
@@ -51,7 +52,9 @@ class Factory:
     """
 
     _INGREDIENTS: dict[str, Ingredient] = {}
+    _MISSES: set[str] = set()
     _conn: sqlite3.Connection | None = None
+    _lock: threading.Lock = threading.Lock()
 
     @classmethod
     def _get_conn(cls) -> sqlite3.Connection:
@@ -61,6 +64,36 @@ class Factory:
                 check_same_thread=False,
             )
         return cls._conn
+
+    @classmethod
+    def warm_cache(cls) -> int:
+        """Pre-load every ingredient synonym into the in-memory cache.
+
+        Call once at startup before batch operations to avoid per-lookup
+        DB round-trips during the hot path. Returns the number of synonyms
+        loaded. Idempotent — subsequent calls are near-instant.
+
+        Each synonym caches its own ``Ingredient`` instance so that
+        ``canonical_name()`` reflects the synonym used for the lookup
+        (per-synonym canonical, dfm). E.g. ``get_by_name("cheddar")``
+        and ``get_by_name("cheese")`` both resolve to the same FDC food
+        but return different canonicals.
+        """
+        with cls._lock:
+            if cls._INGREDIENTS:
+                return 0  # Already warm
+            conn = cls._get_conn()
+            synonym_rows = conn.execute("SELECT name FROM synonym").fetchall()
+            loaded = 0
+            for (syn_name,) in synonym_rows:
+                key = syn_name.lower().strip()
+                if key in cls._INGREDIENTS:
+                    continue
+                ingredient = cls._load_from_db(key)
+                if ingredient is not None:
+                    cls._INGREDIENTS[key] = ingredient
+                    loaded += 1
+            return loaded
 
     @classmethod
     def register(cls, ingredient: Ingredient) -> None:
@@ -73,25 +106,33 @@ class Factory:
         """Lookup an Ingredient instance by name.
 
         First checks the in-memory cache, then queries the SQLite database.
-        Raises KeyError if the ingredient is not found.
+        Thread-safe: the shared connection and cache are protected by a lock.
+        Caches negative lookups so repeated misses on the same name skip
+        the expensive ``_suggest`` DB query (~1ms → ~0.5us).
         """
         key = name.lower().strip()
 
-        # Check cache first
-        if key in cls._INGREDIENTS:
-            return cls._INGREDIENTS[key]
+        with cls._lock:
+            # Check positive cache
+            if key in cls._INGREDIENTS:
+                return cls._INGREDIENTS[key]
 
-        # Query the database
-        ingredient = cls._load_from_db(key)
-        if ingredient is None:
-            suggestions = cls._suggest(key)
-            if suggestions:
-                hint = "\n".join(f"  - {s}" for s in suggestions)
-                raise KeyError(f"{name!r}. Did you mean:\n{hint}")
-            raise KeyError(key)
+            # Check negative cache — skip the DB round-trip entirely
+            if key in cls._MISSES:
+                raise KeyError(key)
 
-        cls._INGREDIENTS[key] = ingredient
-        return ingredient
+            # Query the database
+            ingredient = cls._load_from_db(key)
+            if ingredient is None:
+                cls._MISSES.add(key)
+                suggestions = cls._suggest(key)
+                if suggestions:
+                    hint = "\n".join(f"  - {s}" for s in suggestions)
+                    raise KeyError(f"{name!r}. Did you mean:\n{hint}")
+                raise KeyError(key)
+
+            cls._INGREDIENTS[key] = ingredient
+            return ingredient
 
     @classmethod
     def _suggest(cls, name: str, limit: int = 5) -> list[str]:
@@ -125,7 +166,7 @@ class Factory:
 
         # Find the food via synonym
         row = conn.execute(
-            "SELECT f.id, f.name "
+            "SELECT f.id, f.name, f.canonical_name "
             "FROM synonym s JOIN food f ON f.id = s.food_id "
             "WHERE s.name = ? COLLATE NOCASE",
             (name,),
@@ -136,6 +177,7 @@ class Factory:
 
         food_id: int = row[0]
         food_name: str = row[1]
+        canonical_name: str | None = row[2]
 
         # Get density (prefer fdc_derived, then supplementary, then fao)
         density_rows = conn.execute(
@@ -187,6 +229,12 @@ class Factory:
         if "medium" in lower_units:
             default_wholeunit = lower_units["medium"]
 
+        # Per-synonym canonical (dfm): the canonical for THIS lookup is the
+        # lookup synonym itself, so ``get_by_name("cheddar")`` and
+        # ``get_by_name("cheese")`` both resolve to the same FDC food but
+        # report different canonical_names. The food's stored umbrella
+        # canonical (e.g. ``flour`` for ``vetemjöl``) is preserved on a
+        # separate field for the cross-language fallback in canonical.py.
         ingredient = Ingredient(
             names=names,
             conversion=density,
@@ -194,12 +242,13 @@ class Factory:
             density_alternatives=density_alts,
             wholeunits2weight=wholeunits if wholeunits else None,
             default_wholeunit_weight=default_wholeunit,
+            canonical_name=name,
+            food_canonical_name=canonical_name,
         )
 
-        # Cache all synonyms
-        for syn in names:
-            cls._INGREDIENTS[syn.lower().strip()] = ingredient
-
+        # Caller (get_by_name) caches under the lookup key; we deliberately
+        # do not bulk-cache siblings since each synonym needs its own
+        # Ingredient with a distinct canonical_name.
         return ingredient
 
 
@@ -215,12 +264,20 @@ class Ingredient:
         density_alternatives: list[tuple[float, str]] | None = None,
         wholeunits2weight: dict[str, float] | None = None,
         default_wholeunit_weight: str | None = None,
+        canonical_name: str | None = None,
+        food_canonical_name: str | None = None,
     ) -> None:
         self._conversion = conversion
         self._density_source = density_source
         self._density_alternatives = density_alternatives or []
         self._name = names[0]
         self._names = names
+        self._canonical_name = canonical_name
+        # ``food_canonical_name`` is the food-table canonical (umbrella)
+        # — used as a cross-language fallback when a foreign synonym
+        # (e.g. ``vetemjöl``) needs to translate to its English short form
+        # (``flour``). See scrape.canonical.canonicalize_name.
+        self._food_canonical_name = food_canonical_name
         self._wholeunits2grams: dict[str, float] = {}
         if wholeunits2weight is not None:
             for unit, weight in wholeunits2weight.items():
@@ -234,6 +291,29 @@ class Ingredient:
     def name(self) -> str:
         """Returns ingredient name"""
         return self._name
+
+    def canonical_name(self) -> str:
+        """Per-synonym canonical (dfm).
+
+        Returns the lookup synonym used to obtain this instance, so
+        ``get_by_name("cheddar").canonical_name() == "cheddar"`` and
+        ``get_by_name("cheese").canonical_name() == "cheese"`` even
+        though both resolve to the same FDC ``Cheese, cheddar...`` food.
+        Falls back to the first synonym when no per-synonym was set.
+        """
+        return self._canonical_name or self._name
+
+    def food_canonical_name(self) -> str | None:
+        """Food-table umbrella canonical (cross-language fallback).
+
+        Stable across all synonyms of a given food — e.g. every Swedish
+        alias for ``Wheat flour, white...`` returns ``flour`` here.
+        Used by ``scrape.canonical.canonicalize_name`` to translate a
+        foreign synonym (``vetemjöl``) to the English umbrella when the
+        synonym itself is not in the static ``SWEDISH_TO_ENGLISH`` dict.
+        Returns ``None`` when the food has no stored canonical.
+        """
+        return self._food_canonical_name
 
     def synonyms(self) -> list[str]:
         """Returns a list of ingredient synonyms"""
@@ -287,6 +367,10 @@ class Ingredient:
             return self._wholeunits2grams[self._default_wholeunit_weight]
         else:
             return None
+
+    def default_wholeunit_name(self) -> str | None:
+        """Return the name of the default whole-unit (e.g. "medium")."""
+        return self._default_wholeunit_weight
 
     def __repr__(self) -> str:
         return self.name()

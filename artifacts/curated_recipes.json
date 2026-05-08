@@ -1,5 +1,12 @@
 {
   "version": 1,
+  "metadata": {
+    "dataset_version": "2026.04.24",
+    "released": "2026-04-24",
+    "pipeline_revision": "0fae8c8",
+    "notes": "Initial release convention. Four hand-curated crepe variants (Swedish pancakes, English pannkakor, French crêpes, English crepes).",
+    "recipe_count": 4
+  },
   "recipes": [
     {
       "id": "swedish-pancakes",

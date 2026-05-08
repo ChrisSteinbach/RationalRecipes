@@ -1,0 +1,449 @@
+"""Maintainer-editor helpers: thin, testable wrappers around CatalogDB.
+
+The Streamlit shell in ``scripts/editor.py`` uses these helpers for every
+read and write. Keeping the data plumbing here (and out of the Streamlit
+module) means the editor's logic can be unit-tested without spinning up
+the streamlit runtime, and any future surface (FastAPI+HTMX, Tauri, etc.)
+can re-use the same helpers.
+
+Write paths are pass-throughs onto ``CatalogDB.add_filter_override`` /
+``CatalogDB.add_substitute_override`` / ``CatalogDB.clear_override``, so
+filter / substitute decisions made via the editor produce the same
+``variant_overrides`` rows and trigger the same ``_recompute_stats_for_variant``
+as the CLI in ``scripts/review_variants.py``. No parallel implementation,
+no recompute drift.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from rational_recipes.catalog_db import (
+    CatalogDB,
+    IngredientStatsRow,
+    ListFilters,
+    VariantMemberRow,
+    VariantOverrideRow,
+    VariantRow,
+)
+from rational_recipes.provenance import (
+    VariantProvenance,
+    load_variant_provenance,
+)
+
+DEFAULT_RECIPENLG_PATH = Path("dataset/full_dataset.csv")
+
+
+@dataclass(frozen=True, slots=True)
+class VariantSummary:
+    """One row in the editor's variant-list table."""
+
+    variant_id: str
+    title: str
+    n_recipes: int
+    canonical_ingredients: tuple[str, ...]
+    review_status: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class VariantDetail:
+    """Everything the detail view renders for one variant."""
+
+    variant: VariantRow
+    stats: list[IngredientStatsRow]
+    members: list[VariantMemberRow]
+    overrides: list[VariantOverrideRow]
+    excluded_recipe_ids: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class OperationResult:
+    """Outcome of a write — surfaced to the UI as a status message."""
+
+    ok: bool
+    message: str
+    override_id: int | None = None
+
+
+def list_variant_summaries(
+    db: CatalogDB, *, include_dropped: bool = True
+) -> list[VariantSummary]:
+    """Variant rows for the sidebar list.
+
+    Includes dropped variants by default — the maintainer editor wants
+    to see everything, including review='drop' rows whose decisions may
+    need re-litigation. The CLI's review loop hides them; this surface
+    doesn't.
+    """
+    filters = ListFilters(include_dropped=include_dropped)
+    rows = db.list_variants(filters)
+    return [
+        VariantSummary(
+            variant_id=r.variant_id,
+            title=r.display_title or r.normalized_title,
+            n_recipes=r.n_recipes,
+            canonical_ingredients=r.canonical_ingredient_set,
+            review_status=r.review_status,
+        )
+        for r in rows
+    ]
+
+
+def load_variant_detail(
+    db: CatalogDB, variant_id: str
+) -> VariantDetail | None:
+    """Bundle every read needed to render the detail view."""
+    variant = db.get_variant(variant_id)
+    if variant is None:
+        return None
+    overrides = db.list_overrides(variant_id)
+    excluded = frozenset(
+        ov.payload["recipe_id"]
+        for ov in overrides
+        if ov.override_type == "filter"
+    )
+    return VariantDetail(
+        variant=variant,
+        stats=db.get_ingredient_stats(variant_id),
+        members=db.get_variant_members(variant_id),
+        overrides=overrides,
+        excluded_recipe_ids=excluded,
+    )
+
+
+def apply_filter(
+    db: CatalogDB,
+    variant_id: str,
+    recipe_id: str,
+    reason: str,
+) -> OperationResult:
+    """Drop one source recipe via add_filter_override + recompute."""
+    try:
+        override_id = db.add_filter_override(
+            variant_id, recipe_id, reason=reason
+        )
+    except ValueError as exc:
+        return OperationResult(ok=False, message=str(exc))
+    detail = f" — {reason}" if reason else ""
+    return OperationResult(
+        ok=True,
+        message=f"Excluded {recipe_id}{detail}.",
+        override_id=override_id,
+    )
+
+
+def apply_canonical_reassign(
+    db: CatalogDB,
+    variant_id: str,
+    recipe_id: str,
+    raw_text: str,
+    new_canonical: str,
+) -> OperationResult:
+    """Per-source canonical reassignment via add_canonical_reassign_override."""
+    try:
+        override_id = db.add_canonical_reassign_override(
+            variant_id, recipe_id, raw_text, new_canonical
+        )
+    except ValueError as exc:
+        return OperationResult(ok=False, message=str(exc))
+    return OperationResult(
+        ok=True,
+        message=(
+            f"Reassigned {raw_text!r} in {recipe_id} → {new_canonical}."
+        ),
+        override_id=override_id,
+    )
+
+
+def load_provenance(
+    db: CatalogDB,
+    variant_id: str,
+    recipenlg_path: Path = DEFAULT_RECIPENLG_PATH,
+) -> VariantProvenance | None:
+    """Per-canonical raw-form breakdown for a variant.
+
+    Wraps ``rational_recipes.provenance.load_variant_provenance`` so the
+    editor surface depends only on this module. ``recipenlg_path`` may
+    point at a file that doesn't exist — the underlying loader returns
+    a provenance bundle with zero corpus hits rather than raising, so the
+    UI can render an empty state instead of crashing.
+    """
+    return load_variant_provenance(db, variant_id, recipenlg_path)
+
+
+def apply_substitute(
+    db: CatalogDB,
+    variant_id: str,
+    from_name: str,
+    to_name: str,
+) -> OperationResult:
+    """Fold canonical X into Y via add_substitute_override + recompute."""
+    try:
+        override_id = db.add_substitute_override(
+            variant_id, from_name, to_name
+        )
+    except ValueError as exc:
+        return OperationResult(ok=False, message=str(exc))
+    return OperationResult(
+        ok=True,
+        message=f"Folded {from_name} → {to_name}.",
+        override_id=override_id,
+    )
+
+
+def apply_component_assign(
+    db: CatalogDB,
+    variant_id: str,
+    canonical_name: str,
+    component: str,
+) -> OperationResult:
+    """Label one canonical as belonging to ``component`` (kfp3).
+
+    Per-drop component grouping for multi-component dishes — wraps
+    ``CatalogDB.add_component_assign_override``. Re-labels go through
+    clear+add (the helper rejects a duplicate label), so the editor UI
+    surfaces a clear-then-reassign flow rather than silent overwrites.
+    """
+    try:
+        override_id = db.add_component_assign_override(
+            variant_id, canonical_name, component
+        )
+    except ValueError as exc:
+        return OperationResult(ok=False, message=str(exc))
+    return OperationResult(
+        ok=True,
+        message=f"Labeled {canonical_name} → {component}.",
+        override_id=override_id,
+    )
+
+
+def apply_component_split(
+    db: CatalogDB,
+    variant_id: str,
+    canonical_name: str,
+    splits: list[tuple[str, float]],
+) -> OperationResult:
+    """Split one canonical's mass across components by weight (1jbk).
+
+    Per-drop multi-component support: e.g. apple crumble's flour is
+    mostly in the crumble but also acts as a roux thickener in the
+    filling. Wraps ``CatalogDB.add_component_split_override``; the
+    helper validates weights and rejects duplicate labels.
+    """
+    try:
+        override_id = db.add_component_split_override(
+            variant_id, canonical_name, splits
+        )
+    except ValueError as exc:
+        return OperationResult(ok=False, message=str(exc))
+    parts = ", ".join(f"{c} {w:.2f}" for c, w in splits)
+    return OperationResult(
+        ok=True,
+        message=f"Split {canonical_name} → {parts}.",
+        override_id=override_id,
+    )
+
+
+def clear_one_override(db: CatalogDB, override_id: int) -> OperationResult:
+    """Remove a single override row + recompute the affected variant."""
+    if db.clear_override(override_id):
+        return OperationResult(
+            ok=True,
+            message=f"Cleared override {override_id}.",
+            override_id=override_id,
+        )
+    return OperationResult(
+        ok=False,
+        message=f"No override with id {override_id}.",
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalContributor:
+    """One source recipe that contributes a canonical to a variant.
+
+    ``directions_text`` is the cached source recipe directions
+    (RationalRecipes-15g4 / F5 — populated for RecipeNLG sources during
+    extraction; ``None`` for WDC and other corpora). Surfacing it lets
+    the maintainer read a recipe's split decisions instead of guessing
+    them (RationalRecipes-cw2u).
+    """
+
+    recipe_id: str
+    title: str | None
+    url: str | None
+    corpus: str
+    quantity: float | None
+    directions_text: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MemberIngredient:
+    """One row of a source recipe's per-canonical mass for the editor.
+
+    ``variant_mean`` is the variant's recomputed mean_proportion for
+    this canonical (post-override view from
+    ``variant_ingredient_stats``). ``None`` when the source's canonical
+    has been folded by an active substitute (so the canonical is no
+    longer in the variant's stats) — in that case the ``Δ`` column
+    has no meaningful comparator.
+
+    ``delta_pp`` is ``(fraction - variant_mean) * 100``, in percentage
+    points. Negative = source under-uses this canonical relative to
+    the variant average; positive = over-uses. ``None`` when either
+    side is missing.
+    """
+
+    canonical_name: str
+    grams: float | None
+    fraction: float | None  # share of the recipe's total mass
+    variant_mean: float | None = None
+    delta_pp: float | None = None
+
+
+def list_member_ingredients(
+    db: CatalogDB, recipe_id: str, *, variant_id: str | None = None
+) -> list[MemberIngredient]:
+    """Per-canonical (grams, share-of-recipe) for one source recipe.
+
+    Used by the editor's Source-recipes panel to surface each member's
+    contribution at a glance — without it, the panel just shows title +
+    corpus + outlier score and the maintainer has no way to see WHAT
+    canonicals the recipe contributed or in what proportions, so a
+    "drop this source" decision is taken blind. Reads
+    ``parsed_ingredients`` directly (independent of any active
+    overrides), so what you see is the source's own data — not the
+    post-override view used by ``variant_ingredient_stats``.
+    Sorted by mass-share descending; rows with NULL quantity surface
+    last (the LLM extracted a canonical but no usable mass; the row
+    is informational rather than averageable).
+
+    When ``variant_id`` is supplied, each row carries the variant's
+    post-override ``mean_proportion`` for that canonical and a
+    ``delta_pp`` in percentage points (source share − variant mean,
+    × 100). The editor uses this to colour-code the per-source
+    breakdown so the maintainer can see at a glance which ingredients
+    diverge from the cluster average.
+    """
+    rows = db.connection.execute(
+        """
+        SELECT canonical_name, quantity FROM parsed_ingredients
+        WHERE recipe_id = ?
+        """,
+        (recipe_id,),
+    ).fetchall()
+    total = sum(r[1] for r in rows if r[1] is not None) or 0.0
+    variant_means: dict[str, float] = {}
+    if variant_id is not None:
+        # Sum across split rows (kfp3 / 1jbk): a canonical may produce
+        # multiple variant_ingredient_stats rows when split across
+        # components; the source's share is unsplit, so the comparator
+        # is the canonical's TOTAL mean across components.
+        for canon, mean in db.connection.execute(
+            """
+            SELECT canonical_name, mean_proportion FROM variant_ingredient_stats
+            WHERE variant_id = ?
+            """,
+            (variant_id,),
+        ).fetchall():
+            variant_means[canon] = variant_means.get(canon, 0.0) + mean
+    out: list[MemberIngredient] = []
+    for canon_name, quantity in rows:
+        fraction = (
+            (quantity / total)
+            if (quantity is not None and total > 0)
+            else None
+        )
+        variant_mean = variant_means.get(canon_name)
+        delta_pp: float | None = None
+        if fraction is not None and variant_mean is not None:
+            delta_pp = (fraction - variant_mean) * 100.0
+        out.append(
+            MemberIngredient(
+                canonical_name=canon_name,
+                grams=quantity,
+                fraction=fraction,
+                variant_mean=variant_mean,
+                delta_pp=delta_pp,
+            )
+        )
+    out.sort(
+        key=lambda m: (m.fraction is None, -(m.fraction or 0.0), m.canonical_name)
+    )
+    return out
+
+
+def list_canonical_contributors(
+    db: CatalogDB, variant_id: str, canonical: str
+) -> list[CanonicalContributor]:
+    """Source recipes whose parsed_ingredients contribute ``canonical``.
+
+    Surfaces the (recipe_id, title, url, corpus, directions_text) for
+    every variant member whose ``parsed_ingredients`` has a row with
+    this canonical — independent of corpus. Used by the editor's
+    per-source reassign form to surface contributing recipes when the
+    RecipeNLG-only provenance join comes up empty (e.g. the canonical
+    lives only on a WDC source). The maintainer can then plug a
+    (recipe_id, raw_text) pair in by hand.
+
+    ``directions_text`` is sourced from ``recipes.directions_text``
+    (cached for RecipeNLG members per F5; ``NULL`` for non-RecipeNLG
+    sources). Used by the components-panel split expander
+    (RationalRecipes-cw2u) to surface the recipe's own directions so
+    the maintainer can read off split decisions instead of guessing.
+    """
+    rows = db.connection.execute(
+        """
+        SELECT pi.recipe_id, r.title, r.url, r.corpus, pi.quantity,
+               r.directions_text
+        FROM parsed_ingredients pi
+        JOIN recipes r ON r.recipe_id = pi.recipe_id
+        JOIN variant_members vm ON vm.recipe_id = pi.recipe_id
+        WHERE vm.variant_id = ? AND pi.canonical_name = ?
+        ORDER BY pi.recipe_id ASC
+        """,
+        (variant_id, canonical),
+    ).fetchall()
+    return [
+        CanonicalContributor(
+            recipe_id=r[0],
+            title=r[1],
+            url=r[2],
+            corpus=r[3],
+            quantity=r[4],
+            directions_text=r[5],
+        )
+        for r in rows
+    ]
+
+
+def describe_override(override: VariantOverrideRow) -> str:
+    """One-line human-readable summary for the active-overrides panel."""
+    p = override.payload
+    if override.override_type == "filter":
+        reason = p.get("reason") or ""
+        suffix = f" ({reason})" if reason else ""
+        return f"filter: drop {p.get('recipe_id', '?')}{suffix}"
+    if override.override_type == "substitute":
+        return f"substitute: {p.get('from', '?')} → {p.get('to', '?')}"
+    if override.override_type == "canonical_reassign":
+        return (
+            f"canonical_reassign: recipe={p.get('recipe_id', '?')} "
+            f"{p.get('raw_text', '?')!r} → {p.get('new_canonical', '?')}"
+        )
+    if override.override_type == "component_assign":
+        canonical = p.get("canonical_name", "?")
+        if "components" in p:
+            # 1jbk multi-component shape:
+            # ``{canonical_name, components: [{component, weight}, ...]}``.
+            parts = [
+                f"{s.get('component', '?')}@{s.get('weight', '?')}"
+                for s in p["components"]
+            ]
+            return (
+                f"component_assign: {canonical} → " + " + ".join(parts)
+            )
+        # Legacy kfp3 shape: ``{canonical_name, component}``.
+        return f"component_assign: {canonical} → {p.get('component', '?')}"
+    return f"{override.override_type}: {p}"

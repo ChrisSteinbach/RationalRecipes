@@ -11,12 +11,44 @@
       "const": 1,
       "description": "Schema version for forward compatibility."
     },
+    "metadata": {
+      "$ref": "#/$defs/Metadata",
+      "description": "Optional dataset-release provenance. Omitted for ad-hoc builds; populated for tagged releases."
+    },
     "recipes": {
       "type": "array",
       "items": { "$ref": "#/$defs/Recipe" }
     }
   },
   "$defs": {
+    "Metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dataset_version": {
+          "type": "string",
+          "description": "Release version identifier. Date-based (YYYY.MM.DD) or semver."
+        },
+        "released": {
+          "type": "string",
+          "format": "date",
+          "description": "ISO 8601 release date (YYYY-MM-DD)."
+        },
+        "pipeline_revision": {
+          "type": "string",
+          "description": "Git revision (short SHA or tag) of the pipeline at build time."
+        },
+        "recipe_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of recipes in this release. Redundant with recipes.length but convenient for listings."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Short human-readable release notes — what changed vs the last release."
+        }
+      }
+    },
     "Recipe": {
       "type": "object",
       "required": ["id", "title", "category", "base_ingredient", "sample_size", "ingredients"],
