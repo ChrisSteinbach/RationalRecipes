@@ -530,6 +530,49 @@ class TestListCanonicalContributors:
         vid = ids["pannkakor"]
         assert ops.list_canonical_contributors(db, vid, "ghost") == []
 
+    def test_member_ingredients_lists_with_shares(self) -> None:
+        """list_member_ingredients returns per-canonical (grams, fraction)
+        for one source recipe, sorted by share descending."""
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        # Pick the first member; the seed gives every recipe flour=100g
+        # (cells column) — but ``parsed_ingredients`` is what we read,
+        # and the seed populates that with proportions only via the
+        # MergedNormalizedRow.proportions path. Read what's there.
+        member = db.get_variant_members(vid)[0]
+        ingredients = ops.list_member_ingredients(db, member.recipe_id)
+        assert len(ingredients) == 2
+        # Sorted by share descending: milk (~71%) before flour (~29%).
+        assert ingredients[0].canonical_name == "milk"
+        assert ingredients[0].fraction is not None
+        assert ingredients[0].fraction > ingredients[1].fraction
+        # Fractions sum to ~1.0.
+        total = sum(i.fraction for i in ingredients if i.fraction is not None)
+        assert abs(total - 1.0) < 1e-6
+
+    def test_member_ingredients_handles_null_quantity(self) -> None:
+        """Rows with NULL quantity are surfaced last with fraction=None."""
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        member = db.get_variant_members(vid)[0]
+        # Hand-insert a NULL-quantity parsed_ingredient.
+        with db.connection:
+            db.connection.execute(
+                "INSERT INTO parsed_ingredients (recipe_id, canonical_name, "
+                "quantity) VALUES (?, ?, ?)",
+                (member.recipe_id, "ghost ingredient", None),
+            )
+        ingredients = ops.list_member_ingredients(db, member.recipe_id)
+        assert ingredients[-1].canonical_name == "ghost ingredient"
+        assert ingredients[-1].fraction is None
+        assert ingredients[-1].grams is None
+
+    def test_member_ingredients_unknown_recipe_empty(self) -> None:
+        db = CatalogDB.in_memory()
+        assert ops.list_member_ingredients(db, "no-such-recipe") == []
+
     def test_directions_text_carried_through_when_cached(self) -> None:
         """cw2u: ``directions_text`` is surfaced when cached on the
         recipe row so the editor's split form can render it with the

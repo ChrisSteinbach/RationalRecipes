@@ -401,44 +401,115 @@ def _render_filter_panel(
         "Drop a source to exclude it from the average. The override is "
         "reversible from the panel below."
     )
+    # Outlier-score interpretation: the metric is Euclidean distance
+    # from the per-ingredient median of the variant's proportion matrix
+    # (g/100g) — see ``rational_recipes/scrape/outlier.py`` for the
+    # derivation. 0 is on-median; higher means proportions diverge more
+    # from the cluster center. Without this caption the bare numbers
+    # "outlier 16.72" / "outlier 106.94" are uninterpretable — is 16.72
+    # "low"? are both in the same ballpark? The rank annotation below
+    # gives a within-cluster ordering on top of the absolute score.
+    st.caption(
+        "**Outlier score** = Euclidean distance from the variant's "
+        "per-ingredient median, in g/100g. 0 = on the median; **lower "
+        "is more central**, higher means proportions diverge more from "
+        "the cluster center. Within a cluster, ranks are most-central → "
+        "most-outlier; a noticeable jump in score (e.g. 20 → 100) usually "
+        "flags an extraction problem rather than a real recipe variant."
+    )
     excluded = detail.excluded_recipe_ids
-    for member in detail.members:
+    members = detail.members  # already sorted by outlier_score ascending
+    n_active = sum(1 for m in members if m.recipe_id not in excluded)
+    rank = 0
+    for member in members:
         is_excluded = member.recipe_id in excluded
+        if not is_excluded:
+            rank += 1
         cols = st.columns([4, 2, 2, 1])
         title = member.title or "(no title)"
-        prefix = "~~" if is_excluded else ""
-        suffix = "~~" if is_excluded else ""
-        cols[0].markdown(f"{prefix}**{title}**{suffix}")
+        url = _format_url(member.url)
+        if is_excluded:
+            cols[0].markdown(f"~~**{title}**~~")
+        elif url:
+            cols[0].markdown(f"**[{title}]({url})**")
+        else:
+            cols[0].markdown(f"**{title}**")
         cols[1].caption(member.corpus)
-        score = (
+        score_str = (
             "—"
             if member.outlier_score is None
             else f"{member.outlier_score:.2f}"
         )
-        cols[2].caption(f"outlier {score}")
+        if is_excluded:
+            cols[2].caption(f"outlier {score_str} · dropped")
+        else:
+            cols[2].caption(
+                f"outlier {score_str} · #{rank} of {n_active}"
+            )
         if is_excluded:
             cols[3].caption("dropped")
-            continue
-        with cols[3].popover("drop"):
-            reason = st.text_input(
-                "reason",
-                key=f"reason::{detail.variant.variant_id}::{member.recipe_id}",
-            )
-            if st.button(
-                "Confirm drop",
-                key=f"drop::{detail.variant.variant_id}::{member.recipe_id}",
-            ):
-                result = ops.apply_filter(
-                    db,
-                    detail.variant.variant_id,
-                    member.recipe_id,
-                    reason,
+        else:
+            with cols[3].popover("drop"):
+                reason = st.text_input(
+                    "reason",
+                    key=(
+                        f"reason::{detail.variant.variant_id}::"
+                        f"{member.recipe_id}"
+                    ),
                 )
-                if result.ok:
-                    st.success(result.message)
-                    st.rerun()
-                else:
-                    st.error(result.message)
+                if st.button(
+                    "Confirm drop",
+                    key=(
+                        f"drop::{detail.variant.variant_id}::"
+                        f"{member.recipe_id}"
+                    ),
+                ):
+                    result = ops.apply_filter(
+                        db,
+                        detail.variant.variant_id,
+                        member.recipe_id,
+                        reason,
+                    )
+                    if result.ok:
+                        st.success(result.message)
+                        st.rerun()
+                    else:
+                        st.error(result.message)
+        # Per-source canonical breakdown: shows what the recipe
+        # actually contributed before any overrides applied. Useful
+        # for diagnosing extraction problems flagged by a high
+        # outlier score (e.g. all-1.0g extraction failure, or one
+        # ingredient at 300g while everything else is in tablespoons).
+        with st.expander(
+            f"  Show {member.title or 'this source'}'s ingredients",
+            expanded=False,
+        ):
+            ingredients = ops.list_member_ingredients(db, member.recipe_id)
+            if not ingredients:
+                st.caption(
+                    "No parsed ingredients for this recipe — "
+                    "extraction may have failed."
+                )
+            else:
+                rows = [
+                    {
+                        "canonical": ing.canonical_name,
+                        "grams": (
+                            None
+                            if ing.grams is None
+                            else round(ing.grams, 2)
+                        ),
+                        "share": (
+                            None
+                            if ing.fraction is None
+                            else f"{ing.fraction * 100:.1f}%"
+                        ),
+                    }
+                    for ing in ingredients
+                ]
+                st.dataframe(
+                    rows, use_container_width=True, hide_index=True
+                )
 
 
 def _render_substitute_panel(
@@ -475,6 +546,23 @@ def _render_substitute_panel(
             st.rerun()
         else:
             st.error(result.message)
+
+
+def _format_url(url: str | None) -> str:
+    """Prepend ``https://`` only when the URL doesn't already carry a scheme.
+
+    RecipeNLG stores URLs schemeless (``www.cookbooks.com/...``); WDC
+    arrives with a scheme. Without this fix, a markdown link like
+    ``[title](www.cookbooks.com/...)`` resolves relative to the
+    Streamlit dev origin and lands on
+    ``http://localhost:8502/www.cookbooks.com/...`` instead of the
+    intended cookbook page. Mirrors ``scripts/render_drop.py::_format_url``.
+    """
+    if not url:
+        return ""
+    if url.startswith(("http://", "https://")):
+        return url
+    return f"https://{url}"
 
 
 def _highlight_canonical(directions: str, canonical: str) -> str:
@@ -524,7 +612,7 @@ def _render_split_source_context(
     )
     for c in contributors:
         title = c.title or "(no title)"
-        url = c.url or ""
+        url = _format_url(c.url)
         if url:
             st.markdown(f"- [{title}]({url}) · _{c.corpus}_")
         else:

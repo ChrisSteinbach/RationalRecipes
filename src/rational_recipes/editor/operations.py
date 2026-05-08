@@ -278,6 +278,52 @@ class CanonicalContributor:
     directions_text: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class MemberIngredient:
+    """One row of a source recipe's per-canonical mass for the editor."""
+
+    canonical_name: str
+    grams: float | None
+    fraction: float | None  # share of the recipe's total mass
+
+
+def list_member_ingredients(
+    db: CatalogDB, recipe_id: str
+) -> list[MemberIngredient]:
+    """Per-canonical (grams, share-of-recipe) for one source recipe.
+
+    Used by the editor's Source-recipes panel to surface each member's
+    contribution at a glance — without it, the panel just shows title +
+    corpus + outlier score and the maintainer has no way to see WHAT
+    canonicals the recipe contributed or in what proportions, so a
+    "drop this source" decision is taken blind. Reads
+    ``parsed_ingredients`` directly (independent of any active
+    overrides), so what you see is the source's own data — not the
+    post-override view used by ``variant_ingredient_stats``.
+    Sorted by mass-share descending; rows with NULL quantity surface
+    last (the LLM extracted a canonical but no usable mass; the row
+    is informational rather than averageable).
+    """
+    rows = db.connection.execute(
+        """
+        SELECT canonical_name, quantity FROM parsed_ingredients
+        WHERE recipe_id = ?
+        """,
+        (recipe_id,),
+    ).fetchall()
+    total = sum(r[1] for r in rows if r[1] is not None) or 0.0
+    out = [
+        MemberIngredient(
+            canonical_name=r[0],
+            grams=r[1],
+            fraction=(r[1] / total) if (r[1] is not None and total > 0) else None,
+        )
+        for r in rows
+    ]
+    out.sort(key=lambda m: (m.fraction is None, -(m.fraction or 0.0), m.canonical_name))
+    return out
+
+
 def list_canonical_contributors(
     db: CatalogDB, variant_id: str, canonical: str
 ) -> list[CanonicalContributor]:
