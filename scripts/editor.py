@@ -370,14 +370,31 @@ def _render_components_panel(
         {c for c in label_by_canonical.values() if c}
     )
 
+    # The component label is now per (canonical, component); a split
+    # canonical produces multiple rows (kfp3+1jbk). For surfacing the
+    # current label we group by canonical and show "crumble@0.9,
+    # filling@0.1" when the canonical is split.
+    label_by_canonical_summary: dict[str, str] = {}
+    splits_seen: dict[str, list[tuple[str, float]]] = {}
+    for s in detail.stats:
+        if s.component:
+            splits_seen.setdefault(s.canonical_name, []).append(
+                (s.component, s.mean_proportion)
+            )
+    for c, pieces in splits_seen.items():
+        total = sum(w for _, w in pieces) or 1.0
+        label_by_canonical_summary[c] = ", ".join(
+            f"{comp}@{w / total:.2f}" for comp, w in pieces
+        )
+
     vid = detail.variant.variant_id
     cols = st.columns([3, 3, 2])
     selected_canonical = cols[0].selectbox(
         "Canonical",
         canonicals,
         format_func=lambda c: (
-            f"{c}  ·  {label_by_canonical[c]}"
-            if label_by_canonical.get(c)
+            f"{c}  ·  {label_by_canonical_summary[c]}"
+            if label_by_canonical_summary.get(c)
             else c
         ),
         key=f"comp_canonical::{vid}",
@@ -391,7 +408,7 @@ def _render_components_panel(
         placeholder="crumble, filling, ...",
         key=f"comp_name::{vid}::{selected_canonical}",
     )
-    current_label = label_by_canonical.get(selected_canonical)
+    current_label = label_by_canonical_summary.get(selected_canonical)
     if current_label:
         cols[2].caption(f"current: {current_label}")
         cols[2].caption("clear it below to relabel")
@@ -404,6 +421,67 @@ def _render_components_panel(
             st.rerun()
         else:
             st.error(result.message)
+
+    # 1jbk: split-across-components form. Most canonicals get a single
+    # label; the split affordance lives in an expander so the simple
+    # form stays uncluttered. Two rows are sufficient for the common
+    # apple-crumble flour case (crumble + filling-roux); a third can
+    # be added inline by re-clearing and re-splitting once we hit a
+    # dish that needs it.
+    with st.expander("Split this canonical across components"):
+        st.caption(
+            "For canonicals whose mass spans multiple components — e.g. "
+            "apple crumble's flour: most in the crumble, some as a roux "
+            "thickener in the filling. Weights must sum to 1.0."
+        )
+        split_cols = st.columns([2, 1, 2, 1, 1])
+        split_a_name = split_cols[0].text_input(
+            "Component A",
+            value=existing_components[0] if existing_components else "",
+            key=f"split_a_name::{vid}::{selected_canonical}",
+        )
+        split_a_weight = split_cols[1].number_input(
+            "Weight A",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.9,
+            step=0.05,
+            key=f"split_a_weight::{vid}::{selected_canonical}",
+        )
+        split_b_name = split_cols[2].text_input(
+            "Component B",
+            value=(
+                existing_components[1]
+                if len(existing_components) >= 2
+                else ""
+            ),
+            key=f"split_b_name::{vid}::{selected_canonical}",
+        )
+        split_b_weight = split_cols[3].number_input(
+            "Weight B",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.1,
+            step=0.05,
+            key=f"split_b_weight::{vid}::{selected_canonical}",
+        )
+        if split_cols[4].button(
+            "Split", key=f"split_apply::{vid}::{selected_canonical}"
+        ):
+            result = ops.apply_component_split(
+                db,
+                vid,
+                selected_canonical,
+                [
+                    (split_a_name, float(split_a_weight)),
+                    (split_b_name, float(split_b_weight)),
+                ],
+            )
+            if result.ok:
+                st.success(result.message)
+                st.rerun()
+            else:
+                st.error(result.message)
 
 
 def _render_overrides_panel(
