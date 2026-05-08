@@ -506,13 +506,23 @@ def _render_member_ingredients_table(
     """Per-source ingredient breakdown with variant-mean comparison.
 
     Built as a pandas DataFrame so the cell-level Styler can apply
-    the amber-magnitude gradient on the ``Δ pp`` column. Numbers stay
-    numeric (rather than pre-formatted strings) so Streamlit's
-    dataframe formatter renders sensible alignment + sortability;
-    cell formatters give the human-readable display.
+    the amber-magnitude gradient on the ``Δ from avg`` column.
+    Numbers stay numeric (rather than pre-formatted strings) so
+    Streamlit's dataframe formatter renders sensible alignment +
+    sortability; cell formatters give the human-readable display
+    (signed value with the ``pp`` unit suffix).
     """
     import pandas as pd  # noqa: PLC0415  (pandas ships with streamlit)
 
+    # Column ``Δ from avg`` is the source share minus the variant
+    # average, in PERCENTAGE POINTS (not relative-percent change).
+    # Both ``share`` and ``avg`` are already in percent, so the delta
+    # is straight subtraction on the same scale — additive,
+    # well-behaved when the average is close to zero, and intuitive
+    # for mass-fraction differences ("this recipe has 22 percentage
+    # points less flour" rather than "80% less flour"). The column
+    # header uses the long form rather than the "pp" shorthand so
+    # nothing assumes the reader knows the convention.
     df = pd.DataFrame(
         {
             "canonical": [i.canonical_name for i in ingredients],
@@ -525,7 +535,7 @@ def _render_member_ingredients_table(
                 None if i.variant_mean is None else i.variant_mean * 100.0
                 for i in ingredients
             ],
-            "Δ pp": [i.delta_pp for i in ingredients],
+            "Δ from avg": [i.delta_pp for i in ingredients],
         }
     )
     styled = (
@@ -534,9 +544,11 @@ def _render_member_ingredients_table(
                 "grams": lambda v: "—" if pd.isna(v) else f"{v:.2f}",
                 "share": lambda v: "—" if pd.isna(v) else f"{v:.1f}%",
                 "avg": lambda v: "—" if pd.isna(v) else f"{v:.1f}%",
-                "Δ pp": lambda v: "—" if pd.isna(v) else f"{v:+.1f}",
+                "Δ from avg": lambda v: (
+                    "—" if pd.isna(v) else f"{v:+.1f} pp"
+                ),
             }
-        ).map(_style_delta_amber, subset=["Δ pp"])
+        ).map(_style_delta_amber, subset=["Δ from avg"])
     )
     st.dataframe(styled, use_container_width=True, hide_index=True)
 
