@@ -101,6 +101,44 @@ def _render_stats(st: Any, detail: ops.VariantDetail) -> None:
     st.dataframe(rows, use_container_width=True, hide_index=True)
 
 
+# Top-level streamlit import is needed by the module-scope cache_data
+# decorator below — Streamlit only caches when the @cache_data is applied
+# at definition time, not inside a render function. The rest of the file
+# uses the ``st`` parameter passed to the render functions so the
+# helpers can be unit-tested with a fake (see tests/test_editor.py).
+import streamlit as _st  # noqa: E402
+
+
+@_st.cache_data(show_spinner="Loading source provenance…")
+def _cached_load_provenance(
+    _db: CatalogDB,
+    variant_id: str,
+    override_count: int,
+    recipenlg_path_str: str,
+) -> Any:
+    """Streamlit-cached wrapper around ``ops.load_provenance``.
+
+    Provenance is the expensive call in the editor (scans the 2.2 GB
+    RecipeNLG ``full_dataset.csv`` for raw lines on every miss — ~3 s
+    per render against the dev-box disk). Streamlit re-runs the whole
+    script on every interaction, so without caching every click pays
+    the full scan.
+
+    Cache key: ``(variant_id, override_count, recipenlg_path_str)``.
+    The ``_db`` underscore prefix tells Streamlit not to try to hash
+    the SQLite connection. ``override_count`` makes any substitute /
+    filter / reassign / component_assign write invalidate the cached
+    result — every write changes the count by ±1, and the recompute
+    that follows is what changes ``get_ingredient_stats`` (which
+    ``load_variant_provenance`` reads to enumerate canonicals). The
+    expensive corpus scan itself only depends on the variant's
+    ``target_urls`` set (which doesn't change without a filter
+    override), but the cheap summarization step does, so re-running
+    on every write keeps the displayed data correct.
+    """
+    return ops.load_provenance(_db, variant_id, Path(recipenlg_path_str))
+
+
 def _render_provenance_panel(
     st: Any,
     db: CatalogDB,
@@ -126,6 +164,19 @@ def _render_provenance_panel(
         "**Substitute** panel above — that's a one-shot fold across all "
         "members; per-source retags here only touch the recipe you pick."
     )
+    # The provenance load scans a 2.2 GB CSV (RecipeNLG full_dataset.csv)
+    # for raw lines on every miss — typically a few seconds per variant.
+    # Most editor sessions don't need it, so render only when the
+    # maintainer explicitly asks. Cached load keeps subsequent toggles
+    # cheap once the data is in memory.
+    show = st.checkbox(
+        "Show provenance & reassign UI (slow first load — scans the "
+        "2.2 GB RecipeNLG corpus)",
+        value=False,
+        key=f"prov_toggle::{detail.variant.variant_id}",
+    )
+    if not show:
+        return
     if not recipenlg_path.exists():
         st.caption(
             f"RecipeNLG corpus not found at `{recipenlg_path}` — "
@@ -133,7 +184,16 @@ def _render_provenance_panel(
             "available. The reassign UI below still works (it doesn't "
             "depend on the corpus join)."
         )
-    prov = ops.load_provenance(db, detail.variant.variant_id, recipenlg_path)
+    # Streamlit-cached: keyed by (variant_id, override count, corpus path).
+    # ``len(detail.overrides)`` is the freshness signal: any substitute /
+    # filter / reassign / component_assign write changes the count,
+    # invalidating the cache so the next render reflects post-write stats.
+    prov = _cached_load_provenance(
+        db,
+        detail.variant.variant_id,
+        len(detail.overrides),
+        str(recipenlg_path),
+    )
     if prov is None:
         st.error("Could not load provenance for this variant.")
         return
@@ -623,7 +683,6 @@ def _render_detail(
 
     st.subheader("Per-ingredient stats")
     _render_stats(st, detail)
-
     _render_provenance_panel(st, db, detail, recipenlg_path)
     _render_substitute_panel(st, db, detail)
     _render_components_panel(st, db, detail)
