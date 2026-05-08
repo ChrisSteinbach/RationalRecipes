@@ -235,11 +235,41 @@ def _render_reassign_form(
         )
         recipe_id_default, raw_text_default = pairs[idx]
     else:
-        st.caption(
-            "No raw forms available from the corpus join. Enter the "
-            "(recipe_id, raw_text) by hand below."
-        )
-        recipe_id_default, raw_text_default = "", ""
+        # Provenance is RecipeNLG-only; canonicals that live solely on
+        # WDC (or any other) sources have no raw-line cache to surface.
+        # Show the contributing recipes from ``parsed_ingredients`` so
+        # the maintainer at least knows where the canonical came from
+        # — they can paste a (recipe_id, raw_text) pair below by hand,
+        # or (more often) realise they wanted Substitute instead.
+        contributors = ops.list_canonical_contributors(db, vid, canonical)
+        if contributors:
+            st.caption(
+                f"No RecipeNLG raw forms for **{canonical}** — this "
+                "canonical only appears on non-RecipeNLG sources, and "
+                "we cache raw lines for RecipeNLG only. To merge two "
+                "canonicals across the WHOLE variant (the usual case), "
+                "use the **Substitute** panel above. To reassign one "
+                "source's line by hand, paste the recipe_id + a "
+                "substring of that line below; "
+                f"`{canonical}` itself usually works as the substring."
+            )
+            for c in contributors:
+                url = c.url or ""
+                st.caption(
+                    f"  · contributing source: `{c.recipe_id}` "
+                    f"({c.corpus}) — [{c.title or 'untitled'}]({url})"
+                )
+            recipe_id_default = contributors[0].recipe_id
+            raw_text_default = canonical
+        else:
+            st.caption(
+                "No raw forms available and no contributing recipes "
+                "found in parsed_ingredients — the canonical may have "
+                "been folded by an active substitute override. Clear "
+                "any substitutes first if you want to reassign at the "
+                "source level."
+            )
+            recipe_id_default, raw_text_default = "", ""
     cols = st.columns([2, 3, 3, 1])
     recipe_id = cols[0].text_input(
         "recipe_id",

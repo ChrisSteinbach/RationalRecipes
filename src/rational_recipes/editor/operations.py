@@ -259,6 +259,53 @@ def clear_one_override(db: CatalogDB, override_id: int) -> OperationResult:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class CanonicalContributor:
+    """One source recipe that contributes a canonical to a variant."""
+
+    recipe_id: str
+    title: str | None
+    url: str | None
+    corpus: str
+    quantity: float | None
+
+
+def list_canonical_contributors(
+    db: CatalogDB, variant_id: str, canonical: str
+) -> list[CanonicalContributor]:
+    """Source recipes whose parsed_ingredients contribute ``canonical``.
+
+    Surfaces the (recipe_id, title, url, corpus) for every variant
+    member whose ``parsed_ingredients`` has a row with this canonical
+    — independent of corpus. Used by the editor's per-source reassign
+    form to surface contributing recipes when the RecipeNLG-only
+    provenance join comes up empty (e.g. the canonical lives only on
+    a WDC source). The maintainer can then plug a (recipe_id, raw_text)
+    pair in by hand.
+    """
+    rows = db.connection.execute(
+        """
+        SELECT pi.recipe_id, r.title, r.url, r.corpus, pi.quantity
+        FROM parsed_ingredients pi
+        JOIN recipes r ON r.recipe_id = pi.recipe_id
+        JOIN variant_members vm ON vm.recipe_id = pi.recipe_id
+        WHERE vm.variant_id = ? AND pi.canonical_name = ?
+        ORDER BY pi.recipe_id ASC
+        """,
+        (variant_id, canonical),
+    ).fetchall()
+    return [
+        CanonicalContributor(
+            recipe_id=r[0],
+            title=r[1],
+            url=r[2],
+            corpus=r[3],
+            quantity=r[4],
+        )
+        for r in rows
+    ]
+
+
 def describe_override(override: VariantOverrideRow) -> str:
     """One-line human-readable summary for the active-overrides panel."""
     p = override.payload

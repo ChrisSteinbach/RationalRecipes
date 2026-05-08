@@ -502,3 +502,48 @@ class TestApplyComponentSplit:
         )
         assert result.ok is False
         assert "not in stats" in result.message
+
+
+class TestListCanonicalContributors:
+    """RecipeNLG-only provenance can leave non-RecipeNLG-sourced
+    canonicals with no raw-line forms to surface. The editor falls back
+    to listing contributing recipes via parsed_ingredients so the
+    maintainer at least knows where the canonical came from."""
+
+    def test_lists_recipes_with_titles_and_urls(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        # _seed builds a 3-recipe variant with flour + milk in every
+        # row; both canonicals show up in parsed_ingredients with one
+        # row per (recipe, canonical).
+        contribs = ops.list_canonical_contributors(db, vid, "flour")
+        assert len(contribs) == 3
+        for c in contribs:
+            assert c.title == "pannkakor"
+            assert c.url is not None
+            assert c.corpus == "recipenlg"
+
+    def test_unknown_canonical_returns_empty_list(self) -> None:
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor")
+        vid = ids["pannkakor"]
+        assert ops.list_canonical_contributors(db, vid, "ghost") == []
+
+    def test_only_returns_variant_members(self) -> None:
+        """Two variants share a canonical name; the helper returns only
+        the recipes that are members of the requested variant."""
+        db = CatalogDB.in_memory()
+        ids = _seed(db, "pannkakor", "crepes")
+        # Each variant has its own 3 recipes with flour, so the
+        # contributor list is scoped per-variant.
+        for label in ("pannkakor", "crepes"):
+            contribs = ops.list_canonical_contributors(
+                db, ids[label], "flour"
+            )
+            assert len(contribs) == 3
+            for c in contribs:
+                # Each variant's recipes carry that variant's title; if
+                # the helper leaked across variants we'd see mixed
+                # titles here.
+                assert c.title == label
