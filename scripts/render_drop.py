@@ -18,6 +18,7 @@ import argparse
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Any
 
 from rational_recipes.catalog_db import CatalogDB
 from rational_recipes.render.instruction_picker import (
@@ -109,6 +110,165 @@ def _format_natural_quantity(
     return ""
 
 
+def _stats_table_header() -> tuple[str, str]:
+    """Markdown header + alignment row for the ingredient table.
+
+    Shared by the flat-render path and the per-component sub-tables so
+    the Mass % / stddev / CI / n / grams / Quantity columns line up.
+    """
+    return (
+        "| Ingredient | Mass % | ± stddev | 95% CI | n | per 1 kg | "
+        "Quantity |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    )
+
+
+def _format_stat_row(
+    s: Any, mean_pct: float, batch_grams: float
+) -> str:
+    """One markdown table row.
+
+    ``mean_pct`` is the percentage to print in the "Mass %" column —
+    ``s['mean_proportion']`` for the flat path, or the rescaled
+    within-component proportion for the grouped path. The gram column
+    always reads off the whole-recipe mean_proportion × batch_grams,
+    so the absolute scaling of the drop is unambiguous regardless of
+    how the percentages are scoped.
+    """
+    grams_for_batch = _scale_to_grams(s["mean_proportion"], batch_grams)
+    natural = _format_natural_quantity(
+        grams_for_batch,
+        s["density_g_per_ml"],
+        s["whole_unit_name"],
+        s["whole_unit_grams"],
+    )
+    natural_cell = natural if natural else "—"
+    return (
+        f"| {s['canonical_name']} "
+        f"| {_format_pct(mean_pct)} "
+        f"| {_format_pct(s['stddev'])} "
+        f"| {_format_ci(s['ci_lower'], s['ci_upper'])} "
+        f"| {s['min_sample_size']} "
+        f"| {grams_for_batch:.0f} g "
+        f"| {natural_cell} |"
+    )
+
+
+def _render_flat_stats(
+    lines: list[str], stats: list[Any], batch_grams: float
+) -> None:
+    """Pre-kfp3 single-list rendering — used when no component is set."""
+    lines.append("## Ingredients (mass fractions)")
+    lines.append("")
+    # The "Quantity" column is the F4 addition (RationalRecipes-4ba4):
+    # natural-language form ("1¼ cups", "3 medium") rendered from
+    # density / whole-unit metadata in variant_ingredient_stats. When the
+    # row is missing those columns the cell stays blank and the gram
+    # column carries the load — that's the pre-F4 baseline.
+    head, sep = _stats_table_header()
+    lines.append(head)
+    lines.append(sep)
+    for s in stats:
+        lines.append(_format_stat_row(s, s["mean_proportion"], batch_grams))
+    lines.append("")
+
+
+def _render_grouped_stats(
+    lines: list[str], stats: list[Any], batch_grams: float
+) -> None:
+    """Per-component sub-tables with rescaled within-component % (kfp3).
+
+    Components are ordered by their summed mass fraction descending —
+    the dominant component (the one that contributes the most mass to
+    the recipe) goes first. Within each component the table is sorted
+    by within-component proportion descending for readability. Any
+    canonicals that haven't been labeled yet land in an "Ungrouped"
+    bucket displayed last, so partial labeling during editor work
+    still yields a complete drop.
+    """
+    by_component: dict[str | None, list[Any]] = {}
+    for s in stats:
+        by_component.setdefault(s["component"], []).append(s)
+
+    # Component-mass-fraction = sum of member mean_proportions. For
+    # ungrouped (None) we still compute it so the display can include
+    # the "x% of total recipe" caption uniformly.
+    component_totals: dict[str | None, float] = {
+        comp: sum(s["mean_proportion"] for s in members)
+        for comp, members in by_component.items()
+    }
+
+    # Heaviest first, but always render ungrouped last regardless of mass.
+    grouped_order = sorted(
+        (c for c in by_component if c is not None),
+        key=lambda c: component_totals[c],
+        reverse=True,
+    )
+    if None in by_component:
+        ordered: list[str | None] = [*grouped_order, None]
+    else:
+        ordered = [*grouped_order]
+
+    lines.append("## Ingredients (mass fractions, grouped by component)")
+    lines.append("")
+
+    # Cross-component mass-ratio header. For two-component drops this
+    # reads as "Crumble : Filling ≈ 1 : 2.4 by mass". Skipped when only
+    # one labeled component exists (the ratio is degenerate) or when
+    # everything is ungrouped (the grouped path doesn't fire then).
+    if len(grouped_order) >= 2:
+        ratio_pieces = []
+        smallest = min(component_totals[c] for c in grouped_order)
+        if smallest > 0:
+            for c in grouped_order:
+                ratio = component_totals[c] / smallest
+                ratio_pieces.append(f"{c} {ratio:.1f}")
+            lines.append(
+                "**Cross-component mass ratio**: "
+                + " : ".join(ratio_pieces)
+                + " (lightest component = 1)."
+            )
+            lines.append("")
+
+    for comp in ordered:
+        members = by_component[comp]
+        comp_total = component_totals[comp]
+        comp_grams = comp_total * batch_grams
+        if comp is None:
+            heading = "### Ungrouped"
+            caption = (
+                f"_Canonicals not yet labeled. "
+                f"{_format_pct(comp_total)} of total recipe "
+                f"(~{comp_grams:.0f} g per 1 kg). Label these in the "
+                f"editor's component panel to roll them into a section._"
+            )
+        else:
+            heading = f"### {comp.title()}"
+            caption = (
+                f"_{_format_pct(comp_total)} of total recipe "
+                f"(~{comp_grams:.0f} g per 1 kg). Mass % column is "
+                f"rescaled within {comp.lower()}; the per-1-kg column "
+                f"is still in whole-recipe grams._"
+            )
+        lines.append(heading)
+        lines.append("")
+        lines.append(caption)
+        lines.append("")
+        head, sep = _stats_table_header()
+        lines.append(head)
+        lines.append(sep)
+        # Sort members by within-component proportion descending — the
+        # dominant ingredient in each component leads its table.
+        for s in sorted(
+            members, key=lambda r: r["mean_proportion"], reverse=True
+        ):
+            within = (
+                s["mean_proportion"] / comp_total if comp_total > 0 else 0.0
+            )
+            lines.append(_format_stat_row(s, within, batch_grams))
+        lines.append("")
+
+
 def _format_url(url: str | None) -> str:
     """Prepend ``https://`` only when the URL doesn't already carry a scheme.
 
@@ -151,7 +311,8 @@ def render(
     stats = conn.execute(
         """SELECT canonical_name, ordinal, mean_proportion, stddev,
                   ci_lower, ci_upper, ratio, min_sample_size,
-                  density_g_per_ml, whole_unit_name, whole_unit_grams
+                  density_g_per_ml, whole_unit_name, whole_unit_grams,
+                  component
            FROM variant_ingredient_stats
            WHERE variant_id = ?
            ORDER BY ordinal""",
@@ -208,36 +369,19 @@ def render(
         lines.append(variant["description"])
         lines.append("")
 
-    lines.append("## Ingredients (mass fractions)")
-    lines.append("")
-    # The "Quantity" column is the F4 addition (RationalRecipes-4ba4):
-    # natural-language form ("1¼ cups", "3 medium") rendered from
-    # density / whole-unit metadata in variant_ingredient_stats. When the
-    # row is missing those columns the cell stays blank and the gram
-    # column carries the load — that's the pre-F4 baseline.
-    lines.append(
-        "| Ingredient | Mass % | ± stddev | 95% CI | n | per 1 kg | Quantity |"
-    )
-    lines.append("|---|---:|---:|---:|---:|---:|---:|")
-    for s in stats:
-        grams_for_batch = _scale_to_grams(s["mean_proportion"], batch_grams)
-        natural = _format_natural_quantity(
-            grams_for_batch,
-            s["density_g_per_ml"],
-            s["whole_unit_name"],
-            s["whole_unit_grams"],
-        )
-        natural_cell = natural if natural else "—"
-        lines.append(
-            f"| {s['canonical_name']} "
-            f"| {_format_pct(s['mean_proportion'])} "
-            f"| {_format_pct(s['stddev'])} "
-            f"| {_format_ci(s['ci_lower'], s['ci_upper'])} "
-            f"| {s['min_sample_size']} "
-            f"| {grams_for_batch:.0f} g "
-            f"| {natural_cell} |"
-        )
-    lines.append("")
+    # kfp3: when any stat row carries a component label, render the
+    # ingredients as per-component sub-tables (with rescaled within-
+    # component percentages and a cross-component mass-ratio header).
+    # Otherwise fall through to the flat per-recipe table that's been
+    # the default since ehe7. The grouping is presentation-only — the
+    # underlying mean_proportion is fraction-of-total-recipe in both
+    # paths; per-component % is computed at render time as
+    # mean_proportion / sum(mean_proportion in component).
+    has_components = any(s["component"] for s in stats)
+    if has_components:
+        _render_grouped_stats(lines, stats, batch_grams)
+    else:
+        _render_flat_stats(lines, stats, batch_grams)
 
     # Notes / caveats
     lines.append("## Notes")

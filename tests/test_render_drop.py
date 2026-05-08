@@ -672,6 +672,178 @@ class TestTopNCentralPicker:
             assert any(members[0].url in line for line in bracketed)
 
 
+class TestRenderHonorsComponentGrouping:
+    """RationalRecipes-kfp3: per-drop component grouping.
+
+    When any ``variant_ingredient_stats.component`` is non-NULL the
+    renderer switches to per-component sub-tables with rescaled
+    within-component percentages and a cross-component mass-ratio
+    header. Otherwise the flat table renders unchanged.
+    """
+
+    @staticmethod
+    def _seed_crumble(db: CatalogDB) -> str:
+        # Three identical recipes — butter+flour read as topping, apple
+        # reads as filling. Per-recipe proportions: butter 30%, flour
+        # 20%, apple 50%. Crumble component total = 50%, filling = 50%
+        # → expected cross-component mass ratio "Filling : Crumble = 1 : 1"
+        # (when sorted by component sum, both come out equal, but the
+        # tie's resolved deterministically by sort stability so the
+        # body still renders cleanly).
+        rows = [
+            MergedNormalizedRow(
+                url=f"https://example.com/r/{i}",
+                title="apple crumble",
+                corpus="recipenlg",
+                cells={"butter": "60 g", "flour": "40 g", "apple": "100 g"},
+                proportions={"butter": 30.0, "flour": 20.0, "apple": 50.0},
+            )
+            for i in range(3)
+        ]
+        variant = MergedVariantResult(
+            variant_title="apple crumble",
+            canonical_ingredients=frozenset({"butter", "flour", "apple"}),
+            cooking_methods=frozenset(),
+            normalized_rows=rows,
+            header_ingredients=["apple", "butter", "flour"],
+        )
+        db.upsert_variant(
+            variant, l1_key="apple-crumble", base_ingredient="apple"
+        )
+        return variant.variant_id
+
+    def test_no_components_renders_flat_path(self, tmp_path: Path) -> None:
+        """Variants without any component_assigns render as before."""
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = self._seed_crumble(db)
+        finally:
+            db.close()
+        md = render_drop.render(db_path, vid)
+        assert "## Ingredients (mass fractions)" in md
+        assert "grouped by component" not in md
+        assert "### Crumble" not in md
+        assert "### Filling" not in md
+        # Sanity: all three canonicals appear in the single table.
+        assert "butter" in md and "flour" in md and "apple" in md
+
+    def test_full_grouping_renders_per_component_sections(
+        self, tmp_path: Path
+    ) -> None:
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = self._seed_crumble(db)
+            db.add_component_assign_override(vid, "butter", "crumble")
+            db.add_component_assign_override(vid, "flour", "crumble")
+            db.add_component_assign_override(vid, "apple", "filling")
+        finally:
+            db.close()
+
+        md = render_drop.render(db_path, vid)
+        assert "grouped by component" in md
+        # title-cased headings.
+        assert "### Crumble" in md
+        assert "### Filling" in md
+        # Cross-component ratio header is present when ≥2 components.
+        assert "Cross-component mass ratio" in md
+        # No "Ungrouped" section when every canonical has a label.
+        assert "### Ungrouped" not in md
+
+    def test_grouped_path_rescales_within_component(
+        self, tmp_path: Path
+    ) -> None:
+        """Within-component % rescaled by component sum.
+
+        butter (30% of recipe) + flour (20%) form the crumble (50% of
+        recipe). Within crumble, butter = 30/50 = 60% and flour =
+        20/50 = 40%. The rendered Mass % column for butter must read
+        60.0% in the crumble sub-table, not 30.0%.
+        """
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = self._seed_crumble(db)
+            db.add_component_assign_override(vid, "butter", "crumble")
+            db.add_component_assign_override(vid, "flour", "crumble")
+            db.add_component_assign_override(vid, "apple", "filling")
+        finally:
+            db.close()
+
+        md = render_drop.render(db_path, vid)
+        # The within-crumble butter percentage (60%) must appear in the
+        # crumble sub-table; "30.0%" must not show up as butter's Mass %
+        # under the grouped path.
+        crumble_section = md.split("### Crumble", 1)[1].split("###", 1)[0]
+        assert "butter" in crumble_section
+        assert "60.0%" in crumble_section
+        # apple in the filling component is the only filling ingredient;
+        # within-component % = 50/50 = 100%.
+        filling_section = md.split("### Filling", 1)[1].split("###", 1)[0]
+        assert "apple" in filling_section
+        assert "100.0%" in filling_section
+
+    def test_grouped_path_preserves_whole_recipe_grams(
+        self, tmp_path: Path
+    ) -> None:
+        """The per-1-kg gram column is whole-recipe, regardless of grouping."""
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = self._seed_crumble(db)
+            db.add_component_assign_override(vid, "butter", "crumble")
+            db.add_component_assign_override(vid, "apple", "filling")
+        finally:
+            db.close()
+
+        md = render_drop.render(db_path, vid)
+        # butter is 30% of total recipe → 300 g per 1 kg, regardless of
+        # the rescaled within-component %.
+        crumble_section = md.split("### Crumble", 1)[1].split("###", 1)[0]
+        assert "300 g" in crumble_section
+
+    def test_partial_grouping_surfaces_ungrouped_bucket(
+        self, tmp_path: Path
+    ) -> None:
+        """Unlabeled canonicals land in an "Ungrouped" bucket, not lost."""
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = self._seed_crumble(db)
+            # Only butter is labeled; flour + apple stay ungrouped.
+            db.add_component_assign_override(vid, "butter", "crumble")
+        finally:
+            db.close()
+
+        md = render_drop.render(db_path, vid)
+        assert "### Crumble" in md
+        assert "### Ungrouped" in md
+        ungrouped_section = md.split("### Ungrouped", 1)[1]
+        assert "flour" in ungrouped_section
+        assert "apple" in ungrouped_section
+        # butter is in the crumble section, not in ungrouped.
+        crumble_section = md.split("### Crumble", 1)[1].split("###", 1)[0]
+        assert "butter" in crumble_section
+
+    def test_single_component_skips_cross_ratio_header(
+        self, tmp_path: Path
+    ) -> None:
+        """One labeled component → no degenerate "X 1.0 : X 1.0" header."""
+        db_path = tmp_path / "recipes.db"
+        db = CatalogDB.open(db_path)
+        try:
+            vid = self._seed_crumble(db)
+            db.add_component_assign_override(vid, "butter", "crumble")
+            db.add_component_assign_override(vid, "flour", "crumble")
+            # apple stays ungrouped — only one labeled component exists.
+        finally:
+            db.close()
+
+        md = render_drop.render(db_path, vid)
+        assert "Cross-component mass ratio" not in md
+
+
 # Mirror test_synthesize_instructions.py: be defensive about scripts/
 # being on sys.path even when this file is invoked outside pytest.
 def _ensure_scripts_on_path() -> None:
